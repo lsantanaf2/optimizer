@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Setup de Anúncios — {{ campaign_name }}</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+
+    <div class="topbar">
+        <h1>⚡ OPTIMIZER</h1>
+        <div class="breadcrumb">
+            <a href="/">Contas</a> → <a href="/conta/{{ account_id }}">Campanhas</a> → Setup
+        </div>
+    </div>
+
+    <!-- Datalists -->
+    <datalist id="dl-urls"></datalist>
+    <datalist id="dl-utms"></datalist>
+    <datalist id="dl-textos"></datalist>
+    <datalist id="dl-titulos"></datalist>
+
+    <div class="container">
+
+        <!-- Header -->
+        <div class="card border-accent">
+            <div class="card-title">🎯 {{ campaign_name }}</div>
+            <div class="card-desc">ID: {{ campaign_id }} · Preencha as configurações globais uma vez, depois adicione as
+                mídias rapidamente.</div>
+        </div>
+
+        <!-- ================================================================ -->
+        <!--  SEÇÃO 0: IDENTIDADE E RASTREAMENTO                              -->
+        <!-- ================================================================ -->
+        <div class="card border-blue">
+            <div class="card-title">0. Identidade e Rastreamento <span class="badge badge-blue">OBRIGATÓRIO</span></div>
+            <div class="card-desc">Defina quem está publicando e como rastrear os resultados.</div>
+
+            <div class="form-row" style="display: flex; gap: 16px;">
+                <div class="form-group" style="flex: 1;">
+                    <label>Página do Facebook</label>
+                    <select id="select-page" style="width: 100%;">
+                        <option value="">Carregando...</option>
+                    </select>
+                </div>
+                <div class="form-group" style="flex: 1;">
+                    <label>Conta do Instagram (Opcional)</label>
+                    <select id="select-instagram" style="width: 100%;">
+                        <option value="">— Selecione a Página primeiro —</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-group" style="margin-top: 12px;">
+                <label>Pixel de Rastreamento</label>
+                <select id="select-pixel" style="width: 100%;">
+                    <option value="">Carregando...</option>
+                </select>
+            </div>
+
+            <div class="form-group" style="margin-top: 12px;">
+                <label>Formulário de Lead <span class="badge badge-blue">PARA CAMPANHAS DE LEADS</span></label>
+                <select id="select-leadform" style="width: 100%;">
+                    <option value="">— Selecione a Página primeiro —</option>
+                </select>
+                <div class="card-desc" style="margin-top:4px; font-size:0.85em;">Obrigatório apenas para campanhas com
+                    objetivo de geração de leads.</div>
+            </div>
+        </div>
+
+        <!-- ================================================================ -->
+        <!--  SEÇÃO 1: ESTRATÉGIA                                            -->
+        <!-- ================================================================ -->
+        <div class="card">
+            <div class="card-title">1. Estratégia de Estruturação <span class="badge badge-cyan">OBRIGATÓRIO</span>
+            </div>
+            <div class="card-desc">Escolha como os criativos serão organizados nos conjuntos de anúncios.</div>
+
+            <div class="radio-group">
+                <label class="radio-option" id="opt-agrupado" onclick="selecionarEstrategia('agrupado')">
+                    <input type="radio" name="estrategia" value="agrupado">
+                    <div class="option-icon">📦</div>
+                    <div class="option-title">Opção A — Agrupado</div>
+                    <div class="option-desc">Todos os criativos sobem dentro do mesmo Conjunto de Anúncios.</div>
+                </label>
+                <label class="radio-option" id="opt-garimpo" onclick="selecionarEstrategia('garimpo')">
+                    <input type="radio" name="estrategia" value="garimpo">
+                    <div class="option-icon">⛏️</div>
+                    <div class="option-title">Opção B — Garimpo</div>
+                    <div class="option-desc">Um Conjunto de Anúncios diferente para cada criativo selecionado.</div>
+                </label>
+            </div>
+
+            <div class="sub-options" id="sub-agrupado">
+                <label>Destino do Conjunto</label>
+                <div class="sub-radio-group">
+                    <label class="sub-radio" id="sub-existente" onclick="selecionarDestino('existente')">
+                        <input type="radio" name="destino_conjunto" value="existente"> 📂 Conjunto Existente
+                    </label>
+                    <label class="sub-radio" id="sub-duplicar" onclick="selecionarDestino('duplicar')">
+                        <input type="radio" name="destino_conjunto" value="duplicar"> 📋 Novo (Duplicar)
+                    </label>
+                </div>
+                <div id="select-existente" class="hidden-select">
+                    <label>Selecione o Conjunto de Anúncios</label>
+                    <select name="adset_existente" id="adset_existente">
+                        <option value="">— Selecione —</option>
+                        {% for adset in adsets %}<option value="{{ adset.id }}">{{ adset.name }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div id="select-duplicar" class="hidden-select">
+                    <label>Conjunto modelo para duplicação</label>
+                    <select name="adset_modelo" id="adset_modelo">
+                        <option value="">— Selecione o molde —</option>
+                        {% for adset in adsets %}<option value="{{ adset.id }}">{{ adset.name }}</option>{% endfor %}
+                    </select>
+                    <div class="card-desc" style="margin-top:6px;">O sistema copiará público, posicionamento e
+                        orçamento.</div>
+                </div>
+            </div>
+
+            <div class="sub-options" id="sub-garimpo">
+                <label>Conjunto modelo para duplicação</label>
+                <select name="adset_modelo_garimpo" id="adset_modelo_garimpo">
+                    <option value="">— Selecione o molde —</option>
+                    {% for adset in adsets %}<option value="{{ adset.id }}">{{ adset.name }}</option>{% endfor %}
+                </select>
+                <div class="card-desc" style="margin-top:6px;">Cada criativo ganhará um novo conjunto baseado neste
+                    molde.</div>
+            </div>
+        </div>
+
+        <!-- ================================================================ -->
+        <!--  SEÇÃO 2: CONFIGURAÇÕES GLOBAIS DO LOTE                         -->
+        <!-- ================================================================ -->
+        <div class="section-label">▼ Configurações Globais — preencha uma vez, vale para todos os criativos ▼</div>
+
+        <div class="card border-purple" id="card-global">
+            <div class="card-title">
+                2. Configurações Globais do Lote
+                <span class="badge badge-purple">PREENCHA 1x</span>
+                <span class="config-status" id="config-status">⚪ Aguardando preenchimento</span>
+            </div>
+            <div class="card-desc">URL, UTMs, Textos e Título serão herdados automaticamente por todos os criativos ao
+                subir.</div>
+
+            <label>URL de Destino</label>
+            <div class="field-with-history">
+                <input type="url" id="url_destino" list="dl-urls" placeholder="https://seusite.com/pagina-destino">
+                <button type="button" class="btn-history" onclick="puxarHistorico()"
+                    title="Buscar URLs usadas recentemente">📜 Histórico</button>
+            </div>
+
+            <label>Padrão de UTMs</label>
+            <div class="field-with-history">
+                <input type="text" id="utm_pattern" list="dl-utms"
+                    placeholder="utm_source=fb&amp;utm_medium=cpc&amp;utm_campaign=nome">
+                <button type="button" class="btn-history" onclick="puxarHistorico()"
+                    title="Buscar UTMs usadas recentemente">📜 Histórico</button>
+            </div>
+
+            <label>Call to Action (CTA)</label>
+            <select id="cta">
+                <option value="LEARN_MORE">📘 Saiba Mais (LEARN_MORE)</option>
+                <option value="SHOP_NOW">🛒 Compre Agora (SHOP_NOW)</option>
+                <option value="SIGN_UP">📝 Cadastre-se (SIGN_UP)</option>
+                <option value="APPLY_NOW">📩 Inscreva-se (APPLY_NOW)</option>
+                <option value="BOOK_TRAVEL">✈️ Reserve (BOOK_TRAVEL)</option>
+                <option value="CONTACT_US">📞 Fale Conosco (CONTACT_US)</option>
+                <option value="DOWNLOAD">⬇️ Baixar (DOWNLOAD)</option>
+                <option value="GET_OFFER">🎁 Obter Oferta (GET_OFFER)</option>
+                <option value="GET_QUOTE">💬 Pedir Orçamento (GET_QUOTE)</option>
+                <option value="ORDER_NOW">🛍️ Peça Agora (ORDER_NOW)</option>
+                <option value="SUBSCRIBE">🔔 Assinar (SUBSCRIBE)</option>
+                <option value="WATCH_MORE">▶️ Assistir Mais (WATCH_MORE)</option>
+                <option value="SEND_WHATSAPP_MESSAGE">💬 WhatsApp (SEND_WHATSAPP_MESSAGE)</option>
+                <option value="NO_BUTTON">🚫 Sem Botão (NO_BUTTON)</option>
+            </select>
+
+            <!-- Textos Principais -->
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:18px;">
+                <label style="margin:0;">Textos Principais (Primary Text)</label>
+                <button type="button" class="btn-history" onclick="puxarHistorico()"
+                    title="Buscar textos usados recentemente">📜 Histórico</button>
+            </div>
+            <div class="dynamic-fields" id="primary-texts">
+                <div class="dynamic-row">
+                    <input type="text" name="primary_text[]" list="dl-textos" placeholder="Texto principal #1">
+                </div>
+            </div>
+            <button type="button" class="btn-add"
+                onclick="adicionarCampo('primary-texts', 'primary_text[]', 'Texto principal', 'dl-textos')"
+                id="btn-add-text">+ Adicionar variação</button>
+            <div class="field-counter" id="counter-text">1 de 5 variações</div>
+
+            <!-- Títulos -->
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:18px;">
+                <label style="margin:0;">Títulos (Headline)</label>
+                <button type="button" class="btn-history" onclick="puxarHistorico()"
+                    title="Buscar títulos usados recentemente">📜 Histórico</button>
+            </div>
+            <div class="dynamic-fields" id="headlines">
+                <div class="dynamic-row">
+                    <input type="text" name="headline[]" list="dl-titulos" placeholder="Título #1">
+                </div>
+            </div>
+            <button type="button" class="btn-add"
+                onclick="adicionarCampo('headlines', 'headline[]', 'Título', 'dl-titulos')" id="btn-add-headline">+
+                Adicionar variação</button>
+            <div class="field-counter" id="counter-headline">1 de 5 variações</div>
+
+            <div class="warning-box">
+                <div class="warn-icon">⚠️</div>
+                <p><strong>Advantage+ Desativado:</strong> standard_enhancements será desativado. Você terá controle
+                    total.</p>
+            </div>
+        </div>
+
+        <!-- ================================================================ -->
+        <!--  SEÇÃO 3: ADIÇÃO RÁPIDA DE MÍDIA                               -->
+        <!-- ================================================================ -->
+        <div class="section-label">▼ Adicione as mídias — cada par vira um anúncio na fila ▼</div>
+
+        <div class="card border-green">
+            <div class="card-title">
+                3. Adicionar Criativos à Fila
+                <span class="badge badge-green">MULTI-UPLOAD</span>
+            </div>
+            <div class="card-desc">Selecione as mídias (Feed + Stories). Configurações globais são herdadas no momento
+                do envio.</div>
+
+            <div class="upload-pair">
+                <div class="upload-box" id="box-feed">
+                    <div class="upload-icon">🖼️</div>
+                    <div class="upload-label">Feed / Square</div>
+                    <div class="upload-hint">1:1 ou 4:5 · Imagem ou Vídeo</div>
+                    <input type="file" id="arquivo_feed" accept="image/*,video/*"
+                        onchange="previewFile(this, 'preview-feed')">
+                    <div class="file-preview" id="preview-feed"></div>
+                </div>
+                <div class="upload-box" id="box-stories">
+                    <div class="upload-icon">📱</div>
+                    <div class="upload-label">Stories / Reels</div>
+                    <div class="upload-hint">9:16 · Imagem ou Vídeo</div>
+                    <input type="file" id="arquivo_stories" accept="image/*,video/*"
+                        onchange="previewFile(this, 'preview-stories')">
+                    <div class="file-preview" id="preview-stories"></div>
+                </div>
+            </div>
+
+            <!-- Warning Box for Cropping -->
+            <div id="warning-crop" class="warning-box"
+                style="display:none; margin: 15px 0; background-color: #fff3cd; border-left: 4px solid #ffc107; color: #856404; padding: 12px;">
+                <div class="warn-icon" style="margin-right: 10px; font-size: 1.2em;">⚠️</div>
+                <p style="margin: 0; font-size: 0.95em;"><strong>Atenção ao Formato:</strong> Você forneceu apenas a
+                    versão vertical (Stories/9:16).<br>
+                    Ao aparecer no Feed, a imagem poderá ser cortada ou exibida com faixas laterais. Recomendamos subir
+                    também uma versão 1:1.</p>
+            </div>
+
+            <button type="button" class="btn-add-to-queue" onclick="adicionarNaFila()">
+                📥 Adicionar à Fila
+            </button>
+        </div>
+
+        <!-- ================================================================ -->
+        <!--  FILA DE UPLOAD                                                 -->
+        <!-- ================================================================ -->
+        <div style="margin-bottom: 24px;">
+            <div class="queue-header">
+                <h3>📋 Fila de Upload</h3>
+                <span class="queue-counter" id="queue-counter">0 anúncios</span>
+            </div>
+
+            <div id="queue-list">
+                <div class="queue-empty" id="queue-empty">
+                    Nenhum anúncio na fila.<br>Adicione mídias na seção acima.
+                </div>
+            </div>
+
+            <div id="queue-actions" style="display:none;">
+                <button type="button" class="btn-submit-all" id="btn-submit-all" onclick="subirTodos()">
+                    🚀 Subir Todos os Anúncios
+                </button>
+                <div class="footer-note">Todos os anúncios serão criados com status <strong>PAUSED</strong>.</div>
+
+                <!-- Log Console -->
+                <div class="log-console" id="log-console" style="display:none;">
+                    <div class="log-console-header">
+                        <span>📟 Console de Operações</span>
+                        <span class="log-console-dot" id="log-dot"></span>
+                    </div>
+                    <div class="log-console-body" id="log-body">
+                        <div class="log-console-empty">Aguardando início do upload...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        const CAMPAIGN_ID = "{{ campaign_id }}";
+        const ACCOUNT_ID = "{{ account_id }}";
+        const filaAnuncios = [];
+        let historicoCarregado = false;
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        // ======================== IDENTITY & TRACKING ========================
+        async function carregarIdentidade() {
+            try {
+                const resp = await fetch(`/api/conta/${ACCOUNT_ID}/identity`);
+                const data = await resp.json();
+
+                if (data.error) {
+                    console.error('❌ Identity error:', data.error);
+                    mostrarToast('⚠️ Erro: ' + data.error);
+                    return;
+                }
+
+                const { pages, instagrams, pixels } = data;
+
+                // Páginas
+                const selPage = document.getElementById('select-page');
+                if (Array.isArray(pages) && pages.length > 0) {
+                    selPage.innerHTML = '<option value="">— Selecione a Página —</option>';
+                    pages.forEach(p => {
+                        const opt = document.createElement('option');
+                        opt.value = p.id;
+                        opt.textContent = p.name;
+                        selPage.appendChild(opt);
+                    });
+                } else {
+                    selPage.innerHTML = '<option value="">⚠️ Nenhuma página encontrada</option>';
+                }
+
+                // Instagrams
+                const selIg = document.getElementById('select-instagram');
+                if (Array.isArray(instagrams) && instagrams.length > 0) {
+                    selIg.innerHTML = '<option value="">— Selecione o Instagram —</option>';
+                    instagrams.forEach(ig => {
+                        const opt = document.createElement('option');
+                        opt.value = ig.id;
+                        opt.textContent = `@${ig.username}`;
+                        selIg.appendChild(opt);
+                    });
+                } else {
+                    selIg.innerHTML = '<option value="">⚠️ Nenhum Instagram vinculado</option>';
+                }
+
+                // Pixels
+                const selPixel = document.getElementById('select-pixel');
+                selPixel.innerHTML = '<option value="">— Selecione o Pixel (Recomendado) —</option>';
+                if (Array.isArray(pixels)) {
+                    pixels.forEach(p => {
+                        const opt = document.createElement('option');
+                        opt.value = p.id;
+                        opt.textContent = p.name;
+                        selPixel.appendChild(opt);
+                    });
+                }
+
+                console.log(`⚡ Identidade carregada: ${pages?.length || 0} páginas, ${instagrams?.length || 0} IGs, ${pixels?.length || 0} pixels`);
+
+                // Listener para carregar Lead Forms quando página muda
+                selPage.addEventListener('change', () => carregarLeadForms(selPage.value));
+
+            } catch (e) {
+                console.error('❌ Erro em carregarIdentidade:', e);
+                mostrarToast('⚠️ Erro ao carregar dados de identidade');
+            }
+        }
+
+        async function carregarLeadForms(pageId) {
+            const sel = document.getElementById('select-leadform');
+            if (!pageId) {
+                sel.innerHTML = '<option value="">— Selecione a Página primeiro —</option>';
+                return;
+            }
+            sel.innerHTML = '<option value="">Carregando formulários...</option>';
+            try {
+                const resp = await fetch(`/api/pagina/${pageId}/leadgen_forms`);
+                const data = await resp.json();
+                if (data.error) {
+                    sel.innerHTML = '<option value="">⚠️ Erro ao carregar</option>';
+                    return;
+                }
+                const forms = data.forms || [];
+                if (forms.length === 0) {
+                    sel.innerHTML = '<option value="">— Nenhum formulário encontrado —</option>';
+                } else {
+                    sel.innerHTML = '<option value="">— Sem formulário (opcional) —</option>';
+                    forms.forEach(f => {
+                        const opt = document.createElement('option');
+                        opt.value = f.id;
+                        opt.textContent = `📋 ${f.name} (${f.status})`;
+                        sel.appendChild(opt);
+                    });
+                }
+                console.log(`📋 ${forms.length} Lead Forms carregados`);
+            } catch (e) {
+                sel.innerHTML = '<option value="">⚠️ Erro de conexão</option>';
+                console.error('❌ Erro em carregarLeadForms:', e);
+            }
+        }
+
+        // Call on load
+        window.addEventListener('DOMContentLoaded', carregarIdentidade);
+
+        // ======================== STRATEGY ========================
+        function selecionarEstrategia(tipo) {
+            document.querySelectorAll('.radio-option').forEach(el => el.classList.remove('selected'));
+            document.getElementById('opt-' + tipo).classList.add('selected');
+            document.querySelector(`input[name="estrategia"][value="${tipo}"]`).checked = true;
+            document.getElementById('sub-agrupado').classList.toggle('visible', tipo === 'agrupado');
+            document.getElementById('sub-garimpo').classList.toggle('visible', tipo === 'garimpo');
+            if (tipo === 'garimpo') {
+                document.querySelectorAll('.sub-radio').forEach(el => el.classList.remove('selected'));
+                document.getElementById('select-existente').classList.add('hidden-select');
+                document.getElementById('select-duplicar').classList.add('hidden-select');
+            }
+        }
+
+        function selecionarDestino(tipo) {
+            document.querySelectorAll('.sub-radio').forEach(el => el.classList.remove('selected'));
+            document.getElementById('sub-' + tipo).classList.add('selected');
+            document.querySelector(`input[name="destino_conjunto"][value="${tipo}"]`).checked = true;
+            document.getElementById('select-existente').classList.toggle('hidden-select', tipo !== 'existente');
+            document.getElementById('select-duplicar').classList.toggle('hidden-select', tipo !== 'duplicar');
+        }
+
+        // ======================== DYNAMIC FIELDS ========================
+        const maxVariacoes = 5;
+
+        function adicionarCampo(containerId, fieldName, placeholder, datalistId) {
+            const container = document.getElementById(containerId);
+            const count = container.querySelectorAll('.dynamic-row').length;
+            if (count >= maxVariacoes) return;
+            const row = document.createElement('div');
+            row.className = 'dynamic-row';
+            row.innerHTML = `
+                <input type="text" name="${fieldName}" list="${datalistId || ''}" placeholder="${placeholder} #${count + 1}">
+                <button type="button" class="btn-remove" onclick="removerCampo(this, '${containerId}')">×</button>
+            `;
+            container.appendChild(row);
+            atualizarContador(containerId);
+        }
+
+        function removerCampo(btn, containerId) {
+            const container = document.getElementById(containerId);
+            if (container.querySelectorAll('.dynamic-row').length > 1) {
+                btn.parentElement.remove();
+                atualizarContador(containerId);
+            }
+        }
+
+        function atualizarContador(containerId) {
+            const container = document.getElementById(containerId);
+            const count = container.querySelectorAll('.dynamic-row').length;
+            const isText = containerId === 'primary-texts';
+            document.getElementById(isText ? 'counter-text' : 'counter-headline').textContent = `${count} de ${maxVariacoes} variações`;
+            document.getElementById(isText ? 'btn-add-text' : 'btn-add-headline').disabled = count >= maxVariacoes;
+        }
+
+        // ======================== FILE PREVIEW ========================
+        function previewFile(input, previewId) {
+            const preview = document.getElementById(previewId);
+            if (input.files.length > 0) {
+                preview.textContent = '📎 ' + input.files[0].name;
+                preview.style.display = 'block';
+                input.closest('.upload-box').style.borderColor = 'var(--success)';
+            } else {
+                preview.style.display = 'none';
+                input.closest('.upload-box').style.borderColor = '';
+            }
+        }
+
+        // ======================== HISTORY / AUTOCOMPLETE ========================
+        async function puxarHistorico() {
+            if (historicoCarregado) { mostrarToast('✅ Histórico já carregado!'); return; }
+            document.querySelectorAll('.btn-history').forEach(b => { b.textContent = '⏳...'; b.disabled = true; });
+
+            try {
+                const resp = await fetch(`/api/campanha/${CAMPAIGN_ID}/historico_textos`);
+                const data = await resp.json();
+                if (data.error) { mostrarToast('❌ ' + data.error); return; }
+
+                preencherDatalist('dl-urls', data.urls || []);
+                preencherDatalist('dl-utms', data.utms || []);
+                preencherDatalist('dl-textos', data.textos || []);
+                preencherDatalist('dl-titulos', data.titulos || []);
+                historicoCarregado = true;
+
+                document.querySelectorAll('.btn-history').forEach(b => {
+                    b.textContent = '✅ Carregado'; b.classList.add('loaded'); b.disabled = false;
+                });
+                const total = (data.urls?.length || 0) + (data.textos?.length || 0) + (data.titulos?.length || 0);
+                mostrarToast(`📜 ${total} sugestões carregadas`);
+            } catch (e) {
+                mostrarToast('❌ Erro ao buscar histórico');
+                document.querySelectorAll('.btn-history').forEach(b => { b.textContent = '📜 Histórico'; b.disabled = false; });
+            }
+        }
+
+        function preencherDatalist(id, valores) {
+            const dl = document.getElementById(id);
+            dl.innerHTML = '';
+            valores.forEach(v => { const o = document.createElement('option'); o.value = v; dl.appendChild(o); });
+        }
+
+        // ======================== GLOBAL CONFIG ========================
+        function lerConfigGlobal() {
+            const url = document.getElementById('url_destino').value.trim();
+            const utms = document.getElementById('utm_pattern').value.trim();
+            const cta = document.getElementById('cta').value;
+            const textos = [];
+            document.querySelectorAll('#primary-texts input').forEach(i => { if (i.value.trim()) textos.push(i.value.trim()); });
+            const titulos = [];
+            document.querySelectorAll('#headlines input').forEach(i => { if (i.value.trim()) titulos.push(i.value.trim()); });
+            return { url, utms, cta, textos, titulos };
+        }
+
+        function atualizarStatusConfig() {
+            const cfg = lerConfigGlobal();
+            const el = document.getElementById('config-status');
+            if (cfg.url) {
+                el.textContent = '🟢 Configurações preenchidas';
+                el.className = 'config-status active';
+            } else {
+                el.textContent = '⚪ Aguardando preenchimento';
+                el.className = 'config-status';
+            }
+        }
+
+        document.getElementById('card-global').addEventListener('input', atualizarStatusConfig);
+        document.getElementById('cta').addEventListener('change', atualizarStatusConfig);
+
+        // ======================== THUMBNAIL GENERATOR ========================
+        function gerarThumbnailURL(file) {
+            if (!file) return null;
+            return URL.createObjectURL(file);
+        }
+
+        function isVideo(file) {
+            return file && file.type.startsWith('video/');
+        }
+
+        function criarThumbnailHTML(file) {
+            if (!file) return '<div class="queue-thumb"><span class="thumb-placeholder">—</span></div>';
+            const url = gerarThumbnailURL(file);
+            if (isVideo(file)) {
+                return `<div class="queue-thumb"><video src="${url}" preload="metadata" muted></video></div>`;
+            } else {
+                return `<div class="queue-thumb"><img src="${url}" alt="preview"></div>`;
+            }
+        }
+
+        // ======================== QUEUE ========================
+        function adicionarNaFila() {
+            const feedInput = document.getElementById('arquivo_feed');
+            const storiesInput = document.getElementById('arquivo_stories');
+            if (!feedInput.files.length && !storiesInput.files.length) {
+                mostrarToast('❌ Selecione pelo menos um arquivo de mídia');
+                return;
+            }
+
+            let adName = '';
+            if (feedInput.files.length) {
+                adName = feedInput.files[0].name.replace(/\.[^/.]+$/, '');
+            } else {
+                adName = storiesInput.files[0].name.replace(/\.[^/.]+$/, '');
+            }
+
+            const item = {
+                id: Date.now(),
+                adName,
+                feedFile: feedInput.files[0] || null,
+                storiesFile: storiesInput.files[0] || null,
+                feedFileName: feedInput.files[0]?.name || null,
+                storiesFileName: storiesInput.files[0]?.name || null,
+            };
+
+            filaAnuncios.push(item);
+            renderizarFila();
+
+            feedInput.value = '';
+            storiesInput.value = '';
+            document.getElementById('preview-feed').style.display = 'none';
+            document.getElementById('preview-stories').style.display = 'none';
+            document.getElementById('box-feed').style.borderColor = '';
+            document.getElementById('box-stories').style.borderColor = '';
+            verificarAvisoCorte();
+
+            mostrarToast(`✅ "${adName}" adicionado à fila (#${filaAnuncios.length})`);
+        }
+
+        function removerDaFila(id) {
+            const idx = filaAnuncios.findIndex(i => i.id === id);
+            if (idx > -1) {
+                const nome = filaAnuncios[idx].adName;
+                filaAnuncios.splice(idx, 1);
+                renderizarFila();
+                mostrarToast(`🗑️ "${nome}" removido`);
+            }
+        }
+
+        function atualizarNomeFila(id, novo) {
+            const item = filaAnuncios.find(i => i.id === id);
+            if (item) item.adName = novo;
+        }
+
+        function renderizarFila() {
+            const list = document.getElementById('queue-list');
+            const empty = document.getElementById('queue-empty');
+            const actions = document.getElementById('queue-actions');
+            const counter = document.getElementById('queue-counter');
+
+            counter.textContent = `${filaAnuncios.length} anúncio${filaAnuncios.length !== 1 ? 's' : ''}`;
+            list.querySelectorAll('.queue-item').forEach(el => el.remove());
+
+            if (filaAnuncios.length === 0) {
+                empty.style.display = 'block';
+                actions.style.display = 'none';
+                return;
+            }
+
+            empty.style.display = 'none';
+            actions.style.display = 'block';
+
+            filaAnuncios.forEach((item, idx) => {
+                const div = document.createElement('div');
+                div.className = 'queue-item';
+
+                const thumbFile = item.feedFile || item.storiesFile;
+                const thumbHTML = criarThumbnailHTML(thumbFile);
+
+                div.innerHTML = `
+                    <div class="queue-item-number">${idx + 1}</div>
+                    ${thumbHTML}
+                    <div class="queue-item-body">
+                        <input class="queue-item-name" type="text" value="${escapeHtml(item.adName)}"
+                            onchange="atualizarNomeFila(${item.id}, this.value)"
+                            title="Edite o nome do anúncio">
+                        <div class="queue-item-files">
+                            ${item.feedFileName ? `<span class="queue-file-tag">🖼️ ${item.feedFileName}</span>` : ''}
+                            ${item.storiesFileName ? `<span class="queue-file-tag">📱 ${item.storiesFileName}</span>` : ''}
+                        </div>
+                    </div>
+                    <button class="btn-queue-remove" onclick="removerDaFila(${item.id})">✕</button>
+                `;
+                list.appendChild(div);
+            });
+        }
+
+        // ======================== LOG CONSOLE ========================
+        function logConsole(msg, type = '') {
+            const console = document.getElementById('log-console');
+            const body = document.getElementById('log-body');
+            const dot = document.getElementById('log-dot');
+
+            console.style.display = 'block';
+            dot.classList.add('active');
+
+            // Remove empty placeholder
+            const placeholder = body.querySelector('.log-console-empty');
+            if (placeholder) placeholder.remove();
+
+            const now = new Date();
+            const time = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.innerHTML = `<span class="log-time">[${time}]</span> ${escapeHtml(msg)}`;
+            body.appendChild(entry);
+
+            // Auto-scroll
+            const consoleEl = document.getElementById('log-console');
+            consoleEl.scrollTop = consoleEl.scrollHeight;
+        }
+
+        function logStop() {
+            document.getElementById('log-dot').classList.remove('active');
+        }
+
+        function classifyLog(msg) {
+            if (msg.includes('✅') || msg.includes('🏁')) return 'log-success';
+            if (msg.includes('❌')) return 'log-error';
+            if (msg.includes('⚠️') || msg.includes('⏸️')) return 'log-warning';
+            if (msg.includes('📤') || msg.includes('🎨') || msg.includes('📌') || msg.includes('🚀')) return 'log-info';
+            return '';
+        }
+
+        // ======================== SUBMIT ALL ========================
+        async function subirTodos() {
+            if (filaAnuncios.length === 0) return;
+
+            const cfg = lerConfigGlobal();
+            if (!cfg.url) { mostrarToast('❌ Preencha a URL de destino antes de subir'); return; }
+
+            const estrategia = document.querySelector('input[name="estrategia"]:checked');
+            if (!estrategia) { mostrarToast('❌ Selecione uma estratégia de estruturação'); return; }
+
+            const btn = document.getElementById('btn-submit-all');
+            btn.disabled = true;
+
+            const destino = document.querySelector('input[name="destino_conjunto"]:checked')?.value;
+            const adsetExistente = document.getElementById('adset_existente')?.value;
+            const adsetModelo = document.getElementById('adset_modelo')?.value;
+            const adsetModeloGarimpo = document.getElementById('adset_modelo_garimpo')?.value;
+
+            // Start log console
+            logConsole(`🚀 Lote iniciado — ${filaAnuncios.length} anúncio(s) na fila`, 'log-info');
+
+            let enviados = 0, erros = 0;
+
+            for (let i = 0; i < filaAnuncios.length; i++) {
+                const item = filaAnuncios[i];
+                btn.textContent = `⏳ Enviando ${i + 1}/${filaAnuncios.length}...`;
+
+                logConsole(`📦 Processando ${i + 1}/${filaAnuncios.length}: "${item.adName}"`, 'log-info');
+
+                const fd = new FormData();
+                fd.append('estrategia', estrategia.value);
+                fd.append('destino_conjunto', destino || '');
+                fd.append('adset_existente', adsetExistente || '');
+                fd.append('adset_modelo', adsetModelo || adsetModeloGarimpo || '');
+                fd.append('ad_name', item.adName);
+                fd.append('url_destino', cfg.url);
+                fd.append('utm_pattern', cfg.utms);
+                fd.append('cta', cfg.cta);
+                cfg.textos.forEach(t => fd.append('primary_text[]', t));
+                cfg.titulos.forEach(t => fd.append('headline[]', t));
+                if (item.feedFile) fd.append('arquivo_feed', item.feedFile);
+                if (item.storiesFile) fd.append('arquivo_stories', item.storiesFile);
+
+                // Identity & Tracking
+                const pageId = document.getElementById('select-page').value;
+                if (!pageId) { mostrarToast('❌ Selecione a Página do Facebook!'); return; }
+                fd.append('page_id', pageId);
+                const igVal = document.getElementById('select-instagram').value;
+                if (igVal) fd.append('instagram_actor_id', igVal);
+                const pixelVal = document.getElementById('select-pixel').value;
+                if (pixelVal) fd.append('pixel_id', pixelVal);
+                const leadFormVal = document.getElementById('select-leadform').value;
+                if (leadFormVal) fd.append('lead_gen_form_id', leadFormVal);
+
+                try {
+                    logConsole(`📤 Fazendo upload de "${item.adName}"...`, 'log-info');
+
+                    const r = await fetch(`/campanha/${CAMPAIGN_ID}/upload`, { method: 'POST', body: fd });
+                    const res = await r.json();
+
+                    if (res.success) {
+                        enviados++;
+                        logConsole(`✅ "${item.adName}" criado com sucesso (PAUSADO) — ID: ${res.ad_id}`, 'log-success');
+                    } else {
+                        erros++;
+                        logConsole(`❌ "${item.adName}" falhou: ${res.error}`, 'log-error');
+                    }
+
+                    // Show backend logs
+                    if (res.logs) {
+                        res.logs.forEach(l => logConsole(l, classifyLog(l)));
+                    }
+
+                    // Visual delay message between items
+                    if (i < filaAnuncios.length - 1) {
+                        logConsole(`⏳ Aguardando delay de segurança antes do próximo...`);
+                    }
+
+                } catch (e) {
+                    erros++;
+                    logConsole(`❌ Erro de rede ao enviar "${item.adName}": ${e.message}`, 'log-error');
+                }
+            }
+
+            btn.disabled = false;
+            btn.textContent = '🚀 Subir Todos os Anúncios';
+
+            logConsole(`🏁 Lote concluído: ${enviados} ✅ sucesso, ${erros} ❌ erro(s)`, enviados > 0 ? 'log-success' : 'log-error');
+            logStop();
+
+            if (erros === 0) {
+                mostrarToast(`🎉 ${enviados} anúncio(s) enviados com sucesso!`);
+                filaAnuncios.length = 0;
+                renderizarFila();
+            } else {
+                mostrarToast(`⚠️ ${enviados} OK, ${erros} com erro — veja o console`);
+            }
+        }
+
+        // ======================== UTILS ========================
+        function mostrarToast(msg) {
+            const t = document.getElementById('toast');
+            t.textContent = msg; t.classList.add('show');
+            setTimeout(() => t.classList.remove('show'), 3500);
+        }
+
+        // ======================== CROSS CHECK / WARNINGS ========================
+        function verificarAvisoCorte() {
+            const feedInput = document.getElementById('arquivo_feed');
+            const storiesInput = document.getElementById('arquivo_stories');
+            const warning = document.getElementById('warning-crop');
+
+            const hasFeed = feedInput.files && feedInput.files.length > 0;
+            const hasStories = storiesInput.files && storiesInput.files.length > 0;
+
+            // Condição: Tem Stories MAS NÃO TEM Feed
+            if (hasStories && !hasFeed) {
+                warning.style.display = 'flex';
+            } else {
+                warning.style.display = 'none';
+            }
+        }
+
+        // Attach listeners
+        document.getElementById('arquivo_feed').addEventListener('change', verificarAvisoCorte);
+        document.getElementById('arquivo_stories').addEventListener('change', verificarAvisoCorte);
+
+    </script>
+
+
+</body>
+
+</html>

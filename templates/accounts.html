@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block title %}Contas de Anúncios{% endblock %}
+
+{% block breadcrumb %}
+Contas
+{% endblock %}
+
+{% block content %}
+<div class="card border-accent">
+    <div class="card-title">
+        📂 Contas de Anúncios
+        <span class="badge badge-cyan">{{ accounts|length }} Ativas</span>
+        <a href="/logout"
+            style="margin-left: auto; color: var(--danger); text-decoration: none; font-size: 12px; border: 1px solid var(--danger); padding: 4px 8px; border-radius: 4px;">🔓
+            Sair</a>
+    </div>
+    <div class="card-desc">
+        Selecione a conta que deseja gerenciar abaixo.
+    </div>
+
+    <!-- Search Box -->
+    <div style="margin-bottom: 20px;">
+        <input type="text" id="account-search" placeholder="🔍 Buscar conta por nome ou ID..."
+            style="width: 100%; padding: 12px; border: 1px solid var(--border); background: var(--bg-deep); color: var(--text-primary); border-radius: 8px;">
+    </div>
+
+    <div class="queue-list" id="account-list">
+        {% for account in accounts %}
+        <a href="/conta/{{ account.account_id }}" style="text-decoration: none; color: inherit;" class="account-item"
+            data-name="{{ account.name|lower }}" data-id="{{ account.account_id }}">
+            <div class="queue-list-item"
+                style="cursor: pointer; display: flex; align-items: center; padding: 12px; border-bottom: 1px solid var(--border); transition: background 0.2s;">
+                <div class="queue-item-number"
+                    style="background: var(--bg-surface); border: 1px solid var(--border); color: var(--text-muted); font-size: 10px; margin-right: 12px; min-width: 30px; text-align: center;">
+                    ID
+                </div>
+                <div class="queue-item-body" style="flex: 1;">
+                    <div class="queue-item-name"
+                        style="background: transparent; border: none; padding: 0; font-size: 15px; font-weight: 500;">
+                        {{ account.name }}
+                        {% if account.business_name %}
+                        <span style="font-size: 11px; color: var(--text-muted); margin-left: 8px;">🏢 {{
+                            account.business_name }}</span>
+                        {% endif %}
+                    </div>
+                    <div class="queue-item-files" style="margin-top: 4px;">
+                        <span class="queue-file-tag">act_{{ account.account_id }}</span>
+                        {% if account.currency %}
+                        <span class="queue-file-tag"
+                            style="background: var(--bg-deep); border: 1px solid var(--border);">💰 {{ account.currency
+                            }}</span>
+                        {% endif %}
+                        <span class="config-status active">Ativa</span>
+                    </div>
+                </div>
+                <div class="btn-queue-remove" style="border: none; color: var(--accent); font-size: 18px;">
+                    ➜
+                </div>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.getElementById('account-search').addEventListener('input', function (e) {
+        const term = e.target.value.toLowerCase();
+        const items = document.querySelectorAll('.account-item');
+
+        items.forEach(item => {
+            const name = item.getAttribute('data-name');
+            const id = item.getAttribute('data-id');
+
+            if (name.includes(term) || id.includes(term)) {
+                item.style.display = 'block';
+            } else {
+                item.style.display = 'none';
+            }
+        });
+    });
+</script>
+{% endblock %}

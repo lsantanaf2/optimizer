@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+
+{% block title %}Campanhas — {{ account_id }}{% endblock %}
+
+{% block breadcrumb %}
+<a href="/">Contas</a> → Campanhas
+{% endblock %}
+
+{% block content %}
+<div class="card border-purple">
+    <div class="card-title">
+        🚀 Campanhas
+        <span class="badge badge-purple" id="campaign-count">{{ campaigns|length }} Encontradas</span>
+        <a href="/" style="margin-left: auto; color: var(--text-muted); text-decoration: none; font-size: 12px;">←
+            Voltar</a>
+    </div>
+    <div class="card-desc">
+        Conta: <span style="font-family: var(--font-mono); color: var(--accent);">{{ account_id }}</span>
+    </div>
+
+    <!-- Filters -->
+    <div style="display: flex; gap: 12px; margin: 16px 0; align-items: center;">
+        <input type="text" id="campaign-search" placeholder="🔍 Buscar campanha por nome..."
+            style="flex: 1; padding: 10px 14px; border: 1px solid var(--border); background: var(--bg-deep); color: var(--text-primary); border-radius: 8px; font-size: 13px;">
+
+        <label
+            style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px; color: var(--text-secondary); white-space: nowrap; user-select: none; padding: 8px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-surface); transition: all 0.2s;">
+            <input type="checkbox" id="filter-active-only"
+                style="accent-color: var(--success); width: 16px; height: 16px;">
+            Só Ativas
+        </label>
+    </div>
+
+    {% if not campaigns %}
+    <div class="queue-empty">Nenhuma campanha encontrada nesta conta.</div>
+    {% else %}
+    <div class="queue-list" id="campaign-list">
+        {% for campaign in campaigns %}
+        <a href="/campanha/{{ campaign.id }}/setup" style="text-decoration: none; color: inherit;" class="campaign-item"
+            data-name="{{ campaign.name|lower }}" data-status="{{ campaign.status }}">
+            <div class="queue-item" style="cursor: pointer;">
+                <div class="queue-item-number"
+                    style="background: {% if campaign.status == 'ACTIVE' %}var(--success){% else %}var(--bg-surface){% endif %}; color: {% if campaign.status == 'ACTIVE' %}#fff{% else %}var(--text-muted){% endif %}; font-size: 10px; min-width: 30px; text-align: center;">
+                    {{ loop.index }}
+                </div>
+                <div class="queue-item-body">
+                    <div class="queue-item-name"
+                        style="background: transparent; border: none; padding: 0; font-size: 14px;">
+                        {{ campaign.name }}
+                    </div>
+                    <div class="queue-item-files">
+                        <span class="queue-file-tag">ID: {{ campaign.id }}</span>
+                        <span class="queue-file-tag" style="color: var(--text-muted); border-color: var(--border);">{{
+                            campaign.objective }}</span>
+                        {% if campaign.status == 'ACTIVE' %}
+                        <span class="config-status active" style="font-size: 11px;">🟢 Ativa</span>
+                        {% else %}
+                        <span class="config-status" style="font-size: 11px; color: var(--text-muted);">⏸️ Pausada</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="btn-queue-remove" style="border: none; color: var(--accent); font-size: 18px;">
+                    ⚙️ Setup
+                </div>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const searchInput = document.getElementById('campaign-search');
+    const activeToggle = document.getElementById('filter-active-only');
+    const countBadge = document.getElementById('campaign-count');
+
+    function filtrarCampanhas() {
+        const term = searchInput.value.toLowerCase();
+        const onlyActive = activeToggle.checked;
+        const items = document.querySelectorAll('.campaign-item');
+        let visible = 0;
+
+        items.forEach(item => {
+            const name = item.getAttribute('data-name');
+            const status = item.getAttribute('data-status');
+
+            const matchesText = !term || name.includes(term);
+            const matchesStatus = !onlyActive || status === 'ACTIVE';
+
+            if (matchesText && matchesStatus) {
+                item.style.display = 'block';
+                visible++;
+            } else {
+                item.style.display = 'none';
+            }
+        });
+
+        countBadge.textContent = `${visible} Visíveis`;
+    }
+
+    searchInput.addEventListener('input', filtrarCampanhas);
+    activeToggle.addEventListener('change', filtrarCampanhas);
+</script>
+{% endblock %}

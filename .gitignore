@@ -1,0 +1,9 @@
+notepad.env
+token.json
+__pycache__/
+*.pyc
+.env
+.agent/
+*.log
+temp/
+optimizer_*/

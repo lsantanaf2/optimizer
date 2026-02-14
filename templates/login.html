@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}Login — OPTIMIZER{% endblock %}
+
+{% block breadcrumb %}
+Login
+{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width: 400px; margin: 100px auto; text-align: center; border-color: var(--accent);">
+    <div class="card-title" style="justify-content: center; margin-bottom: 20px; font-size: 18px;">
+        🔐 Login Necessário
+    </div>
+    <div class="card-desc" style="margin-bottom: 30px;">
+        Conecte-se com o Facebook para gerenciar seus anúncios e acessar o painel de otimização.
+    </div>
+    <a href="{{ auth_url }}" class="btn-submit-all"
+        style="text-decoration: none; display: inline-block; background: #1877f2; width: auto; min-width: 200px;">
+        Logar com o Facebook
+    </a>
+</div>
+{% endblock %}

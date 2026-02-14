@@ -1,0 +1,13 @@
+Status: 400
+{
+  "error": {
+    "message": "Invalid parameter",
+    "type": "OAuthException",
+    "code": 100,
+    "error_subcode": 1885183,
+    "is_transient": false,
+    "error_user_title": "O post do criativo dos an\u00fancios foi criada por um app que est\u00e1 em modo de desenvolvimento",
+    "error_user_msg": "O post do criativo dos an\u00fancios foi criado por um app que est\u00e1 em modo de desenvolvimento. Ele deve estar em modo p\u00fablico para criar este an\u00fancio.",
+    "fbtrace_id": "A9g0A12bRWRNU8EhmtgWkS8"
+  }
+}
