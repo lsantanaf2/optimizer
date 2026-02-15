@@ -430,21 +430,39 @@ class MetaUploader:
     def upload_media(self, file_path=None, url=None):
         """
         Upload de mídia (imagem ou vídeo), seja via arquivo local ou URL.
-        Retorna dict {'type': 'image'|'video', 'hash': ..., 'id': ...}
+        Detecta tipo proativamente via extensão ou cabeçalhos HTTP.
         """
         # Se for URL
         if url:
-            # Tentar inferir tipo pela extensão na URL ou assumir imagem (fallback da meta trata erro)
-            ext = os.path.splitext(url.split('?')[0])[1].lower()
-            video_exts = {'.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v', '.gif'}
+            norm_url = self._normalize_drive_link(url)
             
-            if ext in video_exts or 'drive.google.com' in url: # Drive UC link geralmente é usado para ambos, mas tentamos vídeo se houver indicação
-                # Nota: Meta API é mais chata com vídeo via URL, mas tentamos aqui
+            # Tentar detectar tipo via extensão primeiro
+            ext = os.path.splitext(norm_url.split('?')[0])[1].lower()
+            video_exts = {'.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v', '.gif'}
+            image_exts = {'.jpg', '.jpeg', '.png', '.webp', '.heic'}
+            
+            media_type = None
+            if ext in video_exts: media_type = 'video'
+            elif ext in image_exts: media_type = 'image'
+
+            # Se não detectou (ex: Drive link), fazer uma requisição HEAD para ver o Content-Type
+            if not media_type or 'drive.google.com' in norm_url:
+                try:
+                    head = requests.head(norm_url, allow_redirects=True, timeout=5)
+                    ct = head.headers.get('Content-Type', '').lower()
+                    if 'video' in ct: media_type = 'video'
+                    elif 'image' in ct: media_type = 'image'
+                except Exception:
+                    pass
+            
+            # Fallback final: se ainda não sabe, tenta vídeo primeiro (comportamento atual, mas mais seguro)
+            if media_type == 'video' or (not media_type and 'drive.google.com' in norm_url):
                 try:
                     video_id = self.upload_video_url(url)
                     return {'type': 'video', 'id': video_id, 'hash': None}
                 except Exception as e:
-                    if 'image' in str(e).lower(): # Fallback se falhar como vídeo mas for imagem
+                    # Se falhar como vídeo e o erro sugerir que é imagem, tenta imagem
+                    if 'image' in str(e).lower() or 'not a video' in str(e).lower():
                          image_hash = self.upload_image_url(url)
                          return {'type': 'image', 'hash': image_hash, 'id': None}
                     raise e
