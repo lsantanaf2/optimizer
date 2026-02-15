@@ -754,9 +754,24 @@
             adName = adName || `Anúncio ${filaAnuncios.length + 1}`;
 
 
+            function getMediaType(file, url) {
+                if (file) return file.type.startsWith('video') ? 'video' : 'image';
+                if (url) {
+                    const ext = url.split('?')[0].split('.').pop().toLowerCase();
+                    const videoExts = ['mp4', 'mov', 'avi', 'mkv', 'webm', 'm4v', 'gif'];
+                    if (videoExts.includes(ext)) return 'video';
+                    if (url.includes('drive.google.com')) return 'drive'; // Será detectado no backend
+                    return 'image'; // Fallback
+                }
+                return 'image';
+            }
+
+            const mediaType = getMediaType(feedInput.files[0] || storiesInput.files[0], urlFeedRemote || urlStoriesRemote);
+
             const item = {
                 id: Date.now(),
                 adName,
+                mediaType,
                 feedFile: feedInput.files[0] || null,
                 storiesFile: storiesInput.files[0] || null,
                 feedFileName: feedInput.files[0]?.name || null,
@@ -821,13 +836,20 @@
                 const thumbFile = item.feedFile || item.storiesFile;
                 const thumbHTML = criarThumbnailHTML(thumbFile);
 
+                const typeBadge = item.mediaType === 'video' ? '<span class="badge-video">🎬 VÍDEO</span>' :
+                    item.mediaType === 'drive' ? '<span class="badge-drive">📁 DRIVE</span>' :
+                        '<span class="badge-image">🖼️ IMAGEM</span>';
+
                 div.innerHTML = `
                     <div class="queue-item-number">${idx + 1}</div>
                     ${thumbHTML}
                     <div class="queue-item-body">
-                        <input class="queue-item-name" type="text" value="${escapeHtml(item.adName)}"
-                            onchange="atualizarNomeFila(${item.id}, this.value)"
-                            title="Edite o nome do anúncio">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            ${typeBadge}
+                            <input class="queue-item-name" type="text" value="${escapeHtml(item.adName)}"
+                                onchange="atualizarNomeFila(${item.id}, this.value)"
+                                title="Edite o nome do anúncio">
+                        </div>
                         <div class="queue-item-files">
                             ${item.feedFileName ? `<span class="queue-file-tag">🖼️ ${item.feedFileName}</span>` : ''}
                             ${item.urlFeed ? '<span class="badge-link">🔗 FEED LINK</span>' : ''}

@@ -344,53 +344,116 @@ class MetaUploader:
     # ======================== UPLOAD DE MÍDIA ========================
 
     def _normalize_drive_link(self, link):
-        """Converte links de visualização do Google Drive em links de download direto."""
+        """
+        Converte links do Google Drive (visualização, compartilhamento, abreviações)
+        em links de download direto robustos.
+        """
         if not link or 'drive.google.com' not in link:
             return link
         
-        # Link padrão: https://drive.`google.com/file/d/ID/view?usp=sharing
+        file_id = None
+        # Padrão 1: /file/d/ID/view
         if '/file/d/' in link:
             file_id = link.split('/file/d/')[1].split('/')[0]
+        # Padrão 2: ?id=ID
+        elif 'id=' in link:
+            parsed = urllib.parse.urlparse(link)
+            file_id = urllib.parse.parse_qs(parsed.query).get('id', [None])[0]
+            
+        if file_id:
             return f"https://drive.google.com/uc?export=download&id={file_id}"
         
-        # Link de pasta ou outro formato (não suportado para arquivo único direto)
         return link
 
+    def _download_file(self, url, dest_path):
+        """Baixa um arquivo de uma URL, tratando confirmação de vírus do Google Drive para arquivos grandes."""
+        try:
+            session = requests.Session()
+            # Primeira tentativa: o Drive pode retornar uma página de aviso se o arquivo for grande (>100MB)
+            response = session.get(url, stream=True, timeout=30)
+            
+            token = None
+            for key, value in response.cookies.items():
+                if key.startswith('download_warning'):
+                    token = value
+                    break
+            
+            if token:
+                # Se achou o token de aviso, faz o download real passando o confirm
+                self._log("🛡️ Ignorando aviso de antivírus do Drive...")
+                params = {'confirm': token}
+                response = session.get(url, params=params, stream=True, timeout=60)
+                
+            with open(dest_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=32768):
+                    if chunk:
+                        f.write(chunk)
+            return True
+        except Exception as e:
+            self._log(f"❌ Erro no download do arquivo: {str(e)}")
+            return False
+
     def upload_image_url(self, url):
-        """Upload de imagem via URL (parâmetro url da Meta)."""
+        """Upload de imagem via URL (parâmetro url da Meta) com fallback em memória (BytesIO)."""
         url = self._normalize_drive_link(url)
         self._log(f"🔗 Enviando URL de imagem para a Meta: {url[:60]}...")
         
+        api_url = f"https://graph.facebook.com/v18.0/{self.account_id}/adimages"
+        
         def _do():
-            image = AdImage(parent_id=self.account_id)
-            image[AdImage.Field.url] = url
-            image.remote_create()
-            return image[AdImage.Field.hash]
+            resp = requests.post(api_url, data={'url': url, 'access_token': self.access_token})
+            result = resp.json()
+            if 'error' in result:
+                msg = result['error'].get('message', '')
+                # Fallback via bytes em memória (BytesIO) se a Meta falhar no download direto
+                if any(k in msg.lower() for k in ['problem', 'download', 'failed', 'could not']):
+                    self._log("⚠️ Meta falhou ao baixar URL. Tentando fallback via BytesIO (memória)...")
+                    try:
+                        r = requests.get(url, timeout=30)
+                        image = AdImage(parent_id=self.account_id)
+                        # O SDK aceita bytes diretamente no campo 'bytes' (baseado no estudo técnico)
+                        # ou via inicialização se usarmos a estrutura correta.
+                        # Mas a forma mais garantida no SDK é remote_create com params.
+                        image.remote_create(params={'bytes': r.content})
+                        return image[AdImage.Field.hash]
+                    except Exception as ex:
+                        self._log(f"❌ Falha no fallback BytesIO: {str(ex)}")
+                        raise ex
+                raise Exception(msg)
+            
+            images = result.get('images', {})
+            if not images: raise Exception("Meta não retornou hash da imagem")
+            return list(images.values())[0].get('hash')
 
         image_hash = self._with_retry(f"Upload imagem via URL", _do)
         self._log(f"✅ Imagem via URL vinculada (hash: {image_hash[:12]}...)")
         return image_hash
 
     def upload_video_url(self, url):
-        """Upload de vídeo via URL (parâmetro file_url da Meta)."""
+        """Upload de vídeo via URL (parâmetro file_url da Meta) com fallback local robusto."""
         url = self._normalize_drive_link(url)
         self._log(f"🔗 Enviando URL de vídeo para a Meta: {url[:60]}...")
         
-        # Nota: Usamos requests direto aqui porque o SDK (AdVideo) tem um bug 
-        # que exige um 'filepath' local mesmo para uploads via URL.
         api_url = f"https://graph.facebook.com/v18.0/{self.account_id}/advideos"
         
         def _do():
-            resp = requests.post(
-                api_url,
-                data={
-                    'file_url': url,
-                    'access_token': self.access_token
-                }
-            )
+            resp = requests.post(api_url, data={'file_url': url, 'access_token': self.access_token})
             result = resp.json()
             if 'error' in result:
-                raise Exception(result['error'].get('message', 'Erro desconhecido no upload de vídeo via URL'))
+                msg = result['error'].get('message', '')
+                # Fallback se a Meta não conseguir baixar o arquivo
+                if any(k in msg.lower() for k in ['problem', 'download', 'failed', 'could not']):
+                    self._log("⚠️ Meta falhou ao baixar vídeo. Tentando fallback via download local robusto...")
+                    tmp_path = os.path.join(tempfile.gettempdir(), f"vid_{int(time.time())}.mp4")
+                    if self._download_file(url, tmp_path):
+                        try:
+                            res = self.upload_video(tmp_path)
+                            if os.path.exists(tmp_path): os.unlink(tmp_path)
+                            return res
+                        except Exception as ex:
+                            if os.path.exists(tmp_path): os.unlink(tmp_path)
+                            raise ex
+                raise Exception(msg)
             return result.get('id')
 
         video_id = self._with_retry(f"Upload vídeo via URL", _do)
