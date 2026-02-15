@@ -87,13 +87,31 @@ class MetaUploader:
         """Busca formulários de lead de uma página do Facebook."""
         try:
             token = page_access_token or self.access_token
+
+            # Camada de Segurança: Tentar obter o Page Access Token se não foi fornecido
+            if not page_access_token:
+                try:
+                    p_resp = requests.get(
+                        f"https://graph.facebook.com/v18.0/{page_id}",
+                        params={'fields': 'access_token', 'access_token': self.access_token}
+                    ).json()
+                    if 'access_token' in p_resp:
+                        token = p_resp['access_token']
+                        print(f"🔑 [get_leadgen_forms] Usando Page Access Token para a página {page_id}")
+                except Exception as e:
+                    print(f"⚠️ [get_leadgen_forms] Falha ao obter Page Access Token (usando User Token): {e}")
+
             resp = requests.get(
                 f"https://graph.facebook.com/v18.0/{page_id}/leadgen_forms",
-                params={'fields': 'id,name,status', 'access_token': token, 'limit': 50}
+                params={'fields': 'id,name,status', 'access_token': token, 'limit': 100}
             ).json()
+
             if 'error' in resp:
-                print(f"⚠️ [get_leadgen_forms] API error: {resp['error'].get('message', '?')}")
+                error_msg = resp['error'].get('message', '?')
+                print(f"⚠️ [get_leadgen_forms] API error: {error_msg}")
+                self._log(f"⚠️ Erro ao buscar formulários: {error_msg}")
                 return []
+
             forms = []
             for f in resp.get('data', []):
                 forms.append({

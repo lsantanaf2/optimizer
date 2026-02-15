@@ -74,7 +74,7 @@ def index():
 
 def pagina_login():
     # Scopes: Basic Hygiene Package
-    scopes = 'public_profile,email,ads_read,ads_management,pages_show_list,pages_read_engagement,instagram_basic,read_insights'
+    scopes = 'public_profile,email,ads_read,ads_management,pages_show_list,pages_read_engagement,instagram_basic,read_insights,pages_manage_ads'
     auth_url = (
         f"https://www.facebook.com/v18.0/dialog/oauth?"
         f"client_id={APP_ID}&redirect_uri={REDIRECT_URI}&scope={scopes}"
@@ -432,7 +432,7 @@ def upload_single(campaign_id):
                 primary_texts=textos,
                 headlines=titulos,
                 cta_type=cta,
-                instagram_actor_id=instagram_actor_id,
+                instagram_user_id=instagram_actor_id,
                 url_tags=utm_pattern,
                 lead_gen_form_id=lead_gen_form_id,
             )
