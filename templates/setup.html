@@ -739,10 +739,17 @@
                 adName = feedInput.files[0].name.replace(/\.[^/.]+$/, '');
             } else if (storiesInput.files.length) {
                 adName = storiesInput.files[0].name.replace(/\.[^/.]+$/, '');
-            } else if (urlFeedRemote) {
-                adName = urlFeedRemote.substring(urlFeedRemote.lastIndexOf('/') + 1);
-            } else if (urlStoriesRemote) {
-                adName = urlStoriesRemote.substring(urlStoriesRemote.lastIndexOf('/') + 1);
+            } else if (urlFeedRemote || urlStoriesRemote) {
+                const link = urlFeedRemote || urlStoriesRemote;
+                if (link.includes('id=')) {
+                    const id = link.split('id=')[1].split('&')[0];
+                    adName = `Drive_${id.substring(0, 6)}`;
+                } else if (link.includes('/d/')) {
+                    const id = link.split('/d/')[1].split('/')[0];
+                    adName = `Drive_${id.substring(0, 6)}`;
+                } else {
+                    adName = link.substring(link.lastIndexOf('/') + 1).split('?')[0] || `Link_${filaAnuncios.length + 1}`;
+                }
             }
             adName = adName || `Anúncio ${filaAnuncios.length + 1}`;
 

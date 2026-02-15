@@ -376,11 +376,22 @@ class MetaUploader:
         url = self._normalize_drive_link(url)
         self._log(f"🔗 Enviando URL de vídeo para a Meta: {url[:60]}...")
         
+        # Nota: Usamos requests direto aqui porque o SDK (AdVideo) tem um bug 
+        # que exige um 'filepath' local mesmo para uploads via URL.
+        api_url = f"https://graph.facebook.com/v18.0/{self.account_id}/advideos"
+        
         def _do():
-            video = AdVideo(parent_id=self.account_id)
-            video[AdVideo.Field.file_url] = url
-            video.remote_create()
-            return video.get_id()
+            resp = requests.post(
+                api_url,
+                data={
+                    'file_url': url,
+                    'access_token': self.access_token
+                }
+            )
+            result = resp.json()
+            if 'error' in result:
+                raise Exception(result['error'].get('message', 'Erro desconhecido no upload de vídeo via URL'))
+            return result.get('id')
 
         video_id = self._with_retry(f"Upload vídeo via URL", _do)
         self._log(f"✅ Vídeo via URL vinculado (ID: {video_id})")
