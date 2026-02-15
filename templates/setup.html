@@ -979,34 +979,35 @@
             } else {
                 mostrarToast(`⚠️ ${enviados} OK, ${erros} com erro`);
             }
+        }
 
-            // ======================== UTILS ========================
-            function mostrarToast(msg) {
-                const t = document.getElementById('toast');
-                t.textContent = msg; t.classList.add('show');
-                setTimeout(() => t.classList.remove('show'), 3500);
+        // ======================== UTILS ========================
+        function mostrarToast(msg) {
+            const t = document.getElementById('toast');
+            t.textContent = msg; t.classList.add('show');
+            setTimeout(() => t.classList.remove('show'), 3500);
+        }
+
+        // ======================== CROSS CHECK / WARNINGS ========================
+        function verificarAvisoCorte() {
+            const feedInput = document.getElementById('arquivo_feed');
+            const storiesInput = document.getElementById('arquivo_stories');
+            const warning = document.getElementById('warning-crop');
+
+            const hasFeed = feedInput.files && feedInput.files.length > 0;
+            const hasStories = storiesInput.files && storiesInput.files.length > 0;
+
+            // Condição: Tem Stories MAS NÃO TEM Feed
+            if (hasStories && !hasFeed) {
+                warning.style.display = 'flex';
+            } else {
+                warning.style.display = 'none';
             }
+        }
 
-            // ======================== CROSS CHECK / WARNINGS ========================
-            function verificarAvisoCorte() {
-                const feedInput = document.getElementById('arquivo_feed');
-                const storiesInput = document.getElementById('arquivo_stories');
-                const warning = document.getElementById('warning-crop');
-
-                const hasFeed = feedInput.files && feedInput.files.length > 0;
-                const hasStories = storiesInput.files && storiesInput.files.length > 0;
-
-                // Condição: Tem Stories MAS NÃO TEM Feed
-                if (hasStories && !hasFeed) {
-                    warning.style.display = 'flex';
-                } else {
-                    warning.style.display = 'none';
-                }
-            }
-
-            // Attach listeners
-            document.getElementById('arquivo_feed').addEventListener('change', verificarAvisoCorte);
-            document.getElementById('arquivo_stories').addEventListener('change', verificarAvisoCorte);
+        // Attach listeners
+        document.getElementById('arquivo_feed').addEventListener('change', verificarAvisoCorte);
+        document.getElementById('arquivo_stories').addEventListener('change', verificarAvisoCorte);
 
     </script>
 
