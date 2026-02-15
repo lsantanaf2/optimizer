@@ -1,4 +1,4 @@
-name: Deploy to VPS
+name: Deploy Meta Optimizer Sniper
 
 on:
   push:
@@ -13,13 +13,25 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Deploy to VPS via SSH
-        uses: appleboy/ssh-action@master
+        uses: appleboy/ssh-action@v0.1.10
         with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
+          host: ${{ secrets.VPS_IP }}
+          username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: 22
           script: |
             cd /var/www/optimizer
-            git pull origin main
-            docker compose up -d --build
+            git fetch origin main
+            git reset --hard origin/main
+            
+            # Rebuild e Restart do Container
+            docker build -t optimizer-image:auto .
+            docker stop meta-optimizer-sniper || true
+            docker rm meta-optimizer-sniper || true
+            
+            docker run -d --name meta-optimizer-sniper \
+              -p 5000:5000 \
+              -e APP_ID=${{ secrets.APP_ID }} \
+              -e APP_SECRET=${{ secrets.APP_SECRET }} \
+              -e REDIRECT_URI=${{ secrets.REDIRECT_URI }} \
+              --restart always \
+              optimizer-image:auto
