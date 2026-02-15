@@ -25,6 +25,12 @@ TOKEN_FILE = 'token.json'
 app = Flask(__name__, static_folder='static')
 app.secret_key = 'chave-secreta-optimizer-2024'
 
+VERSION = "v1.2.1"
+
+@app.context_processor
+def inject_version():
+    return dict(version=VERSION)
+
 # --- Funções auxiliares para persistência do token ---
 
 def salvar_token(access_token):
