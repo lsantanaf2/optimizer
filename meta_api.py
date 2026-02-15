@@ -508,6 +508,11 @@ class MetaUploader:
             for k, v in payload_dict.items():
                 post_data[k] = json.dumps(v) if isinstance(v, (dict, list)) else v
 
+            # Pequena espera se houver vídeos (Meta leva tempo para processar o upload via URL)
+            if 'videos' in str(payload_dict) or 'video_id' in str(payload_dict):
+                self._log("⏳ Aguardando 5s para processamento de vídeo...")
+                time.sleep(5)
+
             resp = requests.post(api_url, data=post_data)
             result = resp.json()
 
@@ -517,10 +522,12 @@ class MetaUploader:
                     f"Code: {error.get('code')}, "
                     f"SubCode: {error.get('error_subcode', 'N/A')}, "
                     f"Message: {error.get('message', '?')}, "
-                    f"Type: {error.get('type', '?')}"
+                    f"Type: {error.get('type', '?')}, "
+                    f"Title: {error.get('error_user_title', 'N/A')}, "
+                    f"UserMsg: {error.get('error_user_msg', 'N/A')}"
                 )
-                print(f"❌ [{label}] API Error: {error_detail}")
-                print(f"   Payload keys: {list(payload_dict.keys())}")
+                print(f"❌ [{label}] API Error Detail: {json.dumps(result, indent=2, ensure_ascii=False)}")
+                self._log(f"❌ [{label}] Falha: {error.get('message', '?')} ({error.get('error_user_msg', 'N/A')})")
                 return None, error.get('message', 'Unknown error')
 
             creative_id = result.get('id')
@@ -659,25 +666,33 @@ class MetaUploader:
         link_url_payload = {'website_url': link_url}
         if lead_gen_form_id:
             link_url_payload['lead_gen_form_id'] = lead_gen_form_id
-            # Para Lead Ads, às vezes a Meta exige que o display_url seja o domínio
+            # Para Lead Ads, website_url deve ser a URL da página ou omitido em alguns contextos
+            # Mas na Graph API v18+, website_url é aceito como destino opcional
             if '//' in link_url:
                 link_url_payload['display_url'] = link_url.split('//')[1].split('/')[0]
 
         asset_feed_spec = {
             'bodies': to_text_list(bodies),
             'titles': to_text_list(titles),
-            'descriptions': [{'text': ' '}],
-            'ad_formats': ['SINGLE_IMAGE'],
             'call_to_action_types': [cta_type],
             'link_urls': [link_url_payload],
             'asset_customization_rules': [feed_rule, stories_rule],
-            'images': images,
         }
         
-        # Se for vídeo, mudar o formato
-        if videos:
-            asset_feed_spec['ad_formats'] = ['SINGLE_VIDEO']
+        # Adicionar descrições apenas se houver algo para não poluir
+        asset_feed_spec['descriptions'] = [{'text': ' '}]
+
+        # Definir formatos e mídias
+        formats = []
+        if images: 
+            formats.append('SINGLE_IMAGE')
+            asset_feed_spec['images'] = images
+        if videos: 
+            formats.append('SINGLE_VIDEO')
             asset_feed_spec['videos'] = videos
+        
+        # Se for misto, a Meta geralmente aceita o primeiro ou espera ambos no ad_formats
+        asset_feed_spec['ad_formats'] = formats if formats else ['SINGLE_IMAGE']
 
         object_story_spec = {'page_id': page_id}
         if instagram_user_id:
