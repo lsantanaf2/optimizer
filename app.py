@@ -366,6 +366,10 @@ def upload_single(campaign_id):
         titulos = request.form.getlist('headline[]')
         lead_gen_form_id = request.form.get('lead_gen_form_id') or None
 
+        # New: Links from Drive/Remote
+        url_feed_remote = request.form.get('url_feed_remote') or None
+        url_stories_remote = request.form.get('url_stories_remote') or None
+
         # Save uploaded files to temp dir
         temp_dir = tempfile.mkdtemp(prefix='optimizer_')
         feed_path = None
@@ -383,8 +387,8 @@ def upload_single(campaign_id):
                 stories_path = os.path.join(temp_dir, f.filename)
                 f.save(stories_path)
 
-        if not feed_path and not stories_path:
-            return jsonify({'success': False, 'error': 'Nenhum arquivo de mídia enviado'}), 400
+        if not feed_path and not stories_path and not url_feed_remote and not url_stories_remote:
+            return jsonify({'success': False, 'error': 'Nenhuma mídia (arquivo ou link) enviada'}), 400
 
         # Initialize uploader
         uploader = MetaUploader(account_id, access_token, APP_ID, APP_SECRET)
@@ -393,12 +397,19 @@ def upload_single(campaign_id):
         feed_media = None
         stories_media = None
 
-        if feed_path:
-            feed_media = uploader.upload_media(feed_path)
+        # Case 1: Prioritize Remote URLs (Drive)
+        if url_feed_remote:
+            feed_media = uploader.upload_media(url=url_feed_remote)
+            uploader.smart_delay()
+        elif feed_path:
+            feed_media = uploader.upload_media(file_path=feed_path)
             uploader.smart_delay()
 
-        if stories_path:
-            stories_media = uploader.upload_media(stories_path)
+        if url_stories_remote:
+            stories_media = uploader.upload_media(url=url_stories_remote)
+            uploader.smart_delay()
+        elif stories_path:
+            stories_media = uploader.upload_media(file_path=stories_path)
             uploader.smart_delay()
 
         # Determine target adset

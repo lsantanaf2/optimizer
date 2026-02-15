@@ -237,16 +237,30 @@
                     <div class="upload-icon">🖼️</div>
                     <div class="upload-label">Feed / Square</div>
                     <div class="upload-hint">1:1 ou 4:5 · Imagem ou Vídeo</div>
-                    <input type="file" id="arquivo_feed" accept="image/*,video/*"
-                        onchange="previewFile(this, 'preview-feed')">
+
+                    <div class="upload-options">
+                        <input type="file" id="arquivo_feed" accept="image/*,video/*"
+                            onchange="previewFile(this, 'preview-feed')">
+                        <div class="upload-separator">— OU USE LINK (GOOGLE DRIVE) —</div>
+                        <input type="url" id="url_feed_remote" placeholder="https://drive.google.com/..."
+                            class="input-url-remote" oninput="validarInputMidia('feed')">
+                    </div>
+
                     <div class="file-preview" id="preview-feed"></div>
                 </div>
                 <div class="upload-box" id="box-stories">
                     <div class="upload-icon">📱</div>
                     <div class="upload-label">Stories / Reels</div>
                     <div class="upload-hint">9:16 · Imagem ou Vídeo</div>
-                    <input type="file" id="arquivo_stories" accept="image/*,video/*"
-                        onchange="previewFile(this, 'preview-stories')">
+
+                    <div class="upload-options">
+                        <input type="file" id="arquivo_stories" accept="image/*,video/*"
+                            onchange="previewFile(this, 'preview-stories')">
+                        <div class="upload-separator">— OU USE LINK (GOOGLE DRIVE) —</div>
+                        <input type="url" id="url_stories_remote" placeholder="https://drive.google.com/..."
+                            class="input-url-remote" oninput="validarInputMidia('stories')">
+                    </div>
+
                     <div class="file-preview" id="preview-stories"></div>
                 </div>
             </div>
@@ -303,6 +317,49 @@
     </div>
 
     <div class="toast" id="toast"></div>
+
+    <style>
+        .upload-options {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            width: 100%;
+        }
+
+        .upload-separator {
+            font-size: 10px;
+            color: var(--text-muted);
+            font-weight: bold;
+            letter-spacing: 1px;
+        }
+
+        .input-url-remote {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 8px 12px;
+            color: white;
+            font-size: 12px;
+            width: 100%;
+            transition: all 0.3s ease;
+        }
+
+        .input-url-remote:focus {
+            outline: none;
+            border-color: var(--primary);
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .badge-link {
+            background: var(--primary);
+            color: black;
+            font-size: 9px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: bold;
+            margin-left: 5px;
+        }
+    </style>
 
     <script>
         const CAMPAIGN_ID = "{{ campaign_id }}";
@@ -569,17 +626,26 @@
         function adicionarNaFila() {
             const feedInput = document.getElementById('arquivo_feed');
             const storiesInput = document.getElementById('arquivo_stories');
-            if (!feedInput.files.length && !storiesInput.files.length) {
-                mostrarToast('❌ Selecione pelo menos um arquivo de mídia');
+            const urlFeedRemote = document.getElementById('url_feed_remote').value.trim();
+            const urlStoriesRemote = document.getElementById('url_stories_remote').value.trim();
+
+            if (!feedInput.files.length && !storiesInput.files.length && !urlFeedRemote && !urlStoriesRemote) {
+                mostrarToast('❌ Selecione pelo menos um arquivo de mídia ou forneça um link remoto');
                 return;
             }
 
             let adName = '';
             if (feedInput.files.length) {
                 adName = feedInput.files[0].name.replace(/\.[^/.]+$/, '');
-            } else {
+            } else if (storiesInput.files.length) {
                 adName = storiesInput.files[0].name.replace(/\.[^/.]+$/, '');
+            } else if (urlFeedRemote) {
+                adName = urlFeedRemote.substring(urlFeedRemote.lastIndexOf('/') + 1);
+            } else if (urlStoriesRemote) {
+                adName = urlStoriesRemote.substring(urlStoriesRemote.lastIndexOf('/') + 1);
             }
+            adName = adName || `Anúncio ${filaAnuncios.length + 1}`;
+
 
             const item = {
                 id: Date.now(),
@@ -588,6 +654,8 @@
                 storiesFile: storiesInput.files[0] || null,
                 feedFileName: feedInput.files[0]?.name || null,
                 storiesFileName: storiesInput.files[0]?.name || null,
+                urlFeed: urlFeedRemote,
+                urlStories: urlStoriesRemote,
             };
 
             filaAnuncios.push(item);
@@ -595,6 +663,8 @@
 
             feedInput.value = '';
             storiesInput.value = '';
+            document.getElementById('url_feed_remote').value = '';
+            document.getElementById('url_stories_remote').value = '';
             document.getElementById('preview-feed').style.display = 'none';
             document.getElementById('preview-stories').style.display = 'none';
             document.getElementById('box-feed').style.borderColor = '';
@@ -653,7 +723,9 @@
                             title="Edite o nome do anúncio">
                         <div class="queue-item-files">
                             ${item.feedFileName ? `<span class="queue-file-tag">🖼️ ${item.feedFileName}</span>` : ''}
+                            ${item.urlFeed ? '<span class="badge-link">🔗 FEED LINK</span>' : ''}
                             ${item.storiesFileName ? `<span class="queue-file-tag">📱 ${item.storiesFileName}</span>` : ''}
+                            ${item.urlStories ? '<span class="badge-link">🔗 STORY LINK</span>' : ''}
                         </div>
                     </div>
                     <button class="btn-queue-remove" onclick="removerDaFila(${item.id})">✕</button>
@@ -742,6 +814,8 @@
                 cfg.titulos.forEach(t => fd.append('headline[]', t));
                 if (item.feedFile) fd.append('arquivo_feed', item.feedFile);
                 if (item.storiesFile) fd.append('arquivo_stories', item.storiesFile);
+                if (item.urlFeed) fd.append('url_feed_remote', item.urlFeed);
+                if (item.urlStories) fd.append('url_stories_remote', item.urlStories);
 
                 // Identity & Tracking
                 const pageId = document.getElementById('select-page').value;
@@ -757,75 +831,85 @@
                 try {
                     logConsole(`📤 Fazendo upload de "${item.adName}"...`, 'log-info');
 
-                    const r = await fetch(`/campanha/${CAMPAIGN_ID}/upload`, { method: 'POST', body: fd });
-                    const res = await r.json();
+                    let res;
+                    try {
+                        const r = await fetch(`/campanha/${CAMPAIGN_ID}/upload`, { method: 'POST', body: fd });
+                        const text = await r.text();
+                        try {
+                            res = JSON.parse(text);
+                        } catch (e) {
+                            erros++;
+                            logConsole(`❌ Erro do Servidor (500/Timeout): O servidor retornou uma página de erro HTML em vez de JSON. Verifique os logs no terminal da VPS.`, 'log-error');
+                            console.error('Resposta não-JSON:', text);
+                            continue;
+                        }
 
-                    if (res.success) {
-                        enviados++;
-                        logConsole(`✅ "${item.adName}" criado com sucesso (PAUSADO) — ID: ${res.ad_id}`, 'log-success');
-                    } else {
+                        if (res.success) {
+                            enviados++;
+                            logConsole(`✅ "${item.adName}" criado com sucesso (PAUSADO) — ID: ${res.ad_id}`, 'log-success');
+                        } else {
+                            erros++;
+                            logConsole(`❌ "${item.adName}" falhou: ${res.error}`, 'log-error');
+                        }
+
+                        // Show backend logs
+                        if (res.logs) {
+                            res.logs.forEach(l => logConsole(l, classifyLog(l)));
+                        }
+
+                        // Visual delay message between items
+                        if (i < filaAnuncios.length - 1) {
+                            logConsole(`⏳ Aguardando delay de segurança antes do próximo...`);
+                        }
+
+                    } catch (e) {
                         erros++;
-                        logConsole(`❌ "${item.adName}" falhou: ${res.error}`, 'log-error');
+                        logConsole(`❌ Erro de rede ao enviar "${item.adName}": ${e.message}`, 'log-error');
                     }
+                }
 
-                    // Show backend logs
-                    if (res.logs) {
-                        res.logs.forEach(l => logConsole(l, classifyLog(l)));
-                    }
+            btn.disabled = false;
+                btn.textContent = '🚀 Subir Todos os Anúncios';
 
-                    // Visual delay message between items
-                    if (i < filaAnuncios.length - 1) {
-                        logConsole(`⏳ Aguardando delay de segurança antes do próximo...`);
-                    }
+                logConsole(`🏁 Lote concluído: ${enviados} ✅ sucesso, ${erros} ❌ erro(s)`, enviados > 0 ? 'log-success' : 'log-error');
+                logStop();
 
-                } catch (e) {
-                    erros++;
-                    logConsole(`❌ Erro de rede ao enviar "${item.adName}": ${e.message}`, 'log-error');
+                if (erros === 0) {
+                    mostrarToast(`🎉 ${enviados} anúncio(s) enviados com sucesso!`);
+                    filaAnuncios.length = 0;
+                    renderizarFila();
+                } else {
+                    mostrarToast(`⚠️ ${enviados} OK, ${erros} com erro — veja o console`);
                 }
             }
 
-            btn.disabled = false;
-            btn.textContent = '🚀 Subir Todos os Anúncios';
-
-            logConsole(`🏁 Lote concluído: ${enviados} ✅ sucesso, ${erros} ❌ erro(s)`, enviados > 0 ? 'log-success' : 'log-error');
-            logStop();
-
-            if (erros === 0) {
-                mostrarToast(`🎉 ${enviados} anúncio(s) enviados com sucesso!`);
-                filaAnuncios.length = 0;
-                renderizarFila();
-            } else {
-                mostrarToast(`⚠️ ${enviados} OK, ${erros} com erro — veja o console`);
+            // ======================== UTILS ========================
+            function mostrarToast(msg) {
+                const t = document.getElementById('toast');
+                t.textContent = msg; t.classList.add('show');
+                setTimeout(() => t.classList.remove('show'), 3500);
             }
-        }
 
-        // ======================== UTILS ========================
-        function mostrarToast(msg) {
-            const t = document.getElementById('toast');
-            t.textContent = msg; t.classList.add('show');
-            setTimeout(() => t.classList.remove('show'), 3500);
-        }
+            // ======================== CROSS CHECK / WARNINGS ========================
+            function verificarAvisoCorte() {
+                const feedInput = document.getElementById('arquivo_feed');
+                const storiesInput = document.getElementById('arquivo_stories');
+                const warning = document.getElementById('warning-crop');
 
-        // ======================== CROSS CHECK / WARNINGS ========================
-        function verificarAvisoCorte() {
-            const feedInput = document.getElementById('arquivo_feed');
-            const storiesInput = document.getElementById('arquivo_stories');
-            const warning = document.getElementById('warning-crop');
+                const hasFeed = feedInput.files && feedInput.files.length > 0;
+                const hasStories = storiesInput.files && storiesInput.files.length > 0;
 
-            const hasFeed = feedInput.files && feedInput.files.length > 0;
-            const hasStories = storiesInput.files && storiesInput.files.length > 0;
-
-            // Condição: Tem Stories MAS NÃO TEM Feed
-            if (hasStories && !hasFeed) {
-                warning.style.display = 'flex';
-            } else {
-                warning.style.display = 'none';
+                // Condição: Tem Stories MAS NÃO TEM Feed
+                if (hasStories && !hasFeed) {
+                    warning.style.display = 'flex';
+                } else {
+                    warning.style.display = 'none';
+                }
             }
-        }
 
-        // Attach listeners
-        document.getElementById('arquivo_feed').addEventListener('change', verificarAvisoCorte);
-        document.getElementById('arquivo_stories').addEventListener('change', verificarAvisoCorte);
+            // Attach listeners
+            document.getElementById('arquivo_feed').addEventListener('change', verificarAvisoCorte);
+            document.getElementById('arquivo_stories').addEventListener('change', verificarAvisoCorte);
 
     </script>
 

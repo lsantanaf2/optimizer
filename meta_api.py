@@ -303,6 +303,49 @@ class MetaUploader:
 
     # ======================== UPLOAD DE MÍDIA ========================
 
+    def _normalize_drive_link(self, link):
+        """Converte links de visualização do Google Drive em links de download direto."""
+        if not link or 'drive.google.com' not in link:
+            return link
+        
+        # Link padrão: https://drive.`google.com/file/d/ID/view?usp=sharing
+        if '/file/d/' in link:
+            file_id = link.split('/file/d/')[1].split('/')[0]
+            return f"https://drive.google.com/uc?export=download&id={file_id}"
+        
+        # Link de pasta ou outro formato (não suportado para arquivo único direto)
+        return link
+
+    def upload_image_url(self, url):
+        """Upload de imagem via URL (parâmetro url da Meta)."""
+        url = self._normalize_drive_link(url)
+        self._log(f"🔗 Enviando URL de imagem para a Meta: {url[:60]}...")
+        
+        def _do():
+            image = AdImage(parent_id=self.account_id)
+            image[AdImage.Field.url] = url
+            image.remote_create()
+            return image[AdImage.Field.hash]
+
+        image_hash = self._with_retry(f"Upload imagem via URL", _do)
+        self._log(f"✅ Imagem via URL vinculada (hash: {image_hash[:12]}...)")
+        return image_hash
+
+    def upload_video_url(self, url):
+        """Upload de vídeo via URL (parâmetro file_url da Meta)."""
+        url = self._normalize_drive_link(url)
+        self._log(f"🔗 Enviando URL de vídeo para a Meta: {url[:60]}...")
+        
+        def _do():
+            video = AdVideo(parent_id=self.account_id)
+            video[AdVideo.Field.file_url] = url
+            video.remote_create()
+            return video.get_id()
+
+        video_id = self._with_retry(f"Upload vídeo via URL", _do)
+        self._log(f"✅ Vídeo via URL vinculado (ID: {video_id})")
+        return video_id
+
     def upload_image(self, file_path):
         """Upload de imagem para a conta. Retorna image_hash."""
         filename = os.path.basename(file_path)
@@ -333,20 +376,44 @@ class MetaUploader:
         self._log(f"✅ Vídeo '{filename}' enviado (ID: {video_id})")
         return video_id
 
-    def upload_media(self, file_path):
+    def upload_media(self, file_path=None, url=None):
         """
-        Upload de mídia (imagem ou vídeo).
+        Upload de mídia (imagem ou vídeo), seja via arquivo local ou URL.
         Retorna dict {'type': 'image'|'video', 'hash': ..., 'id': ...}
         """
-        ext = os.path.splitext(file_path)[1].lower()
-        video_exts = {'.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v', '.gif'}
+        # Se for URL
+        if url:
+            # Tentar inferir tipo pela extensão na URL ou assumir imagem (fallback da meta trata erro)
+            ext = os.path.splitext(url.split('?')[0])[1].lower()
+            video_exts = {'.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v', '.gif'}
+            
+            if ext in video_exts or 'drive.google.com' in url: # Drive UC link geralmente é usado para ambos, mas tentamos vídeo se houver indicação
+                # Nota: Meta API é mais chata com vídeo via URL, mas tentamos aqui
+                try:
+                    video_id = self.upload_video_url(url)
+                    return {'type': 'video', 'id': video_id, 'hash': None}
+                except Exception as e:
+                    if 'image' in str(e).lower(): # Fallback se falhar como vídeo mas for imagem
+                         image_hash = self.upload_image_url(url)
+                         return {'type': 'image', 'hash': image_hash, 'id': None}
+                    raise e
+            else:
+                image_hash = self.upload_image_url(url)
+                return {'type': 'image', 'hash': image_hash, 'id': None}
 
-        if ext in video_exts:
-            video_id = self.upload_video(file_path)
-            return {'type': 'video', 'id': video_id, 'hash': None}
-        else:
-            image_hash = self.upload_image(file_path)
-            return {'type': 'image', 'hash': image_hash, 'id': None}
+        # Se for arquivo local
+        if file_path:
+            ext = os.path.splitext(file_path)[1].lower()
+            video_exts = {'.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v', '.gif'}
+
+            if ext in video_exts:
+                video_id = self.upload_video(file_path)
+                return {'type': 'video', 'id': video_id, 'hash': None}
+            else:
+                image_hash = self.upload_image(file_path)
+                return {'type': 'image', 'hash': image_hash, 'id': None}
+        
+        return None
 
     # ======================== CREATIVE COM ASSET CUSTOMIZATION ========================
 
@@ -443,8 +510,9 @@ class MetaUploader:
                     'call_to_action': {
                         'type': cta_type,
                         'value': {
-                            'link': link_url,
-                            **(({'lead_gen_form_id': lead_gen_form_id} if lead_gen_form_id else {}))
+                            'lead_gen_form_id': lead_gen_form_id
+                        } if lead_gen_form_id else {
+                            'link': link_url
                         }
                     }
                 }
@@ -537,18 +605,27 @@ class MetaUploader:
         else:
             stories_rule['video_label'] = {'name': STORY_LABEL}
 
+        link_url_payload = {'website_url': link_url}
+        if lead_gen_form_id:
+            link_url_payload['lead_gen_form_id'] = lead_gen_form_id
+            # Para Lead Ads, às vezes a Meta exige que o display_url seja o domínio
+            if '//' in link_url:
+                link_url_payload['display_url'] = link_url.split('//')[1].split('/')[0]
+
         asset_feed_spec = {
             'bodies': to_text_list(bodies),
             'titles': to_text_list(titles),
             'descriptions': [{'text': ' '}],
             'ad_formats': ['SINGLE_IMAGE'],
             'call_to_action_types': [cta_type],
-            'link_urls': [{'website_url': link_url}],
+            'link_urls': [link_url_payload],
             'asset_customization_rules': [feed_rule, stories_rule],
             'images': images,
         }
-        # Only include videos if there are any
+        
+        # Se for vídeo, mudar o formato
         if videos:
+            asset_feed_spec['ad_formats'] = ['SINGLE_VIDEO']
             asset_feed_spec['videos'] = videos
 
         object_story_spec = {'page_id': page_id}
