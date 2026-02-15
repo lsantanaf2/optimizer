@@ -13,6 +13,7 @@ from facebook_business.adobjects.user import User
 from facebook_business.adobjects.adaccount import AdAccount
 from facebook_business.adobjects.campaign import Campaign
 from facebook_business.adobjects.adset import AdSet
+from facebook_business.adobjects.business import Business
 from meta_api import MetaUploader
 
 load_dotenv('notepad.env')
@@ -25,7 +26,7 @@ TOKEN_FILE = 'token.json'
 app = Flask(__name__, static_folder='static')
 app.secret_key = 'chave-secreta-optimizer-2024'
 
-VERSION = "v1.2.1"
+VERSION = "v1.2.3"
 
 @app.context_processor
 def inject_version():
@@ -149,6 +150,28 @@ def listar_contas():
         print(f"❌ Error listing accounts: {e}")
         limpar_token()
         return redirect(url_for('index'))
+
+@app.route('/api/businesses')
+def api_businesses():
+    """Retorna lista de Business Portfolios (BMs) que o usuário tem acesso."""
+    access_token = obter_token()
+    if not access_token:
+        return jsonify({'error': 'Não autenticado'}), 401
+    
+    try:
+        inicializar_api(access_token)
+        me = User(fbid='me')
+        bms_raw = me.get_businesses(fields=['name', 'id'])
+        
+        bms = []
+        for bm in bms_raw:
+            bms.append({
+                'id': bm.get('id'),
+                'name': bm.get('name')
+            })
+        return jsonify({'businesses': bms})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/conta/<account_id>')
 def listar_campanhas(account_id):

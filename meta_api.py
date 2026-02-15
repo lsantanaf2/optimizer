@@ -406,7 +406,8 @@ class MetaUploader:
             if 'error' in result:
                 msg = result['error'].get('message', '')
                 # Fallback via bytes em memória (BytesIO) se a Meta falhar no download direto
-                if any(k in msg.lower() for k in ['problem', 'download', 'failed', 'could not']):
+                # Inclusão de 'capability' pois alguns Apps não podem enviar via URL direta
+                if any(k in msg.lower() for k in ['problem', 'download', 'failed', 'could not', 'capability']):
                     self._log("⚠️ Meta falhou ao baixar URL. Tentando fallback via BytesIO (memória)...")
                     try:
                         r = requests.get(url, timeout=30)
@@ -442,7 +443,8 @@ class MetaUploader:
             if 'error' in result:
                 msg = result['error'].get('message', '')
                 # Fallback se a Meta não conseguir baixar o arquivo
-                if any(k in msg.lower() for k in ['problem', 'download', 'failed', 'could not']):
+                # Inclusão de 'capability' por segurança
+                if any(k in msg.lower() for k in ['problem', 'download', 'failed', 'could not', 'capability']):
                     self._log("⚠️ Meta falhou ao baixar vídeo. Tentando fallback via download local robusto...")
                     tmp_path = os.path.join(tempfile.gettempdir(), f"vid_{int(time.time())}.mp4")
                     if self._download_file(url, tmp_path):
@@ -576,10 +578,10 @@ class MetaUploader:
         api_url = f"https://graph.facebook.com/v18.0/{self.account_id}/adcreatives"
 
         # Normalizar textos
-        body_text = primary_texts[0] if primary_texts else ' '
+        body_text = primary_texts[0] if primary_texts else "Check this out!"
         if isinstance(body_text, dict):
             body_text = body_text.get('text', ' ')
-        headline_text = headlines[0] if headlines else ' '
+        headline_text = headlines[0] if headlines else "Limited Offer"
         if isinstance(headline_text, dict):
             headline_text = headline_text.get('text', ' ')
 
@@ -634,28 +636,38 @@ class MetaUploader:
             creative_id, error = _post_creative(payload, "complex")
             return creative_id, error
 
-        # ===== ESTRATÉGIA 2: link_data simples (Fallback) =====
+        # ===== ESTRATÉGIA 2: link_data ou video_data (Fallback) =====
         def try_simple_creative():
-            self._log("📋 Tentando criativo simples (link_data) como fallback...")
+            self._log("📋 Tentando criativo simples (link_data/video_data) como fallback...")
             
-            object_story_spec = {
-                'page_id': page_id,
-                'link_data': {
+            cta_payload = {
+                'type': cta_type,
+                'value': {
+                    'lead_gen_form_id': lead_gen_form_id
+                } if lead_gen_form_id else {
+                    'link': link_url
+                }
+            }
+
+            object_story_spec = {'page_id': page_id}
+            
+            if feed_media['type'] == 'video':
+                # Para vídeo, usamos video_data
+                object_story_spec['video_data'] = {
+                    'video_id': feed_media['id'],
+                    'message': body_text,
+                    'call_to_action': cta_payload,
+                    'title': headline_text
+                }
+            else:
+                # Para imagem, usamos link_data
+                object_story_spec['link_data'] = {
                     'link': link_url,
                     'message': body_text,
                     'name': headline_text,
-                    'image_hash': feed_media['hash'] if feed_media['type'] == 'image' else None,
-                    'video_id': feed_media['id'] if feed_media['type'] == 'video' else None,
-                    'call_to_action': {
-                        'type': cta_type,
-                        'value': {
-                            'lead_gen_form_id': lead_gen_form_id
-                        } if lead_gen_form_id else {
-                            'link': link_url
-                        }
-                    }
+                    'image_hash': feed_media['hash'],
+                    'call_to_action': cta_payload
                 }
-            }
             
             if instagram_user_id:
                 object_story_spec['instagram_user_id'] = instagram_user_id
@@ -712,7 +724,9 @@ class MetaUploader:
             if media['type'] == 'image':
                 images.append({'hash': media['hash'], 'ad_labels': [{'name': label}]})
             elif media['type'] == 'video':
-                videos.append({'video_id': media['id'], 'ad_labels': [{'name': label}]})
+                # Meta rejeita 'ad_labels' dentro de videos[0] em algumas versões. 
+                # Enviamos apenas o video_id; a Meta tentará otimizar automaticamente.
+                videos.append({'video_id': media['id']})
 
         add_media(feed_media, FEED_LABEL)
         add_media(stories_media, STORY_LABEL)

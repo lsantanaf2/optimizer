@@ -15,8 +15,20 @@ Contas
             style="margin-left: auto; color: var(--danger); text-decoration: none; font-size: 12px; border: 1px solid var(--danger); padding: 4px 8px; border-radius: 4px;">🔓
             Sair</a>
     </div>
-    <div class="card-desc">
+    <div class="card-desc" style="display: flex; align-items: center; justify-content: space-between;">
         Selecione a conta que deseja gerenciar abaixo.
+        <button onclick="consultarPortfolios()" class="btn-secondary" style="padding: 6px 12px; font-size: 11px;">🏢
+            Consultar IDs de Portfólio</button>
+    </div>
+
+    <!-- BM List Container (Hidden by default) -->
+    <div id="bm-container" class="card border-blue"
+        style="display: none; margin-top: 16px; background: rgba(0, 163, 255, 0.05);">
+        <div class="card-title" style="font-size: 14px;">🏢 Seus Portfólios Empresariais (BMs)</div>
+        <div class="card-desc">Copie os IDs abaixo para o formulário da Meta.</div>
+        <div id="bm-list" style="margin-top: 10px;">
+            <div style="color: var(--text-muted); font-size: 11px;">Carregando...</div>
+        </div>
     </div>
 
     <!-- Search Box -->
@@ -81,5 +93,45 @@ Contas
             }
         });
     });
+
+    async function consultarPortfolios() {
+        const container = document.getElementById('bm-container');
+        const list = document.getElementById('bm-list');
+
+        container.style.display = 'block';
+        list.innerHTML = '<div style="color: var(--text-muted); font-size: 11px;">🔍 Consultando API da Meta...</div>';
+
+        try {
+            const resp = await fetch('/api/businesses');
+            const data = await resp.json();
+
+            if (data.error) {
+                list.innerHTML = `<div style="color: var(--danger); font-size: 11px;">❌ Erro: ${data.error}</div>`;
+                return;
+            }
+
+            if (!data.businesses || data.businesses.length === 0) {
+                list.innerHTML = '<div style="color: var(--text-muted); font-size: 11px;">Nenhum portfólio encontrado.</div>';
+                return;
+            }
+
+            let html = '';
+            data.businesses.forEach(bm => {
+                html += `
+                    <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                        <div style="font-size: 13px; font-weight: 500;">${bm.name}</div>
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            <code style="background: var(--bg-deep); padding: 2px 6px; border-radius: 4px; font-size: 11px; color: var(--accent);">${bm.id}</code>
+                            <button onclick="navigator.clipboard.writeText('${bm.id}'); alert('ID Copiado!');" style="background: transparent; border: 1px solid var(--border); color: var(--text-muted); border-radius: 4px; padding: 2px 4px; cursor: pointer; font-size: 10px;">📋</button>
+                        </div>
+                    </div>
+                `;
+            });
+            list.innerHTML = html;
+
+        } catch (e) {
+            list.innerHTML = `<div style="color: var(--danger); font-size: 11px;">❌ Erro de conexão: ${e.message}</div>`;
+        }
+    }
 </script>
 {% endblock %}
