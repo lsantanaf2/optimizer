@@ -392,7 +392,19 @@ select {
 .upload-box .upload-icon { font-size: 26px; margin-bottom: 8px; }
 .upload-box .upload-label { font-size: 13px; font-weight: 600; color: var(--text-primary); }
 .upload-box .upload-hint { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
-.upload-box input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.upload-box input[type="file"] { 
+    position: absolute; 
+    inset: 0; 
+    opacity: 0; 
+    cursor: pointer; 
+    z-index: 1;
+}
+
+.upload-options {
+    position: relative;
+    z-index: 2; /* Fica acima do input de arquivo invisível */
+    pointer-events: auto;
+}
 
 .upload-box .file-preview {
     display: none;

@@ -238,9 +238,10 @@
                     <div class="upload-label">Feed / Square</div>
                     <div class="upload-hint">1:1 ou 4:5 · Imagem ou Vídeo</div>
 
+                    <input type="file" id="arquivo_feed" accept="image/*,video/*"
+                        onchange="previewFile(this, 'preview-feed')">
+
                     <div class="upload-options">
-                        <input type="file" id="arquivo_feed" accept="image/*,video/*"
-                            onchange="previewFile(this, 'preview-feed')">
                         <div class="upload-separator">— OU USE LINK (GOOGLE DRIVE) —</div>
                         <input type="url" id="url_feed_remote" placeholder="https://drive.google.com/..."
                             class="input-url-remote" oninput="validarInputMidia('feed')">
@@ -253,9 +254,10 @@
                     <div class="upload-label">Stories / Reels</div>
                     <div class="upload-hint">9:16 · Imagem ou Vídeo</div>
 
+                    <input type="file" id="arquivo_stories" accept="image/*,video/*"
+                        onchange="previewFile(this, 'preview-stories')">
+
                     <div class="upload-options">
-                        <input type="file" id="arquivo_stories" accept="image/*,video/*"
-                            onchange="previewFile(this, 'preview-stories')">
                         <div class="upload-separator">— OU USE LINK (GOOGLE DRIVE) —</div>
                         <input type="url" id="url_stories_remote" placeholder="https://drive.google.com/..."
                             class="input-url-remote" oninput="validarInputMidia('stories')">
@@ -532,13 +534,39 @@
         // ======================== FILE PREVIEW ========================
         function previewFile(input, previewId) {
             const preview = document.getElementById(previewId);
+            const box = input.closest('.upload-box');
+            const type = previewId.includes('feed') ? 'feed' : 'stories';
+            const urlInput = document.getElementById(`url_${type}_remote`);
+
             if (input.files.length > 0) {
                 preview.textContent = '📎 ' + input.files[0].name;
                 preview.style.display = 'block';
-                input.closest('.upload-box').style.borderColor = 'var(--success)';
+                box.style.borderColor = 'var(--success)';
+                if (urlInput) urlInput.value = ''; // Limpa URL se subir arquivo
             } else {
-                preview.style.display = 'none';
-                input.closest('.upload-box').style.borderColor = '';
+                if (!urlInput || !urlInput.value) {
+                    preview.style.display = 'none';
+                    box.style.borderColor = '';
+                }
+            }
+        }
+
+        function validarInputMidia(type) {
+            const urlInput = document.getElementById(`url_${type}_remote`);
+            const fileInput = document.getElementById(`arquivo_${type}`);
+            const box = document.getElementById(`box-${type}`);
+            const preview = document.getElementById(`preview-${type}`);
+
+            if (urlInput.value.trim().length > 10) {
+                box.style.borderColor = 'var(--success)';
+                preview.textContent = '🔗 Link detectado';
+                preview.style.display = 'block';
+                if (fileInput) fileInput.value = ''; // Limpa arquivo se colar URL
+            } else {
+                if (!fileInput.files.length) {
+                    box.style.borderColor = '';
+                    preview.style.display = 'none';
+                }
             }
         }
 
