@@ -26,7 +26,7 @@ TOKEN_FILE = 'token.json'
 app = Flask(__name__, static_folder='static')
 app.secret_key = 'chave-secreta-optimizer-2024'
 
-VERSION = "v1.2.3"
+VERSION = "v1.2.4"
 
 @app.context_processor
 def inject_version():

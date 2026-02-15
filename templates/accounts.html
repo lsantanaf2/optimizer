@@ -24,7 +24,13 @@ Contas
     <!-- BM List Container (Hidden by default) -->
     <div id="bm-container" class="card border-blue"
         style="display: none; margin-top: 16px; background: rgba(0, 163, 255, 0.05);">
-        <div class="card-title" style="font-size: 14px;">🏢 Seus Portfólios Empresariais (BMs)</div>
+        <div class="card-title"
+            style="font-size: 14px; display: flex; justify-content: space-between; align-items: center;">
+            <span>🏢 Seus Portfólios Empresariais (BMs)</span>
+            <button id="btn-copy-all-bms" onclick="copiarTodosPortfolios()" class="btn-secondary"
+                style="display: none; padding: 4px 8px; font-size: 10px; background: var(--accent); color: white; border: none;">📋
+                Copiar Todos os IDs</button>
+        </div>
         <div class="card-desc">Copie os IDs abaixo para o formulário da Meta.</div>
         <div id="bm-list" style="margin-top: 10px;">
             <div style="color: var(--text-muted); font-size: 11px;">Carregando...</div>
@@ -112,8 +118,13 @@ Contas
 
             if (!data.businesses || data.businesses.length === 0) {
                 list.innerHTML = '<div style="color: var(--text-muted); font-size: 11px;">Nenhum portfólio encontrado.</div>';
+                document.getElementById('btn-copy-all-bms').style.display = 'none';
                 return;
             }
+
+            // Guardar IDs para o botão "Copiar Todos"
+            window.lastBMIds = data.businesses.map(b => b.id).join(', ');
+            document.getElementById('btn-copy-all-bms').style.display = 'block';
 
             let html = '';
             data.businesses.forEach(bm => {
@@ -131,6 +142,13 @@ Contas
 
         } catch (e) {
             list.innerHTML = `<div style="color: var(--danger); font-size: 11px;">❌ Erro de conexão: ${e.message}</div>`;
+        }
+    }
+
+    function copiarTodosPortfolios() {
+        if (window.lastBMIds) {
+            navigator.clipboard.writeText(window.lastBMIds);
+            alert('Todos os IDs copiados para a área de transferência!');
         }
     }
 </script>
