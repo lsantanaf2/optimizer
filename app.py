@@ -226,6 +226,54 @@ def api_identity(account_id):
         print(f"❌ Error fetching identity: {e}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/drive/list_folder', methods=['POST'])
+def api_drive_list_folder():
+    """Lista arquivos de uma pasta do Drive e faz o pareamento automático."""
+    from meta_api import list_drive_folder
+    data = request.json
+    folder_url = data.get('url')
+    if not folder_url:
+        return jsonify({'error': 'URL da pasta não fornecida'}), 400
+
+    res = list_drive_folder(folder_url)
+    if 'error' in res:
+        return jsonify({'error': res['error']}), 500
+
+    files = res.get('files', [])
+    
+    # Lógica de Pareamento
+    # Arquivos: "Anuncio1_FEED.mp4", "Anuncio1_REELS.mp4"
+    pares = {} # { prefixo: {feed_url, reels_url, nome} }
+    
+    for f in files:
+        name = f['name']
+        f_id = f['id']
+        direct_url = f"https://drive.google.com/uc?export=download&id={f_id}"
+        
+        # Tenta identificar sufixos
+        clean_name = os.path.splitext(name)[0].upper()
+        
+        if '_FEED' in clean_name:
+            prefix = clean_name.split('_FEED')[0]
+            if prefix not in pares: pares[prefix] = {'nome': prefix}
+            pares[prefix]['feed_url'] = direct_url
+            pares[prefix]['feed_name'] = name
+        elif '_REELS' in clean_name:
+            prefix = clean_name.split('_REELS')[0]
+            if prefix not in pares: pares[prefix] = {'nome': prefix}
+            pares[prefix]['reels_url'] = direct_url
+            pares[prefix]['reels_name'] = name
+        elif '_STORIES' in clean_name: # Fallback para stories
+            prefix = clean_name.split('_STORIES')[0]
+            if prefix not in pares: pares[prefix] = {'nome': prefix}
+            pares[prefix]['reels_url'] = direct_url
+            pares[prefix]['reels_name'] = name
+
+    # Converter para lista e filtrar apenas os que tem pelo menos um dos dois
+    resultado = [v for v in pares.values() if 'feed_url' in v or 'reels_url' in v]
+    
+    return jsonify({'pares': resultado})
+
 @app.route('/api/pagina/<page_id>/leadgen_forms')
 def api_leadgen_forms(page_id):
     """Busca formulários de lead de uma página."""

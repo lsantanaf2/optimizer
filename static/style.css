@@ -44,7 +44,9 @@
 }
 
 /* ======================== RESET ======================== */
-*, *::before, *::after {
+*,
+*::before,
+*::after {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
@@ -140,10 +142,21 @@ body {
     letter-spacing: 0.5px;
 }
 
-.badge-cyan { background: linear-gradient(135deg, #0891b2, #06b6d4); }
-.badge-green { background: linear-gradient(135deg, #16a34a, #22c55e); }
-.badge-purple { background: linear-gradient(135deg, #7c3aed, #8b5cf6); }
-.badge-orange { background: linear-gradient(135deg, #d97706, #f59e0b); }
+.badge-cyan {
+    background: linear-gradient(135deg, #0891b2, #06b6d4);
+}
+
+.badge-green {
+    background: linear-gradient(135deg, #16a34a, #22c55e);
+}
+
+.badge-purple {
+    background: linear-gradient(135deg, #7c3aed, #8b5cf6);
+}
+
+.badge-orange {
+    background: linear-gradient(135deg, #d97706, #f59e0b);
+}
 
 .card-desc {
     font-size: 13px;
@@ -173,8 +186,14 @@ body {
     background: linear-gradient(to right, transparent, var(--border));
 }
 
-.section-label::before { right: calc(50% + 200px); }
-.section-label::after { left: calc(50% + 200px); background: linear-gradient(to left, transparent, var(--border)); }
+.section-label::before {
+    right: calc(50% + 200px);
+}
+
+.section-label::after {
+    left: calc(50% + 200px);
+    background: linear-gradient(to left, transparent, var(--border));
+}
 
 /* ======================== RADIO OPTIONS ======================== */
 .radio-group {
@@ -206,16 +225,44 @@ body {
     box-shadow: 0 0 16px var(--accent-glow);
 }
 
-.radio-option input[type="radio"] { display: none; }
-.radio-option .option-icon { font-size: 24px; margin-bottom: 10px; }
-.radio-option .option-title { font-weight: 600; font-size: 14px; color: var(--text-primary); margin-bottom: 4px; }
-.radio-option .option-desc { font-size: 12px; color: var(--text-secondary); line-height: 1.5; font-weight: 300; }
+.radio-option input[type="radio"] {
+    display: none;
+}
+
+.radio-option .option-icon {
+    font-size: 24px;
+    margin-bottom: 10px;
+}
+
+.radio-option .option-title {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+}
+
+.radio-option .option-desc {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    font-weight: 300;
+}
 
 /* Sub-options */
-.sub-options { margin-top: 16px; display: none; }
-.sub-options.visible { display: block; }
+.sub-options {
+    margin-top: 16px;
+    display: none;
+}
 
-.sub-radio-group { display: flex; gap: 10px; margin-bottom: 14px; }
+.sub-options.visible {
+    display: block;
+}
+
+.sub-radio-group {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 14px;
+}
 
 .sub-radio {
     padding: 10px 18px;
@@ -228,7 +275,10 @@ body {
     color: var(--text-secondary);
 }
 
-.sub-radio:hover { border-color: var(--accent); color: var(--accent); }
+.sub-radio:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
 
 .sub-radio.selected {
     border-color: var(--accent);
@@ -236,8 +286,13 @@ body {
     color: var(--accent);
 }
 
-.sub-radio input[type="radio"] { display: none; }
-.hidden-select { display: none; }
+.sub-radio input[type="radio"] {
+    display: none;
+}
+
+.hidden-select {
+    display: none;
+}
 
 /* ======================== FORM FIELDS ======================== */
 label {
@@ -251,7 +306,9 @@ label {
     letter-spacing: 0.5px;
 }
 
-label:first-child { margin-top: 0; }
+label:first-child {
+    margin-top: 0;
+}
 
 input[type="text"],
 input[type="url"],
@@ -286,7 +343,9 @@ select {
     align-items: center;
 }
 
-.field-with-history input { flex: 1; }
+.field-with-history input {
+    flex: 1;
+}
 
 .btn-history {
     padding: 9px 14px;
@@ -316,7 +375,9 @@ select {
 }
 
 /* ======================== DYNAMIC FIELDS ======================== */
-.dynamic-fields { margin-top: 8px; }
+.dynamic-fields {
+    margin-top: 8px;
+}
 
 .dynamic-row {
     display: flex;
@@ -325,7 +386,9 @@ select {
     align-items: center;
 }
 
-.dynamic-row input { flex: 1; }
+.dynamic-row input {
+    flex: 1;
+}
 
 .btn-remove {
     width: 34px;
@@ -342,7 +405,9 @@ select {
     transition: all 0.2s;
 }
 
-.btn-remove:hover { background: var(--danger-bg); }
+.btn-remove:hover {
+    background: var(--danger-bg);
+}
 
 .btn-add {
     background: transparent;
@@ -359,10 +424,21 @@ select {
     margin-top: 4px;
 }
 
-.btn-add:hover { border-color: var(--accent); background: #0a1a1c; }
-.btn-add:disabled { opacity: 0.3; cursor: not-allowed; }
+.btn-add:hover {
+    border-color: var(--accent);
+    background: #0a1a1c;
+}
 
-.field-counter { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+.btn-add:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+.field-counter {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 4px;
+}
 
 /* ======================== UPLOAD BOXES ======================== */
 .upload-pair {
@@ -389,20 +465,35 @@ select {
     box-shadow: 0 0 12px var(--accent-glow);
 }
 
-.upload-box .upload-icon { font-size: 26px; margin-bottom: 8px; }
-.upload-box .upload-label { font-size: 13px; font-weight: 600; color: var(--text-primary); }
-.upload-box .upload-hint { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
-.upload-box input[type="file"] { 
-    position: absolute; 
-    inset: 0; 
-    opacity: 0; 
-    cursor: pointer; 
+.upload-box .upload-icon {
+    font-size: 26px;
+    margin-bottom: 8px;
+}
+
+.upload-box .upload-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.upload-box .upload-hint {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 4px;
+}
+
+.upload-box input[type="file"] {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
     z-index: 1;
 }
 
 .upload-options {
     position: relative;
-    z-index: 2; /* Fica acima do input de arquivo invisível */
+    z-index: 2;
+    /* Fica acima do input de arquivo invisível */
     pointer-events: auto;
 }
 
@@ -437,20 +528,35 @@ select {
     box-shadow: 0 4px 16px rgba(0, 242, 255, 0.3);
 }
 
-/* ======================== WARNING BOX ======================== */
-.warning-box {
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    padding: 14px;
-    background: var(--warning-bg);
-    border: 1px solid #f59e0b44;
+/* ======================== DRIVE FOLDER IMPORT ======================== */
+.drive-folder-import {
+    background: var(--bg-deep);
+    border: 1px solid var(--border);
     border-radius: var(--radius-md);
-    margin-top: 16px;
+    padding: 16px;
+    margin-bottom: 20px;
 }
 
-.warning-box .warn-icon { font-size: 18px; flex-shrink: 0; }
-.warning-box p { font-size: 12px; color: var(--warning); line-height: 1.5; font-weight: 300; }
+.drive-folder-import .form-group {
+    margin-top: 0;
+}
+
+.drive-folder-import label {
+    color: var(--accent);
+    margin-bottom: 8px;
+}
+
+.warning-box .warn-icon {
+    font-size: 18px;
+    flex-shrink: 0;
+}
+
+.warning-box p {
+    font-size: 12px;
+    color: var(--warning);
+    line-height: 1.5;
+    font-weight: 300;
+}
 
 /* ======================== QUEUE ======================== */
 .queue-header {
@@ -705,8 +811,15 @@ select {
 }
 
 @keyframes pulse-dot {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.4; }
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.4;
+    }
 }
 
 .log-console-body {
@@ -725,10 +838,21 @@ select {
     margin-right: 8px;
 }
 
-.log-entry.log-success { color: var(--success); }
-.log-entry.log-error { color: var(--danger); }
-.log-entry.log-warning { color: var(--warning); }
-.log-entry.log-info { color: var(--accent); }
+.log-entry.log-success {
+    color: var(--success);
+}
+
+.log-entry.log-error {
+    color: var(--danger);
+}
+
+.log-entry.log-warning {
+    color: var(--warning);
+}
+
+.log-entry.log-info {
+    color: var(--accent);
+}
 
 .log-console-empty {
     text-align: center;
@@ -765,16 +889,36 @@ select {
 }
 
 /* ======================== SCROLLBAR ======================== */
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar {
+    width: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
 ::-webkit-scrollbar-thumb {
     background: var(--border);
     border-radius: 3px;
 }
-::-webkit-scrollbar-thumb:hover { background: var(--border-hover); }
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--border-hover);
+}
 
 /* ======================== ACCENT BORDERS ======================== */
-.border-accent { border-left: 3px solid var(--accent) !important; }
-.border-purple { border-left: 3px solid var(--accent-alt) !important; }
-.border-green { border-left: 3px solid var(--success) !important; }
-.border-orange { border-left: 3px solid var(--warning) !important; }
+.border-accent {
+    border-left: 3px solid var(--accent) !important;
+}
+
+.border-purple {
+    border-left: 3px solid var(--accent-alt) !important;
+}
+
+.border-green {
+    border-left: 3px solid var(--success) !important;
+}
+
+.border-orange {
+    border-left: 3px solid var(--warning) !important;
+}

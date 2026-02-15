@@ -232,6 +232,23 @@
             <div class="card-desc">Selecione as mídias (Feed + Stories). Configurações globais são herdadas no momento
                 do envio.</div>
 
+            <!-- NOVO: Importação via Pasta do Drive -->
+            <div class="drive-folder-import">
+                <div class="form-group">
+                    <label>🔗 link da Pasta do Google Drive (Pública)</label>
+                    <div style="display: flex; gap: 8px;">
+                        <input type="url" id="drive-folder-url" placeholder="https://drive.google.com/drive/folders/..."
+                            style="flex: 1;">
+                        <button type="button" class="btn-history" onclick="importarPastaDrive()">📥 Capturar
+                            Pasta</button>
+                    </div>
+                    <div class="card-desc" style="margin-top: 5px; font-size: 0.8em;">
+                        Arquivos devem ter o mesmo nome inicial, terminando em <b>_FEED</b> ou <b>_REELS</b> (Ex:
+                        <i>Ad01_FEED.mp4</i> e <i>Ad01_REELS.mp4</i>).
+                    </div>
+                </div>
+            </div>
+
             <div class="upload-pair">
                 <div class="upload-box" id="box-feed">
                     <div class="upload-icon">🖼️</div>
@@ -603,7 +620,62 @@
             valores.forEach(v => { const o = document.createElement('option'); o.value = v; dl.appendChild(o); });
         }
 
-        // ======================== GLOBAL CONFIG ========================
+        // ======================== GOOGLE DRIVE FOLDER IMPORT ========================
+        async function importarPastaDrive() {
+            const url = document.getElementById('drive-folder-url').value.trim();
+            if (!url || !url.includes('drive.google.com')) {
+                mostrarToast('❌ Link de pasta inválido');
+                return;
+            }
+
+            logConsole(`📁 Iniciando captura da pasta do Drive...`, 'log-info');
+            mostrarToast('⏳ Escaneando pasta... Isso pode levar alguns segundos.');
+
+            try {
+                const resp = await fetch('/api/drive/list_folder', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url })
+                });
+                const data = await resp.json();
+
+                if (data.error) {
+                    logConsole(`❌ Erro ao capturar pasta: ${data.error}`, 'log-error');
+                    mostrarToast('⚠️ Erro: ' + data.error);
+                    return;
+                }
+
+                const pares = data.pares || [];
+                if (pares.length === 0) {
+                    logConsole(`⚠️ Nenhum par de criativos (FEED/REELS) encontrado na pasta.`, 'log-warning');
+                    mostrarToast('⚠️ Nenhum par compatível encontrado');
+                    return;
+                }
+
+                pares.forEach(p => {
+                    const item = {
+                        id: Date.now() + Math.random(),
+                        adName: p.nome,
+                        feedFile: null,
+                        storiesFile: null,
+                        feedFileName: p.feed_name || 'Link Remoto',
+                        storiesFileName: p.reels_name || 'Link Remoto',
+                        urlFeed: p.feed_url,
+                        urlStories: p.reels_url,
+                    };
+                    filaAnuncios.push(item);
+                });
+
+                renderizarFila();
+                logConsole(`✅ ${pares.length} pares capturados com sucesso!`, 'log-success');
+                mostrarToast(`🎉 ${pares.length} criativos adicionados à fila!`);
+                document.getElementById('drive-folder-url').value = '';
+
+            } catch (e) {
+                console.error('❌ Erro drive:', e);
+                logConsole(`❌ Erro de conexão ao capturar pasta.`, 'log-error');
+            }
+        }
         function lerConfigGlobal() {
             const url = document.getElementById('url_destino').value.trim();
             const utms = document.getElementById('utm_pattern').value.trim();
@@ -840,6 +912,7 @@
                 fd.append('cta', cfg.cta);
                 cfg.textos.forEach(t => fd.append('primary_text[]', t));
                 cfg.titulos.forEach(t => fd.append('headline[]', t));
+
                 if (item.feedFile) fd.append('arquivo_feed', item.feedFile);
                 if (item.storiesFile) fd.append('arquivo_stories', item.storiesFile);
                 if (item.urlFeed) fd.append('url_feed_remote', item.urlFeed);
@@ -859,56 +932,52 @@
                 try {
                     logConsole(`📤 Fazendo upload de "${item.adName}"...`, 'log-info');
 
+                    const r = await fetch(`/campanha/${CAMPAIGN_ID}/upload`, { method: 'POST', body: fd });
+                    const text = await r.text();
                     let res;
                     try {
-                        const r = await fetch(`/campanha/${CAMPAIGN_ID}/upload`, { method: 'POST', body: fd });
-                        const text = await r.text();
-                        try {
-                            res = JSON.parse(text);
-                        } catch (e) {
-                            erros++;
-                            logConsole(`❌ Erro do Servidor (500/Timeout): O servidor retornou uma página de erro HTML em vez de JSON. Verifique os logs no terminal da VPS.`, 'log-error');
-                            console.error('Resposta não-JSON:', text);
-                            continue;
-                        }
-
-                        if (res.success) {
-                            enviados++;
-                            logConsole(`✅ "${item.adName}" criado com sucesso (PAUSADO) — ID: ${res.ad_id}`, 'log-success');
-                        } else {
-                            erros++;
-                            logConsole(`❌ "${item.adName}" falhou: ${res.error}`, 'log-error');
-                        }
-
-                        // Show backend logs
-                        if (res.logs) {
-                            res.logs.forEach(l => logConsole(l, classifyLog(l)));
-                        }
-
-                        // Visual delay message between items
-                        if (i < filaAnuncios.length - 1) {
-                            logConsole(`⏳ Aguardando delay de segurança antes do próximo...`);
-                        }
-
+                        res = JSON.parse(text);
                     } catch (e) {
                         erros++;
-                        logConsole(`❌ Erro de rede ao enviar "${item.adName}": ${e.message}`, 'log-error');
+                        logConsole(`❌ Erro do Servidor (500/Timeout): Resposta inválida.`, 'log-error');
+                        console.error('Resposta não-JSON:', text);
+                        continue;
                     }
+
+                    if (res.success) {
+                        enviados++;
+                        logConsole(`✅ "${item.adName}" criado com sucesso — ID: ${res.ad_id}`, 'log-success');
+                    } else {
+                        erros++;
+                        logConsole(`❌ "${item.adName}" falhou: ${res.error}`, 'log-error');
+                    }
+
+                    if (res.logs) {
+                        res.logs.forEach(l => logConsole(l, classifyLog(l)));
+                    }
+
+                    if (i < filaAnuncios.length - 1) {
+                        logConsole(`⏳ Aguardando delay de segurança...`);
+                    }
+
+                } catch (e) {
+                    erros++;
+                    logConsole(`❌ Erro de rede: ${e.message}`, 'log-error');
                 }
+            } // Fim do Loop For
 
             btn.disabled = false;
-                btn.textContent = '🚀 Subir Todos os Anúncios';
+            btn.textContent = '🚀 Subir Todos os Anúncios';
 
-                logConsole(`🏁 Lote concluído: ${enviados} ✅ sucesso, ${erros} ❌ erro(s)`, enviados > 0 ? 'log-success' : 'log-error');
-                logStop();
+            logConsole(`🏁 Lote concluído: ${enviados} ✅ sucesso, ${erros} ❌ erro(s)`, enviados > 0 ? 'log-success' : 'log-error');
+            logStop();
 
-                if (erros === 0) {
-                    mostrarToast(`🎉 ${enviados} anúncio(s) enviados com sucesso!`);
-                    filaAnuncios.length = 0;
-                    renderizarFila();
-                } else {
-                    mostrarToast(`⚠️ ${enviados} OK, ${erros} com erro — veja o console`);
-                }
+            if (erros === 0) {
+                mostrarToast(`🎉 ${enviados} anúncio(s) enviados com sucesso!`);
+                filaAnuncios.length = 0;
+                renderizarFila();
+            } else {
+                mostrarToast(`⚠️ ${enviados} OK, ${erros} com erro`);
             }
 
             // ======================== UTILS ========================

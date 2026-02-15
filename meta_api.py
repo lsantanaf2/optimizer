@@ -15,6 +15,7 @@ import random
 import os
 import tempfile
 import requests
+import re
 from facebook_business.api import FacebookAdsApi
 from facebook_business.adobjects.adaccount import AdAccount
 from facebook_business.adobjects.adimage import AdImage
@@ -24,6 +25,45 @@ from facebook_business.adobjects.ad import Ad
 from facebook_business.adobjects.adset import AdSet
 from facebook_business.adobjects.user import User
 from facebook_business.adobjects.adspixel import AdsPixel
+
+
+def list_drive_folder(folder_url):
+    """
+    Tenta listar arquivos de uma pasta pública do Google Drive sem usar API Key.
+    Retorna uma lista de dicionários {'id': ..., 'name': ...}
+    """
+    try:
+        # Extrair Folder ID
+        folder_id = None
+        if '/folders/' in folder_url:
+            folder_id = folder_url.split('/folders/')[1].split('?')[0].split('/')[0]
+        elif 'id=' in folder_url:
+            folder_id = folder_url.split('id=')[1].split('&')[0]
+        
+        if not folder_id:
+            return {'error': 'ID da pasta não encontrado na URL.'}
+
+        # URL para pegar o JSON da pasta (hack público)
+        # Nota: Este método pode ser instável se o Google mudar a estrutura.
+        resp = requests.get(folder_url, headers={'User-Agent': 'Mozilla/5.0'}).text
+        
+        # Regex para encontrar o JSON que contém os nomes e IDs dos arquivos
+        # O Google Drive injeta os dados na variável 'AF_initDataCallback' ou similar
+        pattern = r'\["(?P<id>[a-zA-Z0-9_-]{20,})",\["(?P<name>[^"]+)"'
+        matches = re.finditer(pattern, resp)
+        
+        files = []
+        seen_ids = set()
+        for m in matches:
+            v_id = m.group('id')
+            v_name = m.group('name')
+            if v_id not in seen_ids and '.' in v_name: # Filtra para buscar arquivos com extensão
+                files.append({'id': v_id, 'name': v_name})
+                seen_ids.add(v_id)
+        
+        return {'files': files}
+    except Exception as e:
+        return {'error': str(e)}
 
 
 class MetaUploader:
