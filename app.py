@@ -7,6 +7,7 @@ from flask import (
     Flask, request, redirect, session, render_template,
     jsonify, Response, stream_with_context, url_for
 )
+from urllib.parse import quote
 from dotenv import load_dotenv
 from facebook_business.api import FacebookAdsApi
 from facebook_business.adobjects.user import User
@@ -82,28 +83,36 @@ def index():
 def pagina_login():
     # Scopes: Basic Hygiene Package
     scopes = 'public_profile,email,ads_read,ads_management,pages_show_list,pages_read_engagement,instagram_basic,read_insights,pages_manage_ads'
+    encoded_uri = quote(REDIRECT_URI)
     auth_url = (
         f"https://www.facebook.com/v18.0/dialog/oauth?"
-        f"client_id={APP_ID}&redirect_uri={REDIRECT_URI}&scope={scopes}"
+        f"client_id={APP_ID}&redirect_uri={encoded_uri}&scope={scopes}"
     )
+    print(f"DEBUG: Generating login page. REDIRECT_URI={REDIRECT_URI}")
     return render_template('login.html', auth_url=auth_url)
 
 @app.route('/callback')
 def callback():
+    print(f"DEBUG: Callback received. request.url={request.url}")
+    print(f"DEBUG: Using REDIRECT_URI={REDIRECT_URI}")
+    
     code = request.args.get('code')
     if not code:
         return "Erro: Código de autorização não recebido."
 
+    encoded_uri = quote(REDIRECT_URI)
     token_url = (
         f"https://graph.facebook.com/v18.0/oauth/access_token?"
-        f"client_id={APP_ID}&redirect_uri={REDIRECT_URI}&"
+        f"client_id={APP_ID}&redirect_uri={encoded_uri}&"
         f"client_secret={APP_SECRET}&code={code}"
     )
 
+    print(f"DEBUG: Requesting token with URL: {token_url.replace(APP_SECRET or '', 'SECRET_HIDDEN')}")
     response = requests.get(token_url).json()
     access_token = response.get('access_token')
 
     if not access_token:
+        print(f"DEBUG: Token Error: {response}")
         return f"Erro ao obter token: {response}"
 
     session['access_token'] = access_token

@@ -23,6 +23,7 @@ from facebook_business.adobjects.advideo import AdVideo
 from facebook_business.adobjects.adcreative import AdCreative
 from facebook_business.adobjects.ad import Ad
 from facebook_business.adobjects.adset import AdSet
+from facebook_business.adobjects.campaign import Campaign
 from facebook_business.adobjects.user import User
 from facebook_business.adobjects.adspixel import AdsPixel
 
@@ -87,6 +88,76 @@ class MetaUploader:
         FacebookAdsApi.init(app_id, app_secret, access_token)
         FacebookAdsApi.init(app_id, app_secret, access_token)
         self.account = AdAccount(account_id)
+
+    # ======================== PERFORMANCE & INSIGHTS ========================
+
+    def get_campaign_insights(self, date_preset='today'):
+        """
+        Busca métricas de performance das campanhas (Gasto, CAC, etc).
+        Filtra por campanhas ACTIVE ou PAUSED.
+        """
+        try:
+            fields = [
+                'campaign_id',
+                'campaign_name',
+                'spend',
+                'actions',
+                'cost_per_action_type',
+                'objective',
+                'account_currency'
+            ]
+            params = {
+                'level': 'campaign',
+                'date_preset': date_preset,
+                'filtering': [
+                    {'field': 'campaign.effective_status', 'operator': 'IN', 'value': ['ACTIVE']}
+                ],
+                'limit': 100
+            }
+            
+            insights = self.account.get_insights(fields=fields, params=params)
+            
+            results = []
+            for ins in insights:
+                # Extrair resultados (compras ou leads conforme o objetivo)
+                # Heurística: se o objetivo for LEAD_GENERATION, busca 'lead'
+                # se for OUTCOMES/CONVERSIONS, busca 'purchase' ou 'offsite_conversion.fb_pixel_purchase'
+                
+                actions = ins.get('actions', [])
+                objective = ins.get('objective', '')
+                
+                res_count = 0
+                cac = 0
+                spend = float(ins.get('spend', 0))
+                
+                # Mapeamento dinâmico de resultados
+                for action in actions:
+                    a_type = action.get('action_type', '')
+                    if objective == 'LEAD_GENERATION' and a_type == 'lead':
+                        res_count += int(action.get('value', 0))
+                    elif 'purchase' in a_type:
+                        res_count += int(action.get('value', 0))
+                    elif a_type == 'onsite_conversion.messaging_conversation_started_7d':
+                        res_count += int(action.get('value', 0))
+
+                if res_count > 0:
+                    cac = spend / res_count
+                
+                results.append({
+                    'id': ins.get('campaign_id'),
+                    'name': ins.get('campaign_name'),
+                    'spend': spend,
+                    'results': res_count,
+                    'cac': cac,
+                    'currency': ins.get('account_currency', 'BRL'),
+                    'status': 'ACTIVE'
+                })
+            
+            print(f"📈 [get_campaign_insights] {len(results)} campanhas auditadas.")
+            return results
+        except Exception as e:
+            print(f"❌ [get_campaign_insights] Erro: {e}")
+            return []
 
     # ======================== IDENTITY & TRACKING FETCHERS ========================
 
