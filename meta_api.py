@@ -1069,9 +1069,9 @@ class MetaUploader:
         
         def add_media(media, label):
             if media['type'] == 'image':
-                images.append({'hash': media['hash']})
+                images.append({'hash': media['hash'], 'adlabels': [{'name': label}]})
             elif media['type'] == 'video':
-                video_data = {'video_id': media['id']}
+                video_data = {'video_id': media['id'], 'adlabels': [{'name': label}]}
                 # Proatividade: Tentar fornecer thumbnail se a mídia oposta for imagem
                 other_media = stories_media if label == FEED_LABEL else feed_media
                 if other_media and other_media['type'] == 'image':

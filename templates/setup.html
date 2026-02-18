@@ -1061,19 +1061,23 @@
         // ======================== COPY LOG ========================
         function copiarLog() {
             const logBody = document.getElementById('log-body');
-            const lines = logBody.querySelectorAll('.log-line');
+            const entries = logBody.querySelectorAll('.log-entry');
             let text = '';
-            lines.forEach(l => {
-                text += l.textContent + '\n';
-            });
-            if (!text.trim()) {
+            if (entries.length > 0) {
+                entries.forEach(e => {
+                    text += e.textContent.trim() + '\n';
+                });
+            } else {
+                // Fallback: pegar texto inteiro do body
+                text = logBody.textContent.trim();
+            }
+            if (!text.trim() || text.includes('Aguardando início')) {
                 mostrarToast('⚠️ Nenhum log para copiar');
                 return;
             }
             navigator.clipboard.writeText(text.trim()).then(() => {
                 mostrarToast('✅ Log copiado para a área de transferência!');
             }).catch(() => {
-                // Fallback para navegadores sem clipboard API
                 const ta = document.createElement('textarea');
                 ta.value = text.trim();
                 document.body.appendChild(ta);
