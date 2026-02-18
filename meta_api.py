@@ -460,6 +460,10 @@ class MetaUploader:
 
             def _is_html():
                 try:
+                    sz = os.path.getsize(dest_path)
+                    if sz == 0:
+                        self._log("⚠️ Arquivo baixado tem 0 bytes — tratando como falha.")
+                        return True  # Tratar 0KB como "não é o arquivo real"
                     with open(dest_path, 'rb') as f:
                         head = f.read(500)
                     if b'<html' in head.lower() or b'<!doctype' in head.lower():
@@ -644,6 +648,13 @@ class MetaUploader:
                     self._log("⚠️ Meta falhou ao baixar vídeo. Baixando localmente para fallback...")
                     tmp_path = os.path.join(tempfile.gettempdir(), f"vid_{int(time.time())}.mp4")
                     if self._download_file(url, tmp_path):
+                        # Validar que o arquivo tem conteúdo real (evita crash do SDK com 0KB)
+                        file_size = os.path.getsize(tmp_path)
+                        if file_size < 1024:  # < 1KB = arquivo inválido
+                            self._log(f"❌ Arquivo de vídeo baixado tem apenas {file_size} bytes — inválido.")
+                            if os.path.exists(tmp_path):
+                                os.unlink(tmp_path)
+                            raise Exception(f"Download do vídeo retornou arquivo inválido ({file_size} bytes)")
                         try:
                             # Extrair thumbnail AGORA, enquanto temos o arquivo local
                             thumb_hash = self.extract_video_thumbnail(tmp_path)
@@ -1253,12 +1264,10 @@ class MetaUploader:
             'object_story_spec': object_story_spec,
             'degrees_of_freedom_spec': {
                 'creative_features_spec': {
-                    # Features individuais (standard_enhancements deprecated na API v22.0)
-                    'image_template': {'enroll_status': 'OPT_OUT'},
-                    'image_touchups': {'enroll_status': 'OPT_OUT'},
-                    'text_optimizations': {'enroll_status': 'OPT_OUT'},
-                    'inline_comment': {'enroll_status': 'OPT_OUT'},
-                    'video_auto_crop': {'enroll_status': 'OPT_OUT'},
+                    # v22.0 aceita APENAS estas chaves (confirmado em produção 2026-02-18):
+                    # IG_VIDEO_NATIVE_SUBTITLE, PRODUCT_METADATA_AUTOMATION, PROFILE_CARD,
+                    # STANDARD_ENHANCEMENTS_CATALOG, TEXT_OVERLAY_TRANSLATION
+                    'STANDARD_ENHANCEMENTS_CATALOG': {'enroll_status': 'OPT_OUT'},
                 },
             },
         }
