@@ -162,7 +162,7 @@ class MetaUploader:
     # ======================== IDENTITY & TRACKING FETCHERS ========================
 
     def get_pages(self):
-        """Busca páginas em 3 fontes: diretas (/me/accounts) + via Business Manager."""
+        """Busca páginas: Ad Account primeiro (topo), depois diretas e via BM."""
         seen_ids = set()
         result = []
 
@@ -176,34 +176,46 @@ class MetaUploader:
                 'instagram_id': ig_id
             }
 
-        # ── Fonte 1: /me/accounts (páginas onde o usuário é admin direto) ──
+        # ── Fonte 1: Ad Account promote_pages (TOPO — páginas da conta de anúncios) ──
+        try:
+            fields = 'id,name,instagram_business_account'
+            resp = requests.get(
+                f"https://graph.facebook.com/v22.0/{self.account_id}/promote_pages",
+                params={'fields': fields, 'access_token': self.access_token, 'limit': 200}
+            ).json()
+            for p in resp.get('data', []):
+                pid = p.get('id')
+                if pid and pid not in seen_ids:
+                    seen_ids.add(pid)
+                    result.append(_parse_page(p))
+            print(f"📄 [get_pages] Fonte 1 (promote_pages): {len(result)} páginas")
+        except Exception as e:
+            print(f"⚠️ [get_pages] Fonte 1 (promote_pages) falhou: {e}")
+
+        # ── Fonte 2: /me/accounts (páginas diretas — complemento) ──
         try:
             me = User(fbid='me')
             pages = me.get_accounts(fields=['name', 'access_token', 'instagram_business_account'])
+            before = len(result)
             for p in pages:
                 pid = p.get('id')
                 if pid and pid not in seen_ids:
                     seen_ids.add(pid)
                     result.append(_parse_page(p))
-            print(f"📄 [get_pages] Fonte 1 (/me/accounts): {len(result)} páginas")
+            print(f"📄 [get_pages] Fonte 2 (/me/accounts): +{len(result) - before} páginas novas")
         except Exception as e:
-            print(f"⚠️ [get_pages] Fonte 1 falhou: {e}")
+            print(f"⚠️ [get_pages] Fonte 2 falhou: {e}")
 
-        # ── Fonte 2 e 3: páginas via Business Manager ──
+        # ── Fonte 3: Business Manager owned_pages + client_pages (complemento) ──
         try:
-            bm_url = f"https://graph.facebook.com/v22.0/me/businesses"
-            bm_resp = requests.get(bm_url, params={
-                'fields': 'id,name',
-                'access_token': self.access_token
-            }).json()
-
+            bm_resp = requests.get(
+                f"https://graph.facebook.com/v22.0/me/businesses",
+                params={'fields': 'id,name', 'access_token': self.access_token}
+            ).json()
             businesses = bm_resp.get('data', [])
-            print(f"📄 [get_pages] {len(businesses)} Business Manager(s) encontrado(s)")
-
             fields = 'id,name,instagram_business_account'
             for bm in businesses:
                 bm_id = bm.get('id')
-                # Owned pages (páginas que o BM possui)
                 for endpoint in ['owned_pages', 'client_pages']:
                     try:
                         resp = requests.get(
@@ -218,27 +230,7 @@ class MetaUploader:
                     except Exception as e:
                         print(f"⚠️ [get_pages] BM {bm_id}/{endpoint} falhou: {e}")
         except Exception as e:
-            print(f"⚠️ [get_pages] Fonte 2/3 (Business Manager) falhou: {e}")
-
-        # ── Fonte 4: páginas via Ad Account (/act_xxx/promote_pages) ──
-        # Retorna todas as páginas que a conta de anúncios pode promover,
-        # independente de como o acesso foi concedido (direto, BM, parceria)
-        try:
-            fields = 'id,name,instagram_business_account'
-            resp = requests.get(
-                f"https://graph.facebook.com/v22.0/{self.account_id}/promote_pages",
-                params={'fields': fields, 'access_token': self.access_token, 'limit': 200}
-            ).json()
-            before_count = len(result)
-            for p in resp.get('data', []):
-                pid = p.get('id')
-                if pid and pid not in seen_ids:
-                    seen_ids.add(pid)
-                    result.append(_parse_page(p))
-            added = len(result) - before_count
-            print(f"📄 [get_pages] Fonte 4 (promote_pages): +{added} páginas novas")
-        except Exception as e:
-            print(f"⚠️ [get_pages] Fonte 4 (promote_pages) falhou: {e}")
+            print(f"⚠️ [get_pages] Fonte 3 (Business Manager) falhou: {e}")
 
         print(f"📄 [get_pages] Total: {len(result)} páginas únicas")
         return result
