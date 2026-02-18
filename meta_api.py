@@ -220,6 +220,26 @@ class MetaUploader:
         except Exception as e:
             print(f"⚠️ [get_pages] Fonte 2/3 (Business Manager) falhou: {e}")
 
+        # ── Fonte 4: páginas via Ad Account (/act_xxx/promote_pages) ──
+        # Retorna todas as páginas que a conta de anúncios pode promover,
+        # independente de como o acesso foi concedido (direto, BM, parceria)
+        try:
+            fields = 'id,name,instagram_business_account'
+            resp = requests.get(
+                f"https://graph.facebook.com/v22.0/{self.account_id}/promote_pages",
+                params={'fields': fields, 'access_token': self.access_token, 'limit': 200}
+            ).json()
+            before_count = len(result)
+            for p in resp.get('data', []):
+                pid = p.get('id')
+                if pid and pid not in seen_ids:
+                    seen_ids.add(pid)
+                    result.append(_parse_page(p))
+            added = len(result) - before_count
+            print(f"📄 [get_pages] Fonte 4 (promote_pages): +{added} páginas novas")
+        except Exception as e:
+            print(f"⚠️ [get_pages] Fonte 4 (promote_pages) falhou: {e}")
+
         print(f"📄 [get_pages] Total: {len(result)} páginas únicas")
         return result
 
