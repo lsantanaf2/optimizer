@@ -440,8 +440,11 @@ class MetaUploader:
         """Baixa um arquivo de uma URL, tratando confirmação de vírus do Google Drive para arquivos grandes."""
         try:
             session = requests.Session()
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
             # Primeira tentativa: o Drive pode retornar uma página de aviso se o arquivo for grande (>100MB)
-            response = session.get(url, stream=True, timeout=30)
+            response = session.get(url, stream=True, timeout=60, headers=headers)
             
             token = None
             for key, value in response.cookies.items():
@@ -453,12 +456,25 @@ class MetaUploader:
                 # Se achou o token de aviso, faz o download real passando o confirm
                 self._log("🛡️ Ignorando aviso de antivírus do Drive...")
                 params = {'confirm': token}
-                response = session.get(url, params=params, stream=True, timeout=60)
+                response = session.get(url, params=params, stream=True, timeout=120, headers=headers)
                 
             with open(dest_path, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=32768):
                     if chunk:
                         f.write(chunk)
+            
+            # Validação: verificar se o arquivo baixado não é uma página HTML do Google Drive
+            file_size = os.path.getsize(dest_path)
+            if file_size < 10000:  # Menos de 10KB provavelmente é HTML
+                with open(dest_path, 'rb') as f:
+                    header = f.read(500)
+                if b'<html' in header.lower() or b'<!doctype' in header.lower():
+                    self._log(f"❌ Arquivo baixado é uma página HTML do Google Drive, não um arquivo de mídia.")
+                    self._log(f"   → Verifique se o arquivo tem permissão 'Qualquer pessoa com o link pode visualizar'.")
+                    os.unlink(dest_path)
+                    return False
+            
+            self._log(f"✅ Download concluído: {os.path.basename(dest_path)} ({file_size / 1024:.0f} KB)")
             return True
         except Exception as e:
             self._log(f"❌ Erro no download do arquivo: {str(e)}")
@@ -561,17 +577,19 @@ class MetaUploader:
             thumb_path = os.path.join(tempfile.gettempdir(), f"thumb_{int(time.time())}.jpg")
             
             # Extrair frame no segundo 1 do vídeo
+            # -ss APÓS -i para garantir compatibilidade com todos os formatos
             cmd = [
                 'ffmpeg', '-y',
                 '-i', video_path,
                 '-ss', '00:00:01',
                 '-vframes', '1',
                 '-q:v', '2',
+                '-f', 'image2',
                 thumb_path
             ]
-            result = subprocess.run(cmd, capture_output=True, timeout=30)
+            result = subprocess.run(cmd, capture_output=True, timeout=60)
             
-            if result.returncode == 0 and os.path.exists(thumb_path):
+            if result.returncode == 0 and os.path.exists(thumb_path) and os.path.getsize(thumb_path) > 0:
                 self._log("🖼️ Thumbnail extraída do vídeo via ffmpeg.")
                 try:
                     image_hash = self.upload_image(thumb_path)
@@ -580,10 +598,17 @@ class MetaUploader:
                     if os.path.exists(thumb_path):
                         os.unlink(thumb_path)
             else:
-                self._log(f"⚠️ ffmpeg não conseguiu extrair thumbnail: {result.stderr.decode()[:100]}")
+                stderr = result.stderr.decode('utf-8', errors='replace') if result.stderr else 'sem output'
+                # Mostrar as últimas linhas relevantes do stderr para debug
+                error_lines = [l for l in stderr.split('\n') if l.strip() and not l.strip().startswith('ffmpeg version')]
+                error_msg = '\n'.join(error_lines[-3:]) if error_lines else stderr[:200]
+                self._log(f"⚠️ ffmpeg falhou ao extrair thumbnail: {error_msg[:200]}")
                 return None
         except FileNotFoundError:
             self._log("⚠️ ffmpeg não encontrado no sistema. Thumbnail automática não disponível.")
+            return None
+        except subprocess.TimeoutExpired:
+            self._log("⚠️ ffmpeg timeout ao extrair thumbnail (>60s).")
             return None
         except Exception as e:
             self._log(f"⚠️ Erro ao extrair thumbnail: {e}")
@@ -1044,7 +1069,7 @@ class MetaUploader:
         
         def add_media(media, label):
             if media['type'] == 'image':
-                images.append({'hash': media['hash'], 'ad_labels': [{'name': label}]})
+                images.append({'hash': media['hash']})
             elif media['type'] == 'video':
                 video_data = {'video_id': media['id']}
                 # Proatividade: Tentar fornecer thumbnail se a mídia oposta for imagem
@@ -1052,6 +1077,10 @@ class MetaUploader:
                 if other_media and other_media['type'] == 'image':
                     video_data['image_hash'] = other_media['hash']
                     self._log(f"🖼️ Thumbnail para vídeo {label} linkada à imagem do par.")
+                # Se não tem imagem do par, usar thumb_hash extraída durante upload
+                elif media.get('thumb_hash'):
+                    video_data['image_hash'] = media['thumb_hash']
+                    self._log(f"✅ Thumbnail auto-gerada usada para vídeo {label}.")
                 
                 videos.append(video_data)
 

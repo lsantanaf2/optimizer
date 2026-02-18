@@ -324,7 +324,11 @@
                 <div class="log-console" id="log-console" style="display:none;">
                     <div class="log-console-header">
                         <span>📟 Console de Operações</span>
-                        <span class="log-console-dot" id="log-dot"></span>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <button type="button" onclick="copiarLog()" class="btn-copy-log"
+                                title="Copiar todo o log">📋 Copiar</button>
+                            <span class="log-console-dot" id="log-dot"></span>
+                        </div>
                     </div>
                     <div class="log-console-body" id="log-body">
                         <div class="log-console-empty">Aguardando início do upload...</div>
@@ -377,6 +381,22 @@
             border-radius: 4px;
             font-weight: bold;
             margin-left: 5px;
+        }
+
+        .btn-copy-log {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: var(--text-muted);
+            font-size: 11px;
+            padding: 3px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-copy-log:hover {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
         }
     </style>
 
@@ -1037,6 +1057,32 @@
         // Attach listeners
         document.getElementById('arquivo_feed').addEventListener('change', verificarAvisoCorte);
         document.getElementById('arquivo_stories').addEventListener('change', verificarAvisoCorte);
+
+        // ======================== COPY LOG ========================
+        function copiarLog() {
+            const logBody = document.getElementById('log-body');
+            const lines = logBody.querySelectorAll('.log-line');
+            let text = '';
+            lines.forEach(l => {
+                text += l.textContent + '\n';
+            });
+            if (!text.trim()) {
+                mostrarToast('⚠️ Nenhum log para copiar');
+                return;
+            }
+            navigator.clipboard.writeText(text.trim()).then(() => {
+                mostrarToast('✅ Log copiado para a área de transferência!');
+            }).catch(() => {
+                // Fallback para navegadores sem clipboard API
+                const ta = document.createElement('textarea');
+                ta.value = text.trim();
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                mostrarToast('✅ Log copiado!');
+            });
+        }
 
     </script>
 
