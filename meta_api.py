@@ -483,9 +483,8 @@ class MetaUploader:
                     try:
                         r = requests.get(url, timeout=30)
                         image = AdImage(parent_id=self.account_id)
-                        # O SDK aceita bytes diretamente no campo 'bytes' (baseado no estudo técnico)
-                        # ou via inicialização se usarmos a estrutura correta.
-                        # Mas a forma mais garantida no SDK é remote_create com params.
+                        # Fix: Meta SDK requer um filename mesmo para bytes em memória para evitar KeyError
+                        image[AdImage.Field.filename] = 'upload_fallback.jpg'
                         image.remote_create(params={'bytes': r.content})
                         return image[AdImage.Field.hash]
                     except Exception as ex:
@@ -620,6 +619,93 @@ class MetaUploader:
         
         return None
 
+    def wait_for_video_ready(self, video_id, timeout=120, interval=10):
+        """
+        Consulta o status do vídeo na Meta API até que esteja 'ready' ou atinja o timeout.
+        Evita erro de 'arquivo inválido' ao criar criativos imediatamente após upload.
+        """
+        self._log(f"⏳ Consultando processamento do vídeo {video_id}...")
+        start_time = time.time()
+        
+        while time.time() - start_time < timeout:
+            try:
+                # Usando requests direta para evitar overhead do SDK em polling
+                url = f"https://graph.facebook.com/v18.0/{video_id}"
+                params = {
+                    'fields': 'status',
+                    'access_token': self.access_token
+                }
+                resp = requests.get(url, params=params).json()
+                
+                if 'error' in resp:
+                    self._log(f"⚠️ Erro ao consultar status: {resp['error'].get('message')}")
+                    time.sleep(interval)
+                    continue
+
+                status_data = resp.get('status', {})
+                video_status = status_data.get('video_status')
+
+                if video_status == 'ready':
+                    self._log(f"✅ Vídeo {video_id} processado e pronto para uso.")
+                    return True
+                elif video_status == 'error':
+                    err_msg = status_data.get('error_description', 'Erro de processamento na Meta')
+                    self._log(f"❌ Erro no processamento do vídeo: {err_msg}")
+                    return False
+                
+                self._log(f"   → Status: {video_status}. Aguardando {interval}s...")
+                time.sleep(interval)
+                
+            except Exception as e:
+                self._log(f"⚠️ Falha na chamada de polling: {e}")
+                time.sleep(interval)
+
+        self._log(f"⚠️ Timeout de {timeout}s atingido. Prosseguindo com cautela...")
+        return False
+
+    def wait_for_image_ready(self, image_hash, timeout=60, interval=5):
+        """
+        Consulta o status da imagem na Meta API até que esteja 'ACTIVE'.
+        Embora imagens sejam processadas rápido, garante proatividade em URLs lentas.
+        """
+        self._log(f"⏳ Verificando disponibilidade da imagem {image_hash[:12]}...")
+        start_time = time.time()
+        
+        while time.time() - start_time < timeout:
+            try:
+                # Consulta act_id/adimages com filtro de hash
+                url = f"https://graph.facebook.com/v18.0/{self.account_id}/adimages"
+                params = {
+                    'hashes': json.dumps([image_hash]),
+                    'fields': 'hash,status',
+                    'access_token': self.access_token
+                }
+                resp = requests.get(url, params=params).json()
+                
+                if 'error' in resp:
+                    self._log(f"⚠️ Erro ao consultar imagem: {resp['error'].get('message')}")
+                    time.sleep(interval)
+                    continue
+
+                images = resp.get('data', [])
+                if images:
+                    img_status = images[0].get('status')
+                    if img_status == 'ACTIVE':
+                        self._log(f"✅ Imagem {image_hash[:12]} está ativa e pronta.")
+                        return True
+                    self._log(f"   → Status: {img_status}. Aguardando {interval}s...")
+                else:
+                    self._log(f"   → Imagem ainda não indexada. Aguardando {interval}s...")
+
+                time.sleep(interval)
+                
+            except Exception as e:
+                self._log(f"⚠️ Falha na chamada de polling de imagem: {e}")
+                time.sleep(interval)
+
+        self._log(f"⚠️ Timeout atingido para imagem. Prosseguindo...")
+        return False
+
     # ======================== CREATIVE COM ASSET CUSTOMIZATION ========================
 
     # ======================== CREATIVE COM ASSET CUSTOMIZATION ========================
@@ -662,10 +748,38 @@ class MetaUploader:
             for k, v in payload_dict.items():
                 post_data[k] = json.dumps(v) if isinstance(v, (dict, list)) else v
 
-            # Pequena espera se houver vídeos (Meta leva tempo para processar o upload via URL)
-            if 'videos' in str(payload_dict) or 'video_id' in str(payload_dict):
-                self._log("⏳ Aguardando 5s para processamento de vídeo...")
-                time.sleep(5)
+            # Polling de segurança para mídias: Garante que a Meta processou tudo
+            video_ids = []
+            image_hashes = []
+
+            # Detectar vídeos e imagens no payload
+            id_str = str(payload_dict)
+            
+            # Polling de Vídeos
+            if 'videos' in payload_dict:
+                video_ids = [v.get('video_id') for v in payload_dict['videos'] if v.get('video_id')]
+            elif 'object_story_spec' in payload_dict:
+                vd = payload_dict['object_story_spec'].get('video_data', {})
+                if vd.get('video_id'):
+                    video_ids = [vd['video_id']]
+
+            # Polling de Imagens
+            if 'images' in payload_dict:
+                image_hashes = [img.get('hash') for img in payload_dict['images'] if img.get('hash')]
+            elif 'object_story_spec' in payload_dict:
+                ld = payload_dict['object_story_spec'].get('link_data', {})
+                if ld.get('image_hash'):
+                    image_hashes = [ld['image_hash']]
+                vd = payload_dict['object_story_spec'].get('video_data', {})
+                if vd.get('image_hash'):
+                    image_hashes.append(vd['image_hash'])
+
+            # Aguardar mídias
+            for vid in video_ids:
+                self.wait_for_video_ready(vid)
+            
+            for h in image_hashes:
+                self.wait_for_image_ready(h)
 
             resp = requests.post(api_url, data=post_data)
             result = resp.json()
@@ -724,12 +838,20 @@ class MetaUploader:
             
             if feed_media['type'] == 'video':
                 # Para vídeo, usamos video_data
-                object_story_spec['video_data'] = {
+                video_payload = {
                     'video_id': feed_media['id'],
                     'message': body_text,
                     'call_to_action': cta_payload,
                     'title': headline_text
                 }
+                
+                # FIX: Instagram EXIGE image_hash ou image_url em video_data
+                # Tentamos usar a imagem do par (stories_media) como thumbnail
+                if stories_media and stories_media['type'] == 'image':
+                    video_payload['image_hash'] = stories_media['hash']
+                    self._log("🖼️ Usando imagem do Stories como thumbnail para o vídeo de Feed.")
+                
+                object_story_spec['video_data'] = video_payload
             else:
                 # Para imagem, usamos link_data
                 object_story_spec['link_data'] = {
@@ -795,9 +917,14 @@ class MetaUploader:
             if media['type'] == 'image':
                 images.append({'hash': media['hash'], 'ad_labels': [{'name': label}]})
             elif media['type'] == 'video':
-                # Meta rejeita 'ad_labels' dentro de videos[0] em algumas versões. 
-                # Enviamos apenas o video_id; a Meta tentará otimizar automaticamente.
-                videos.append({'video_id': media['id']})
+                video_data = {'video_id': media['id']}
+                # Proatividade: Tentar fornecer thumbnail se a mídia oposta for imagem
+                other_media = stories_media if label == FEED_LABEL else feed_media
+                if other_media and other_media['type'] == 'image':
+                    video_data['image_hash'] = other_media['hash']
+                    self._log(f"🖼️ Thumbnail para vídeo {label} linkada à imagem do par.")
+                
+                videos.append(video_data)
 
         add_media(feed_media, FEED_LABEL)
         add_media(stories_media, STORY_LABEL)
