@@ -520,29 +520,33 @@ class MetaUploader:
         api_url = f"https://graph.facebook.com/v18.0/{self.account_id}/advideos"
         
         def _do():
-            # Usar headers de browser para evitar bloqueios do Drive
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            }
             resp = requests.post(api_url, data={'file_url': url, 'access_token': self.access_token})
             result = resp.json()
             if 'error' in result:
                 msg = result['error'].get('message', '')
                 # Fallback se a Meta não conseguir baixar o arquivo
                 if any(k in msg.lower() for k in ['problem', 'download', 'failed', 'could not', 'capability']):
-                    self._log("⚠️ Meta falhou ao baixar vídeo. Tentando fallback via download local robusto...")
+                    self._log("⚠️ Meta falhou ao baixar vídeo. Baixando localmente para fallback...")
                     tmp_path = os.path.join(tempfile.gettempdir(), f"vid_{int(time.time())}.mp4")
                     if self._download_file(url, tmp_path):
                         try:
+                            # Extrair thumbnail AGORA, enquanto temos o arquivo local
+                            thumb_hash = self.extract_video_thumbnail(tmp_path)
+                            if thumb_hash:
+                                self._log("✅ Thumbnail extraída do arquivo local do vídeo.")
+                                self._pending_thumb_hash = thumb_hash
+                            
                             res = self.upload_video(tmp_path)
-                            if os.path.exists(tmp_path): os.unlink(tmp_path)
                             return res
-                        except Exception as ex:
-                            if os.path.exists(tmp_path): os.unlink(tmp_path)
-                            raise ex
+                        finally:
+                            # Deletar arquivo temporário do vídeo após upload
+                            if os.path.exists(tmp_path):
+                                os.unlink(tmp_path)
+                                self._log(f"🗑️ Arquivo temporário de vídeo deletado.")
                 raise Exception(msg)
             return result.get('id')
 
+        self._pending_thumb_hash = None  # Resetar antes de cada upload
         video_id = self._with_retry(f"Upload vídeo via URL", _do)
         self._log(f"✅ Vídeo via URL vinculado (ID: {video_id})")
         return video_id
@@ -685,16 +689,18 @@ class MetaUploader:
             if media_type == 'video' or (not media_type and 'drive.google.com' in norm_url):
                 try:
                     video_id = self.upload_video_url(url)
-                    return {'type': 'video', 'id': video_id, 'hash': None}
+                    # Capturar thumbnail gerada durante o download local (se houver)
+                    thumb_hash = getattr(self, '_pending_thumb_hash', None)
+                    return {'type': 'video', 'id': video_id, 'hash': None, 'thumb_hash': thumb_hash, 'source_url': url}
                 except Exception as e:
                     # Se falhar como vídeo e o erro sugerir que é imagem, tenta imagem
                     if 'image' in str(e).lower() or 'not a video' in str(e).lower():
                          image_hash = self.upload_image_url(url)
-                         return {'type': 'image', 'hash': image_hash, 'id': None}
+                         return {'type': 'image', 'hash': image_hash, 'id': None, 'source_url': url}
                     raise e
             else:
                 image_hash = self.upload_image_url(url)
-                return {'type': 'image', 'hash': image_hash, 'id': None}
+                return {'type': 'image', 'hash': image_hash, 'id': None, 'source_url': url}
 
         # Se for arquivo local
         if file_path:
@@ -702,8 +708,12 @@ class MetaUploader:
             video_exts = {'.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v', '.gif'}
 
             if ext in video_exts:
+                # Extrair thumbnail ANTES de subir o vídeo (temos o arquivo local)
+                thumb_hash = self.extract_video_thumbnail(file_path)
+                if thumb_hash:
+                    self._log("✅ Thumbnail extraída do arquivo local de vídeo.")
                 video_id = self.upload_video(file_path)
-                return {'type': 'video', 'id': video_id, 'hash': None}
+                return {'type': 'video', 'id': video_id, 'hash': None, 'thumb_hash': thumb_hash}
             else:
                 image_hash = self.upload_image(file_path)
                 return {'type': 'image', 'hash': image_hash, 'id': None}
@@ -941,25 +951,34 @@ class MetaUploader:
                 if stories_media and stories_media['type'] == 'image':
                     video_payload['image_hash'] = stories_media['hash']
                     self._log("🖼️ Usando imagem do Stories como thumbnail para o vídeo de Feed.")
-                else:
-                    # Prioridade 2: extrair thumbnail do próprio vídeo via ffmpeg
-                    self._log("🔍 Nenhuma imagem do par. Tentando extrair thumbnail do vídeo...")
-                    # Precisamos do arquivo local para extrair thumbnail
-                    # Se o vídeo foi baixado localmente, o caminho está no item da fila
-                    # Tentamos baixar o vídeo novamente para extrair o frame
+                
+                # Prioridade 2: usar thumbnail já extraída durante o upload (do arquivo local do Drive)
+                elif feed_media.get('thumb_hash'):
+                    video_payload['image_hash'] = feed_media['thumb_hash']
+                    self._log("✅ Usando thumbnail extraída durante o upload do vídeo.")
+                
+                # Prioridade 3: baixar do Drive novamente para extrair thumbnail (evita baixar do Facebook)
+                elif feed_media.get('source_url'):
+                    self._log("🔍 Extraindo thumbnail do vídeo via link original do Drive...")
                     try:
                         tmp_vid = os.path.join(tempfile.gettempdir(), f"vid_thumb_{int(time.time())}.mp4")
-                        vid_url = None
-                        # Tentar reconstruir URL do vídeo a partir do feed_media (se vier de URL)
-                        # Como fallback, baixamos o vídeo do ID via API da Meta
-                        thumb_hash = self.extract_video_thumbnail_from_id(feed_media['id'])
-                        if thumb_hash:
-                            video_payload['image_hash'] = thumb_hash
-                            self._log("✅ Thumbnail gerada automaticamente do vídeo.")
-                        else:
-                            self._log("⚠️ Não foi possível gerar thumbnail. Criativo pode ser rejeitado pelo Instagram.")
+                        if self._download_file(feed_media['source_url'], tmp_vid):
+                            try:
+                                thumb_hash = self.extract_video_thumbnail(tmp_vid)
+                                if thumb_hash:
+                                    video_payload['image_hash'] = thumb_hash
+                                    self._log("✅ Thumbnail gerada do link original do Drive.")
+                                else:
+                                    self._log("⚠️ ffmpeg não conseguiu extrair thumbnail do vídeo.")
+                            finally:
+                                if os.path.exists(tmp_vid):
+                                    os.unlink(tmp_vid)
+                                    self._log("🗑️ Arquivo temporário de thumbnail deletado.")
                     except Exception as te:
-                        self._log(f"⚠️ Erro ao gerar thumbnail: {te}")
+                        self._log(f"⚠️ Erro ao extrair thumbnail via Drive: {te}")
+                
+                else:
+                    self._log("⚠️ Sem thumbnail disponível. Criativo pode ser rejeitado pelo Instagram.")
                 
                 object_story_spec['video_data'] = video_payload
             else:
