@@ -162,28 +162,67 @@ class MetaUploader:
     # ======================== IDENTITY & TRACKING FETCHERS ========================
 
     def get_pages(self):
-        """Busca páginas administradas pelo usuário (1 chamada SDK, sem fallback individual)."""
+        """Busca páginas em 3 fontes: diretas (/me/accounts) + via Business Manager."""
+        seen_ids = set()
+        result = []
+
+        def _parse_page(p):
+            ig_id = None
+            if 'instagram_business_account' in p:
+                ig_id = p['instagram_business_account'].get('id')
+            return {
+                'id': p.get('id'),
+                'name': p.get('name', '???'),
+                'instagram_id': ig_id
+            }
+
+        # ── Fonte 1: /me/accounts (páginas onde o usuário é admin direto) ──
         try:
             me = User(fbid='me')
             pages = me.get_accounts(fields=['name', 'access_token', 'instagram_business_account'])
-            
-            result = []
             for p in pages:
-                ig_id = None
-                if 'instagram_business_account' in p:
-                    ig_id = p['instagram_business_account'].get('id')
-                
-                result.append({
-                    'id': p.get('id'),
-                    'name': p.get('name', '???'),
-                    'instagram_id': ig_id
-                })
-
-            print(f"📄 [get_pages] {len(result)} páginas (1 API call)")
-            return result
+                pid = p.get('id')
+                if pid and pid not in seen_ids:
+                    seen_ids.add(pid)
+                    result.append(_parse_page(p))
+            print(f"📄 [get_pages] Fonte 1 (/me/accounts): {len(result)} páginas")
         except Exception as e:
-            print(f"❌ [get_pages] Erro: {e}")
-            return []
+            print(f"⚠️ [get_pages] Fonte 1 falhou: {e}")
+
+        # ── Fonte 2 e 3: páginas via Business Manager ──
+        try:
+            bm_url = f"https://graph.facebook.com/v22.0/me/businesses"
+            bm_resp = requests.get(bm_url, params={
+                'fields': 'id,name',
+                'access_token': self.access_token
+            }).json()
+
+            businesses = bm_resp.get('data', [])
+            print(f"📄 [get_pages] {len(businesses)} Business Manager(s) encontrado(s)")
+
+            fields = 'id,name,instagram_business_account'
+            for bm in businesses:
+                bm_id = bm.get('id')
+                # Owned pages (páginas que o BM possui)
+                for endpoint in ['owned_pages', 'client_pages']:
+                    try:
+                        resp = requests.get(
+                            f"https://graph.facebook.com/v22.0/{bm_id}/{endpoint}",
+                            params={'fields': fields, 'access_token': self.access_token}
+                        ).json()
+                        for p in resp.get('data', []):
+                            pid = p.get('id')
+                            if pid and pid not in seen_ids:
+                                seen_ids.add(pid)
+                                result.append(_parse_page(p))
+                    except Exception as e:
+                        print(f"⚠️ [get_pages] BM {bm_id}/{endpoint} falhou: {e}")
+        except Exception as e:
+            print(f"⚠️ [get_pages] Fonte 2/3 (Business Manager) falhou: {e}")
+
+        print(f"📄 [get_pages] Total: {len(result)} páginas únicas")
+        return result
+
 
     def get_pixels(self):
         """Busca pixels da Ad Account."""
