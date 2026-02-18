@@ -11,7 +11,7 @@ ACCOUNT_ID = 'act_446772417972343'
 PAGE_ID = '169510206254300'
 
 resp = requests.get(
-    f'https://graph.facebook.com/v18.0/{ACCOUNT_ID}/adimages',
+    f'https://graph.facebook.com/v22.0/{ACCOUNT_ID}/adimages',
     params={'access_token': ACCESS_TOKEN, 'fields': 'hash,name', 'limit': 1}
 ).json()
 
@@ -39,7 +39,7 @@ payload = {
 }
 
 resp = requests.post(
-    f'https://graph.facebook.com/v18.0/{ACCOUNT_ID}/adcreatives',
+    f'https://graph.facebook.com/v22.0/{ACCOUNT_ID}/adcreatives',
     data=payload
 )
 

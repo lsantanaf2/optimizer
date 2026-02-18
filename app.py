@@ -27,7 +27,7 @@ TOKEN_FILE = 'token.json'
 app = Flask(__name__, static_folder='static')
 app.secret_key = 'chave-secreta-optimizer-2024'
 
-VERSION = "v1.3.3"
+VERSION = "v1.3.4"
 
 @app.context_processor
 def inject_version():
@@ -85,7 +85,7 @@ def pagina_login():
     scopes = 'public_profile,email,ads_read,ads_management,pages_show_list,pages_read_engagement,instagram_basic,read_insights,pages_manage_ads'
     encoded_uri = quote(REDIRECT_URI)
     auth_url = (
-        f"https://www.facebook.com/v18.0/dialog/oauth?"
+        f"https://www.facebook.com/v22.0/dialog/oauth?"
         f"client_id={APP_ID}&redirect_uri={encoded_uri}&scope={scopes}"
     )
     print(f"DEBUG: Generating login page. REDIRECT_URI={REDIRECT_URI}")
@@ -102,7 +102,7 @@ def callback():
 
     encoded_uri = quote(REDIRECT_URI)
     token_url = (
-        f"https://graph.facebook.com/v18.0/oauth/access_token?"
+        f"https://graph.facebook.com/v22.0/oauth/access_token?"
         f"client_id={APP_ID}&redirect_uri={encoded_uri}&"
         f"client_secret={APP_SECRET}&code={code}"
     )

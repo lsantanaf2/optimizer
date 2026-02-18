@@ -16,6 +16,7 @@ import os
 import tempfile
 import requests
 import re
+import shutil
 from facebook_business.api import FacebookAdsApi
 from facebook_business.adobjects.adaccount import AdAccount
 from facebook_business.adobjects.adimage import AdImage
@@ -85,7 +86,6 @@ class MetaUploader:
         self.logs = []
         self._callback = None
 
-        FacebookAdsApi.init(app_id, app_secret, access_token)
         FacebookAdsApi.init(app_id, app_secret, access_token)
         self.account = AdAccount(account_id)
 
@@ -203,7 +203,7 @@ class MetaUploader:
             if not page_access_token:
                 try:
                     p_resp = requests.get(
-                        f"https://graph.facebook.com/v18.0/{page_id}",
+                        f"https://graph.facebook.com/v22.0/{page_id}",
                         params={'fields': 'access_token', 'access_token': self.access_token}
                     ).json()
                     if 'access_token' in p_resp:
@@ -213,7 +213,7 @@ class MetaUploader:
                     print(f"⚠️ [get_leadgen_forms] Falha ao obter Page Access Token (usando User Token): {e}")
 
             resp = requests.get(
-                f"https://graph.facebook.com/v18.0/{page_id}/leadgen_forms",
+                f"https://graph.facebook.com/v22.0/{page_id}/leadgen_forms",
                 params={'fields': 'id,name,status', 'access_token': token, 'limit': 100}
             ).json()
 
@@ -259,7 +259,7 @@ class MetaUploader:
         for edge, source in endpoints:
             try:
                 resp = requests.get(
-                    f"https://graph.facebook.com/v18.0/{self.account_id}/{edge}",
+                    f"https://graph.facebook.com/v22.0/{self.account_id}/{edge}",
                     params={'fields': 'id,username', 'access_token': self.access_token, 'limit': 100}
                 ).json()
                 if 'error' in resp:
@@ -282,7 +282,7 @@ class MetaUploader:
                     ig_username = None
                     try:
                         resp = requests.get(
-                            f"https://graph.facebook.com/v18.0/{ig_id}",
+                            f"https://graph.facebook.com/v22.0/{ig_id}",
                             params={'fields': 'username', 'access_token': self.access_token}
                         ).json()
                         ig_username = resp.get('username')
@@ -437,86 +437,148 @@ class MetaUploader:
         return link
 
     def _download_file(self, url, dest_path):
-        """Baixa um arquivo de uma URL, tratando confirmação de vírus do Google Drive para arquivos grandes."""
+        """Baixa um arquivo de uma URL, tratando confirmação de vírus do Google Drive (5 estratégias)."""
         try:
-            import re
             session = requests.Session()
             headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
             }
-            
-            # Estratégia 1: Download direto
+
+            # Extrair file_id do Google Drive (usado nas estratégias 3-5)
+            file_id = None
+            if 'drive.google.com' in url or 'docs.google.com' in url:
+                id_match = re.search(r'(?:id=|/d/)([a-zA-Z0-9_-]+)', url)
+                if id_match:
+                    file_id = id_match.group(1)
+                    self._log(f"🔑 File ID do Drive extraído: {file_id[:6]}...")
+
+            def _save_stream(response):
+                with open(dest_path, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=32768):
+                        if chunk:
+                            f.write(chunk)
+
+            def _is_html():
+                try:
+                    with open(dest_path, 'rb') as f:
+                        head = f.read(500)
+                    if b'<html' in head.lower() or b'<!doctype' in head.lower():
+                        return True
+                except Exception:
+                    pass
+                return False
+
+            # ─── ESTRATÉGIA 1: Download direto com cookie ───
+            self._log("📥 [E1] Download direto...")
             response = session.get(url, stream=True, timeout=60, headers=headers)
-            
-            # Checar se temos cookie de download_warning
             token = None
             for key, value in response.cookies.items():
                 if key.startswith('download_warning'):
                     token = value
                     break
-            
             if token:
-                self._log("🛡️ Token via cookie detectado. Confirmando download...")
+                self._log(f"🛡️ Token via cookie detectado: {token[:8]}...")
                 response = session.get(url, params={'confirm': token}, stream=True, timeout=120, headers=headers)
-            
-            # Salvar resposta
-            with open(dest_path, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=32768):
-                    if chunk:
-                        f.write(chunk)
-            
-            # Validar se é HTML (página de confirmação do Drive)
-            file_size = os.path.getsize(dest_path)
-            is_html = False
-            if file_size < 200000:  # Arquivos < 200KB podem ser HTML
-                with open(dest_path, 'rb') as f:
-                    content = f.read()
-                if b'<html' in content.lower() or b'<!doctype' in content.lower():
-                    is_html = True
-            
-            if is_html:
-                self._log("⚠️ Drive retornou página HTML. Tentando extrair token de confirmação...")
-                content_str = content.decode('utf-8', errors='replace')
-                
-                # Estratégia 2: Extrair token do HTML (botão de confirmação)
-                confirm_match = re.search(r'confirm=([0-9A-Za-z_-]+)', content_str)
-                uuid_match = re.search(r'name="uuid"\s+value="([^"]+)"', content_str)
-                
-                if confirm_match:
-                    confirm_token = confirm_match.group(1)
-                    self._log(f"🔑 Token extraído do HTML: {confirm_token[:8]}...")
-                    response = session.get(url, params={'confirm': confirm_token}, 
-                                         stream=True, timeout=120, headers=headers)
-                    with open(dest_path, 'wb') as f:
-                        for chunk in response.iter_content(chunk_size=32768):
-                            if chunk:
-                                f.write(chunk)
-                else:
-                    # Estratégia 3: Forçar confirm=t (funciona para muitos arquivos grandes)
-                    self._log("🔑 Tentando confirm=t como fallback...")
-                    response = session.get(url, params={'confirm': 't'}, 
-                                         stream=True, timeout=120, headers=headers)
-                    with open(dest_path, 'wb') as f:
-                        for chunk in response.iter_content(chunk_size=32768):
-                            if chunk:
-                                f.write(chunk)
-                
-                # Validar novamente
+            _save_stream(response)
+
+            if not _is_html():
                 file_size = os.path.getsize(dest_path)
-                if file_size < 200000:
-                    with open(dest_path, 'rb') as f:
-                        header = f.read(500)
-                    if b'<html' in header.lower() or b'<!doctype' in header.lower():
-                        self._log(f"❌ Download falhou — Drive continua retornando HTML.")
-                        self._log(f"   → Verifique se o arquivo tem permissão 'Qualquer pessoa com o link pode visualizar'.")
-                        os.unlink(dest_path)
-                        return False
-            
-            file_size = os.path.getsize(dest_path)
-            self._log(f"✅ Download concluído: {os.path.basename(dest_path)} ({file_size / 1024:.0f} KB)")
-            return True
+                self._log(f"✅ Download concluído (E1): {os.path.basename(dest_path)} ({file_size / 1024:.0f} KB)")
+                return True
+
+            self._log("⚠️ [E1] Drive retornou HTML.")
+
+            # ─── ESTRATÉGIA 2: GET confirm=t (legacy) ───
+            if file_id:
+                self._log("📥 [E2] Tentando confirm=t...")
+                dl_url = f"https://drive.google.com/uc?export=download&id={file_id}&confirm=t"
+                response = session.get(dl_url, stream=True, timeout=120, headers=headers)
+                _save_stream(response)
+                if not _is_html():
+                    file_size = os.path.getsize(dest_path)
+                    self._log(f"✅ Download concluído (E2): ({file_size / 1024:.0f} KB)")
+                    return True
+                self._log("⚠️ [E2] Falhou.")
+
+            # ─── ESTRATÉGIA 3: POST do formulário de confirmação ───
+            self._log("📥 [E3] Extraindo formulário POST do HTML...")
+            try:
+                with open(dest_path, 'rb') as f:
+                    html_content = f.read().decode('utf-8', errors='replace')
+
+                # Extrair action URL e campos hidden
+                action_match = re.search(r'action="([^"]+)"', html_content)
+                id_match_form = re.search(r'name="id"\s+value="([^"]+)"', html_content)
+                uuid_match = re.search(r'name="uuid"\s+value="([^"]+)"', html_content)
+
+                if action_match:
+                    action_url = action_match.group(1).replace('&amp;', '&')
+                    post_data = {}
+                    if id_match_form:
+                        post_data['id'] = id_match_form.group(1)
+                    if uuid_match:
+                        post_data['uuid'] = uuid_match.group(1)
+                    post_data['confirm'] = 't'
+
+                    self._log(f"🔑 [E3] POST para: {action_url[:50]}...")
+                    response = session.post(action_url, data=post_data, stream=True, timeout=120, headers=headers)
+                    _save_stream(response)
+                    if not _is_html():
+                        file_size = os.path.getsize(dest_path)
+                        self._log(f"✅ Download concluído (E3): ({file_size / 1024:.0f} KB)")
+                        return True
+                    self._log("⚠️ [E3] POST retornou HTML.")
+                else:
+                    self._log("⚠️ [E3] action URL não encontrada no HTML.")
+            except Exception as e3:
+                self._log(f"⚠️ [E3] Erro: {e3}")
+
+            # ─── ESTRATÉGIA 4: gdown (biblioteca especializada) ───
+            if file_id:
+                try:
+                    import gdown
+                    self._log("📥 [E4] Usando gdown...")
+                    gdown_url = f"https://drive.google.com/uc?id={file_id}"
+                    output = gdown.download(gdown_url, dest_path, quiet=True, fuzzy=True)
+                    if output and os.path.exists(dest_path) and not _is_html():
+                        file_size = os.path.getsize(dest_path)
+                        self._log(f"✅ Download concluído (E4/gdown): ({file_size / 1024:.0f} KB)")
+                        return True
+                    self._log("⚠️ [E4] gdown falhou ou retornou HTML.")
+                except ImportError:
+                    self._log("⚠️ [E4] gdown não instalado. Pulando...")
+                except Exception as e4:
+                    self._log(f"⚠️ [E4] gdown erro: {e4}")
+
+            # ─── ESTRATÉGIA 5: Novo domínio drive.usercontent.google.com ───
+            if file_id:
+                self._log("📥 [E5] Tentando novo domínio (drive.usercontent.google.com)...")
+                new_url = f"https://drive.usercontent.google.com/download?id={file_id}&export=download&confirm=t"
+                response = session.get(new_url, stream=True, timeout=120, headers=headers)
+                _save_stream(response)
+                if not _is_html():
+                    file_size = os.path.getsize(dest_path)
+                    self._log(f"✅ Download concluído (E5): ({file_size / 1024:.0f} KB)")
+                    return True
+                self._log("⚠️ [E5] Novo domínio também retornou HTML.")
+
+            # ─── FALHA TOTAL: salvar HTML para debug ───
+            self._log(f"❌ Download falhou em TODAS as 5 estratégias.")
+            self._log(f"   → Verifique se o arquivo tem permissão 'Qualquer pessoa com o link pode visualizar'.")
+            try:
+                debug_path = os.path.join(tempfile.gettempdir(), f"drive_debug_{int(time.time())}.html")
+                if os.path.exists(dest_path):
+                    shutil.copy2(dest_path, debug_path)
+                    self._log(f"   → HTML de debug salvo em: {debug_path}")
+            except Exception:
+                pass
+
+            if os.path.exists(dest_path):
+                os.unlink(dest_path)
+            return False
+
         except Exception as e:
-            self._log(f"❌ Erro no download do arquivo: {str(e)}")
+            self._log(f"❌ Erro crítico no download: {str(e)}")
             if os.path.exists(dest_path):
                 os.unlink(dest_path)
             return False
@@ -527,7 +589,7 @@ class MetaUploader:
         url = self._normalize_drive_link(url)
         self._log(f"🔗 Enviando URL de imagem para a Meta: {url[:60]}...")
         
-        api_url = f"https://graph.facebook.com/v18.0/{self.account_id}/adimages"
+        api_url = f"https://graph.facebook.com/v22.0/{self.account_id}/adimages"
         
         def _do():
             resp = requests.post(api_url, data={'url': url, 'access_token': self.access_token})
@@ -537,28 +599,23 @@ class MetaUploader:
                 # Fallback via bytes em memória (BytesIO) se a Meta falhar no download direto
                 # Inclusão de 'capability' pois alguns Apps não podem enviar via URL direta
                 if any(k in msg.lower() for k in ['problem', 'download', 'failed', 'could not', 'capability']):
-                    self._log("⚠️ Meta falhou ao baixar URL. Tentando fallback via download local...")
+                    self._log("⚠️ Meta falhou ao baixar URL. Tentando fallback via download local (5 estratégias)...")
+                    tmp_path = os.path.join(tempfile.gettempdir(), f"img_fallback_{int(time.time())}.jpg")
                     try:
-                        # FIX: Baixar para arquivo temp real (SDK não aceita BytesIO diretamente)
-                        headers = {
-                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                        }
-                        r = requests.get(url, timeout=60, headers=headers)
-                        r.raise_for_status()
-                        
-                        # Salvar em arquivo temporário real
-                        tmp_path = os.path.join(tempfile.gettempdir(), f"img_fallback_{int(time.time())}.jpg")
-                        with open(tmp_path, 'wb') as f:
-                            f.write(r.content)
-                        
-                        try:
-                            image_hash = self.upload_image(tmp_path)
-                            return image_hash
-                        finally:
-                            if os.path.exists(tmp_path):
-                                os.unlink(tmp_path)
+                        if self._download_file(url, tmp_path):
+                            self._log(f"📤 Fazendo upload de imagem: {os.path.basename(tmp_path)}...")
+                            try:
+                                image_hash = self.upload_image(tmp_path)
+                                return image_hash
+                            finally:
+                                if os.path.exists(tmp_path):
+                                    os.unlink(tmp_path)
+                        else:
+                            raise Exception("Download da imagem falhou em todas as 5 estratégias do Drive")
                     except Exception as ex:
                         self._log(f"❌ Falha no fallback de download local: {str(ex)}")
+                        if os.path.exists(tmp_path):
+                            os.unlink(tmp_path)
                         raise ex
                 raise Exception(msg)
             
@@ -575,7 +632,7 @@ class MetaUploader:
         url = self._normalize_drive_link(url)
         self._log(f"🔗 Enviando URL de vídeo para a Meta: {url[:60]}...")
         
-        api_url = f"https://graph.facebook.com/v18.0/{self.account_id}/advideos"
+        api_url = f"https://graph.facebook.com/v22.0/{self.account_id}/advideos"
         
         def _do():
             resp = requests.post(api_url, data={'file_url': url, 'access_token': self.access_token})
@@ -666,7 +723,7 @@ class MetaUploader:
             self._log(f"🎬 Buscando URL do vídeo {video_id} para extrair thumbnail...")
             
             # Consultar a Meta API para obter a URL de download do vídeo
-            url = f"https://graph.facebook.com/v18.0/{video_id}"
+            url = f"https://graph.facebook.com/v22.0/{video_id}"
             params = {
                 'fields': 'source',
                 'access_token': self.access_token
@@ -798,7 +855,7 @@ class MetaUploader:
         while time.time() - start_time < timeout:
             try:
                 # Usando requests direta para evitar overhead do SDK em polling
-                url = f"https://graph.facebook.com/v18.0/{video_id}"
+                url = f"https://graph.facebook.com/v22.0/{video_id}"
                 params = {
                     'fields': 'status',
                     'access_token': self.access_token
@@ -842,7 +899,7 @@ class MetaUploader:
         while time.time() - start_time < timeout:
             try:
                 # Consulta act_id/adimages com filtro de hash
-                url = f"https://graph.facebook.com/v18.0/{self.account_id}/adimages"
+                url = f"https://graph.facebook.com/v22.0/{self.account_id}/adimages"
                 params = {
                     'hashes': json.dumps([image_hash]),
                     'fields': 'hash,status',
@@ -900,7 +957,7 @@ class MetaUploader:
         if not stories_media:
             stories_media = feed_media
 
-        api_url = f"https://graph.facebook.com/v18.0/{self.account_id}/adcreatives"
+        api_url = f"https://graph.facebook.com/v22.0/{self.account_id}/adcreatives"
 
         # Normalizar textos
         body_text = primary_texts[0] if primary_texts else "Check this out!"
@@ -1218,7 +1275,7 @@ class MetaUploader:
 
         def _do():
             import json
-            url = f"https://graph.facebook.com/v18.0/{self.account_id}/ads"
+            url = f"https://graph.facebook.com/v22.0/{self.account_id}/ads"
             
             # creative_id DEVE ser número (int), não string
             try:

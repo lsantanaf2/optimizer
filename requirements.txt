@@ -3,3 +3,4 @@ requests
 python-dotenv
 facebook-business
 gunicorn
+gdown>=5.0.0
