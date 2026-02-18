@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Organograma SK Marketing - Sniper Squad</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Inter:wght@300;400;600&display=swap"
+        rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #0a0b10;
+            --accent-cyan: #00f2ff;
+            --accent-blue: #0066ff;
+            --text-primary: #e0e6ed;
+            --glass-bg: rgba(255, 255, 255, 0.03);
+            --glass-border: rgba(255, 255, 255, 0.1);
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-dark);
+            color: var(--text-primary);
+            font-family: 'Inter', sans-serif;
+            overflow-x: hidden;
+            background-image:
+                radial-gradient(circle at 20% 30%, rgba(0, 242, 255, 0.05) 0%, transparent 40%),
+                radial-gradient(circle at 80% 70%, rgba(0, 102, 255, 0.05) 0%, transparent 40%);
+        }
+
+        .header {
+            text-align: center;
+            padding: 40px 20px;
+            background: linear-gradient(to bottom, rgba(0, 0, 0, 0.5), transparent);
+        }
+
+        h1 {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 2.5rem;
+            margin: 0;
+            background: linear-gradient(90deg, var(--accent-cyan), var(--accent-blue));
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-transform: uppercase;
+            letter-spacing: 4px;
+        }
+
+        .subtitle {
+            font-size: 1rem;
+            color: #8892b0;
+            margin-top: 10px;
+            letter-spacing: 1px;
+        }
+
+        .container {
+            max-width: 98%;
+            margin: 10px auto;
+            padding: 10px;
+            background: var(--glass-bg);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+        }
+
+        .mermaid-wrapper {
+            display: flex;
+            justify-content: center;
+            overflow: visible;
+        }
+
+        /* Mermaid Customization */
+        .mermaid svg {
+            width: 100% !important;
+            height: auto;
+            min-height: 750px;
+        }
+
+        .footer {
+            text-align: center;
+            padding: 20px;
+            font-size: 0.8rem;
+            color: #444;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            background: rgba(0, 242, 255, 0.1);
+            color: var(--accent-cyan);
+            border: 1px solid var(--accent-cyan);
+            font-size: 0.7rem;
+            margin-bottom: 20px;
+        }
+
+        /* Glow animation */
+        @keyframes glow {
+            0% {
+                filter: drop-shadow(0 0 5px rgba(0, 242, 255, 0.2));
+            }
+
+            50% {
+                filter: drop-shadow(0 0 15px rgba(0, 242, 255, 0.5));
+            }
+
+            100% {
+                filter: drop-shadow(0 0 5px rgba(0, 242, 255, 0.2));
+            }
+        }
+
+        .mermaid {
+            animation: glow 4s infinite ease-in-out;
+        }
+
+        /* Custom Tooltip Styling */
+        #tippy-tooltip {
+            position: absolute;
+            background: rgba(10, 11, 16, 0.95);
+            color: #00f2ff;
+            padding: 12px 18px;
+            border-radius: 8px;
+            border: 1px solid #00f2ff;
+            font-size: 0.9rem;
+            max-width: 250px;
+            pointer-events: none;
+            display: none;
+            z-index: 1000;
+            box-shadow: 0 0 20px rgba(0, 242, 255, 0.3);
+            backdrop-filter: blur(5px);
+            line-height: 1.4;
+            font-weight: 300;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="tippy-tooltip"></div>
+
+    <div class="header">
+        <div class="badge">ESTRUTURA DE COMANDO AIOS</div>
+        <h1>Comando SK Marketing</h1>
+        <div class="subtitle">Arquitetura de Hub de Inteligência e Operações Especiais</div>
+    </div>
+
+    <div class="container">
+        <div class="mermaid-wrapper">
+            <pre class="mermaid">
+graph TB
+    %% Comando Central
+    Master(("👑 AIOS-MASTER"))
+
+    %% Núcleo de Inteligência
+    subgraph Intelligence["🧠 CÉREBRO TÁTICO"]
+        PM["📋 PM"]
+        PO["🎯 PO"]
+        Analyst["📊 Analyst"]
+    end
+
+    %% Núcleo de Construção
+    subgraph Engineering["⚙️ ENGINE ROOM"]
+        Arch["🏛️ Architect"]
+        Dev["💻 Dex (Dev)"]
+        QA["🧪 Quinn (QA)"]
+        DevOps["⚙️ Gage (DevOps)"]
+    end
+
+    %% Unidades de Assalto (Execution)
+    subgraph MetaSquad["🎯 META SNIPER SQUAD"]
+        Sniper["🎯 Sniper"]
+        Auditor["⚖️ Auditor"]
+        Genius["🎨 Genius"]
+        Pixel["🔍 Pixel"]
+    end
+
+    subgraph PWSquad["🎭 PLAYWRIGHT SQUAD (Special Ops)"]
+        Echo["🎭 Echo"]
+        Scout["🕵️ Scout"]
+        Spark["🛠️ Spark"]
+        Tracer["🔍 Tracer"]
+    end
+
+    %% Relações de Comando
+    Master <--> Intelligence
+    Master <--> Engineering
+    Master <--> MetaSquad
+    Master <--> PWSquad
+
+    %% Linhas de Suporte Técnico
+    Engineering -.-> MetaSquad
+    Engineering -.-> PWSquad
+
+    %% Estilização Pró (Custom Colors)
+    classDef master fill:#f96,stroke:#fff,stroke-width:4px,color:#000
+    classDef intel fill:#1a1b26,stroke:#7aa2f7,stroke-width:2px,color:#fff
+    classDef engine fill:#1a1b26,stroke:#bb9af7,stroke-width:2px,color:#fff
+    classDef meta fill:#1a1b26,stroke:#f7768e,stroke-width:2px,color:#fff
+    classDef pw fill:#1a1b26,stroke:#7dcfff,stroke-width:2px,color:#fff
+
+    class Master master
+    class PM,PO,Analyst intel
+    class Arch,Dev,QA,DevOps engine
+    class Sniper,Auditor,Genius,Pixel meta
+    class Echo,Scout,Spark,Tracer pw
+            </pre>
+        </div>
+    </div>
+
+    <div class="footer">
+        © 2026 SK Marketing | Desenvolvido por Orion Sniper
+    </div>
+
+    <script>
+        const agentDescriptions = {
+            'Master': 'O General. Orquestra todos os núcleos, toma decisões de alto nível e garante a sincronia total entre estratégia e execução.',
+            'PM': 'O Estrategista. Desenha os planos de ação (Workflows) e gerencia os recursos para garantir que cada missão seja cumprida no prazo.',
+            'PO': 'O Guardião da Visão. Garante que o produto final atenda às expectativas do Comandante e do mercado, priorizando o valor real.',
+            'Analyst': 'O Olho Clínico. Analista de BI que detecta padrões de performance e fornece os dados necessários para pivots estratégicos.',
+            'Arch': 'O Arquiteto de Elite. Desenha os sistemas complexos e assegura que a base tecnológica seja de nível militar: resiliente e veloz.',
+            'Dev': 'A Força Construtora (Dex). Implementa os códigos e ferramentas que dão vida à operação, garantindo integridade e performance.',
+            'QA': 'O Escudo Anti-Falhas (Quinn). Executa QA rigoroso e auditoria técnica para garantir que nada passe com erro para a live.',
+            'DevOps': 'O Mestre da Infra (Gage). Gerencia os servidores, containers e o pipeline de deploy, mantendo o ecossistema sempre online.',
+            'Sniper': 'O Executor de Precisão. Realiza disparos cirúrgicos via API da Meta para criação e escala de campanhas em massa.',
+            'Auditor': 'O Analista de Risco. Monitora políticas e compliance para evitar bloqueios, garantindo a longevidade das contas de anúncio.',
+            'Genius': 'O Copywriter de Elite. Cria ofertas irresistíveis e designs que capturam a atenção, otimizando o ROAS desde o criativo.',
+            'Pixel': 'O Detetive de Rastreamento. Garante que cada centavo gasto seja rastreado, configurando eventos e pixels com 100% de precisão.',
+            'Echo': 'O Orquestrador Playwright. Mestre em automação web quando a API não é suficiente. Define táticas de navegação e extração.',
+            'Scout': 'O Especialista em Infiltração. Configura contextos Stealth para burlar detecções anti-bot e mapear sites complexos.',
+            'Spark': 'O Engenheiro de Automação. Constrói Page Object Models resilientes para garantir que os bots operem como humanos reais.',
+            'Tracer': 'O Analista Forense. Investiga falhas em scripts web e propõe correções imediatas para manter a automação operando 24/7.'
+        };
+
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: 'dark',
+            flowchart: {
+                useMaxWidth: false,
+                htmlLabels: true,
+                curve: 'basis',
+                nodeSpacing: 100,
+                rankSpacing: 100
+            },
+            themeVariables: {
+                fontSize: '20px',
+                primaryColor: '#0066ff',
+                primaryTextColor: '#fff',
+                primaryBorderColor: '#00f2ff',
+                lineColor: '#00f2ff',
+                secondaryColor: '#000b10',
+                tertiaryColor: '#0a0b10'
+            }
+        });
+
+        // Tooltip Engine
+        const tooltip = document.getElementById('tippy-tooltip');
+
+        document.addEventListener('mouseover', (e) => {
+            const element = e.target.closest('.nodes .node, .nodes .cluster');
+            if (element) {
+                // Find agent name by checking the text content or ID
+                const textContent = element.textContent.trim();
+                const agentKey = Object.keys(agentDescriptions).find(key =>
+                    textContent.includes(key) || element.id.includes(key)
+                );
+
+                if (agentKey) {
+                    tooltip.textContent = agentDescriptions[agentKey];
+                    tooltip.style.display = 'block';
+                }
+            }
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (tooltip.style.display === 'block') {
+                tooltip.style.left = (e.pageX + 15) + 'px';
+                tooltip.style.top = (e.pageY + 15) + 'px';
+            }
+        });
+
+        document.addEventListener('mouseout', (e) => {
+            if (e.target.closest('.nodes .node, .nodes .cluster')) {
+                tooltip.style.display = 'none';
+            }
+        });
+    </script>
+</body>
+
+</html>

@@ -439,13 +439,16 @@ class MetaUploader:
     def _download_file(self, url, dest_path):
         """Baixa um arquivo de uma URL, tratando confirmação de vírus do Google Drive para arquivos grandes."""
         try:
+            import re
             session = requests.Session()
             headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             }
-            # Primeira tentativa: o Drive pode retornar uma página de aviso se o arquivo for grande (>100MB)
+            
+            # Estratégia 1: Download direto
             response = session.get(url, stream=True, timeout=60, headers=headers)
             
+            # Checar se temos cookie de download_warning
             token = None
             for key, value in response.cookies.items():
                 if key.startswith('download_warning'):
@@ -453,32 +456,71 @@ class MetaUploader:
                     break
             
             if token:
-                # Se achou o token de aviso, faz o download real passando o confirm
-                self._log("🛡️ Ignorando aviso de antivírus do Drive...")
-                params = {'confirm': token}
-                response = session.get(url, params=params, stream=True, timeout=120, headers=headers)
-                
+                self._log("🛡️ Token via cookie detectado. Confirmando download...")
+                response = session.get(url, params={'confirm': token}, stream=True, timeout=120, headers=headers)
+            
+            # Salvar resposta
             with open(dest_path, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=32768):
                     if chunk:
                         f.write(chunk)
             
-            # Validação: verificar se o arquivo baixado não é uma página HTML do Google Drive
+            # Validar se é HTML (página de confirmação do Drive)
             file_size = os.path.getsize(dest_path)
-            if file_size < 10000:  # Menos de 10KB provavelmente é HTML
+            is_html = False
+            if file_size < 200000:  # Arquivos < 200KB podem ser HTML
                 with open(dest_path, 'rb') as f:
-                    header = f.read(500)
-                if b'<html' in header.lower() or b'<!doctype' in header.lower():
-                    self._log(f"❌ Arquivo baixado é uma página HTML do Google Drive, não um arquivo de mídia.")
-                    self._log(f"   → Verifique se o arquivo tem permissão 'Qualquer pessoa com o link pode visualizar'.")
-                    os.unlink(dest_path)
-                    return False
+                    content = f.read()
+                if b'<html' in content.lower() or b'<!doctype' in content.lower():
+                    is_html = True
             
+            if is_html:
+                self._log("⚠️ Drive retornou página HTML. Tentando extrair token de confirmação...")
+                content_str = content.decode('utf-8', errors='replace')
+                
+                # Estratégia 2: Extrair token do HTML (botão de confirmação)
+                confirm_match = re.search(r'confirm=([0-9A-Za-z_-]+)', content_str)
+                uuid_match = re.search(r'name="uuid"\s+value="([^"]+)"', content_str)
+                
+                if confirm_match:
+                    confirm_token = confirm_match.group(1)
+                    self._log(f"🔑 Token extraído do HTML: {confirm_token[:8]}...")
+                    response = session.get(url, params={'confirm': confirm_token}, 
+                                         stream=True, timeout=120, headers=headers)
+                    with open(dest_path, 'wb') as f:
+                        for chunk in response.iter_content(chunk_size=32768):
+                            if chunk:
+                                f.write(chunk)
+                else:
+                    # Estratégia 3: Forçar confirm=t (funciona para muitos arquivos grandes)
+                    self._log("🔑 Tentando confirm=t como fallback...")
+                    response = session.get(url, params={'confirm': 't'}, 
+                                         stream=True, timeout=120, headers=headers)
+                    with open(dest_path, 'wb') as f:
+                        for chunk in response.iter_content(chunk_size=32768):
+                            if chunk:
+                                f.write(chunk)
+                
+                # Validar novamente
+                file_size = os.path.getsize(dest_path)
+                if file_size < 200000:
+                    with open(dest_path, 'rb') as f:
+                        header = f.read(500)
+                    if b'<html' in header.lower() or b'<!doctype' in header.lower():
+                        self._log(f"❌ Download falhou — Drive continua retornando HTML.")
+                        self._log(f"   → Verifique se o arquivo tem permissão 'Qualquer pessoa com o link pode visualizar'.")
+                        os.unlink(dest_path)
+                        return False
+            
+            file_size = os.path.getsize(dest_path)
             self._log(f"✅ Download concluído: {os.path.basename(dest_path)} ({file_size / 1024:.0f} KB)")
             return True
         except Exception as e:
             self._log(f"❌ Erro no download do arquivo: {str(e)}")
+            if os.path.exists(dest_path):
+                os.unlink(dest_path)
             return False
+
 
     def upload_image_url(self, url):
         """Upload de imagem via URL (parâmetro url da Meta) com fallback em memória (BytesIO)."""
@@ -1154,7 +1196,12 @@ class MetaUploader:
             'object_story_spec': object_story_spec,
             'degrees_of_freedom_spec': {
                 'creative_features_spec': {
-                    'standard_enhancements': {'enroll_status': 'OPT_OUT'},
+                    # Features individuais (standard_enhancements deprecated na API v22.0)
+                    'image_template': {'enroll_status': 'OPT_OUT'},
+                    'image_touchups': {'enroll_status': 'OPT_OUT'},
+                    'text_optimizations': {'enroll_status': 'OPT_OUT'},
+                    'inline_comment': {'enroll_status': 'OPT_OUT'},
+                    'video_auto_crop': {'enroll_status': 'OPT_OUT'},
                 },
             },
         }
