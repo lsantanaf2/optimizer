@@ -319,20 +319,20 @@
                     🚀 Subir Todos os Anúncios
                 </button>
                 <div class="footer-note">Todos os anúncios serão criados com status <strong>PAUSED</strong>.</div>
+            </div>
 
-                <!-- Log Console -->
-                <div class="log-console" id="log-console" style="display:none;">
-                    <div class="log-console-header">
-                        <span>📟 Console de Operações</span>
-                        <div style="display:flex; align-items:center; gap:8px;">
-                            <button type="button" onclick="copiarLog()" class="btn-copy-log"
-                                title="Copiar todo o log">📋 Copiar</button>
-                            <span class="log-console-dot" id="log-dot"></span>
-                        </div>
+            <!-- Log Console — fora do queue-actions para persistir após sucesso -->
+            <div class="log-console" id="log-console" style="display:none;">
+                <div class="log-console-header">
+                    <span>📟 Console de Operações</span>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <button type="button" onclick="copiarLog()" class="btn-copy-log" title="Copiar todo o log">📋
+                            Copiar</button>
+                        <span class="log-console-dot" id="log-dot"></span>
                     </div>
-                    <div class="log-console-body" id="log-body">
-                        <div class="log-console-empty">Aguardando início do upload...</div>
-                    </div>
+                </div>
+                <div class="log-console-body" id="log-body">
+                    <div class="log-console-empty">Aguardando início do upload...</div>
                 </div>
             </div>
         </div>
@@ -800,7 +800,7 @@
                 urlStories: urlStoriesRemote,
             };
 
-            filaAnuncios.push(item);
+            filaAnuncios.unshift(item); // Novo item vai para o TOPO da fila
             renderizarFila();
 
             feedInput.value = '';

@@ -1264,10 +1264,13 @@ class MetaUploader:
             'object_story_spec': object_story_spec,
             'degrees_of_freedom_spec': {
                 'creative_features_spec': {
-                    # v22.0 aceita APENAS estas chaves (confirmado em produção 2026-02-18):
-                    # IG_VIDEO_NATIVE_SUBTITLE, PRODUCT_METADATA_AUTOMATION, PROFILE_CARD,
-                    # STANDARD_ENHANCEMENTS_CATALOG, TEXT_OVERLAY_TRANSLATION
-                    'STANDARD_ENHANCEMENTS_CATALOG': {'enroll_status': 'OPT_OUT'},
+                    # Desativados por solicitação (2026-02-18):
+                    # "Melhorias no texto" = text_optimizations
+                    # "Aprimorar CTA"      = enhance_cta
+                    'text_optimizations': {'enroll_status': 'OPT_OUT'},
+                    'enhance_cta': {'enroll_status': 'OPT_OUT'},
+                    # Os demais (image_template, image_touchups, video_auto_crop, inline_comment)
+                    # ficam sem especificação = comportamento padrão da Meta
                 },
             },
         }
