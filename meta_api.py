@@ -479,16 +479,28 @@ class MetaUploader:
                 # Fallback via bytes em memória (BytesIO) se a Meta falhar no download direto
                 # Inclusão de 'capability' pois alguns Apps não podem enviar via URL direta
                 if any(k in msg.lower() for k in ['problem', 'download', 'failed', 'could not', 'capability']):
-                    self._log("⚠️ Meta falhou ao baixar URL. Tentando fallback via BytesIO (memória)...")
+                    self._log("⚠️ Meta falhou ao baixar URL. Tentando fallback via download local...")
                     try:
-                        r = requests.get(url, timeout=30)
-                        image = AdImage(parent_id=self.account_id)
-                        # Fix: Meta SDK requer um filename mesmo para bytes em memória para evitar KeyError
-                        image[AdImage.Field.filename] = 'upload_fallback.jpg'
-                        image.remote_create(params={'bytes': r.content})
-                        return image[AdImage.Field.hash]
+                        # FIX: Baixar para arquivo temp real (SDK não aceita BytesIO diretamente)
+                        headers = {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                        }
+                        r = requests.get(url, timeout=60, headers=headers)
+                        r.raise_for_status()
+                        
+                        # Salvar em arquivo temporário real
+                        tmp_path = os.path.join(tempfile.gettempdir(), f"img_fallback_{int(time.time())}.jpg")
+                        with open(tmp_path, 'wb') as f:
+                            f.write(r.content)
+                        
+                        try:
+                            image_hash = self.upload_image(tmp_path)
+                            return image_hash
+                        finally:
+                            if os.path.exists(tmp_path):
+                                os.unlink(tmp_path)
                     except Exception as ex:
-                        self._log(f"❌ Falha no fallback BytesIO: {str(ex)}")
+                        self._log(f"❌ Falha no fallback de download local: {str(ex)}")
                         raise ex
                 raise Exception(msg)
             
@@ -508,12 +520,15 @@ class MetaUploader:
         api_url = f"https://graph.facebook.com/v18.0/{self.account_id}/advideos"
         
         def _do():
+            # Usar headers de browser para evitar bloqueios do Drive
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
             resp = requests.post(api_url, data={'file_url': url, 'access_token': self.access_token})
             result = resp.json()
             if 'error' in result:
                 msg = result['error'].get('message', '')
                 # Fallback se a Meta não conseguir baixar o arquivo
-                # Inclusão de 'capability' por segurança
                 if any(k in msg.lower() for k in ['problem', 'download', 'failed', 'could not', 'capability']):
                     self._log("⚠️ Meta falhou ao baixar vídeo. Tentando fallback via download local robusto...")
                     tmp_path = os.path.join(tempfile.gettempdir(), f"vid_{int(time.time())}.mp4")
@@ -531,6 +546,82 @@ class MetaUploader:
         video_id = self._with_retry(f"Upload vídeo via URL", _do)
         self._log(f"✅ Vídeo via URL vinculado (ID: {video_id})")
         return video_id
+
+    def extract_video_thumbnail(self, video_path):
+        """
+        Extrai um frame do vídeo como thumbnail usando ffmpeg.
+        Retorna o image_hash da thumbnail ou None se falhar.
+        """
+        try:
+            import subprocess
+            thumb_path = os.path.join(tempfile.gettempdir(), f"thumb_{int(time.time())}.jpg")
+            
+            # Extrair frame no segundo 1 do vídeo
+            cmd = [
+                'ffmpeg', '-y',
+                '-i', video_path,
+                '-ss', '00:00:01',
+                '-vframes', '1',
+                '-q:v', '2',
+                thumb_path
+            ]
+            result = subprocess.run(cmd, capture_output=True, timeout=30)
+            
+            if result.returncode == 0 and os.path.exists(thumb_path):
+                self._log("🖼️ Thumbnail extraída do vídeo via ffmpeg.")
+                try:
+                    image_hash = self.upload_image(thumb_path)
+                    return image_hash
+                finally:
+                    if os.path.exists(thumb_path):
+                        os.unlink(thumb_path)
+            else:
+                self._log(f"⚠️ ffmpeg não conseguiu extrair thumbnail: {result.stderr.decode()[:100]}")
+                return None
+        except FileNotFoundError:
+            self._log("⚠️ ffmpeg não encontrado no sistema. Thumbnail automática não disponível.")
+            return None
+        except Exception as e:
+            self._log(f"⚠️ Erro ao extrair thumbnail: {e}")
+            return None
+
+    def extract_video_thumbnail_from_id(self, video_id):
+        """
+        Consulta a Meta API para obter a URL de download do vídeo,
+        baixa localmente e extrai um frame como thumbnail.
+        Retorna image_hash ou None se falhar.
+        """
+        try:
+            self._log(f"🎬 Buscando URL do vídeo {video_id} para extrair thumbnail...")
+            
+            # Consultar a Meta API para obter a URL de download do vídeo
+            url = f"https://graph.facebook.com/v18.0/{video_id}"
+            params = {
+                'fields': 'source',
+                'access_token': self.access_token
+            }
+            resp = requests.get(url, params=params).json()
+            
+            if 'error' in resp or 'source' not in resp:
+                self._log(f"⚠️ Não foi possível obter URL do vídeo: {resp.get('error', {}).get('message', 'sem source')}")
+                return None
+            
+            video_url = resp['source']
+            self._log(f"⬇️ Baixando vídeo para extração de thumbnail...")
+            
+            tmp_vid = os.path.join(tempfile.gettempdir(), f"vid_thumb_{int(time.time())}.mp4")
+            if self._download_file(video_url, tmp_vid):
+                try:
+                    return self.extract_video_thumbnail(tmp_vid)
+                finally:
+                    if os.path.exists(tmp_vid):
+                        os.unlink(tmp_vid)
+            else:
+                self._log("⚠️ Falha ao baixar vídeo para extração de thumbnail.")
+                return None
+        except Exception as e:
+            self._log(f"⚠️ Erro em extract_video_thumbnail_from_id: {e}")
+            return None
 
     def upload_image(self, file_path):
         """Upload de imagem para a conta. Retorna image_hash."""
@@ -846,10 +937,29 @@ class MetaUploader:
                 }
                 
                 # FIX: Instagram EXIGE image_hash ou image_url em video_data
-                # Tentamos usar a imagem do par (stories_media) como thumbnail
+                # Prioridade 1: usar imagem do par (stories_media)
                 if stories_media and stories_media['type'] == 'image':
                     video_payload['image_hash'] = stories_media['hash']
                     self._log("🖼️ Usando imagem do Stories como thumbnail para o vídeo de Feed.")
+                else:
+                    # Prioridade 2: extrair thumbnail do próprio vídeo via ffmpeg
+                    self._log("🔍 Nenhuma imagem do par. Tentando extrair thumbnail do vídeo...")
+                    # Precisamos do arquivo local para extrair thumbnail
+                    # Se o vídeo foi baixado localmente, o caminho está no item da fila
+                    # Tentamos baixar o vídeo novamente para extrair o frame
+                    try:
+                        tmp_vid = os.path.join(tempfile.gettempdir(), f"vid_thumb_{int(time.time())}.mp4")
+                        vid_url = None
+                        # Tentar reconstruir URL do vídeo a partir do feed_media (se vier de URL)
+                        # Como fallback, baixamos o vídeo do ID via API da Meta
+                        thumb_hash = self.extract_video_thumbnail_from_id(feed_media['id'])
+                        if thumb_hash:
+                            video_payload['image_hash'] = thumb_hash
+                            self._log("✅ Thumbnail gerada automaticamente do vídeo.")
+                        else:
+                            self._log("⚠️ Não foi possível gerar thumbnail. Criativo pode ser rejeitado pelo Instagram.")
+                    except Exception as te:
+                        self._log(f"⚠️ Erro ao gerar thumbnail: {te}")
                 
                 object_story_spec['video_data'] = video_payload
             else:
