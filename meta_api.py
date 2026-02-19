@@ -1232,17 +1232,9 @@ class MetaUploader:
             if media['type'] == 'image':
                 images.append({'hash': media['hash'], 'adlabels': [{'name': label}]})
             elif media['type'] == 'video':
+                # NOTA: asset_feed_spec NÃO aceita image_hash dentro de videos[]
+                # A Meta gera thumbnails automaticamente para vídeos nesse formato
                 video_data = {'video_id': media['id'], 'adlabels': [{'name': label}]}
-                # Proatividade: Tentar fornecer thumbnail se a mídia oposta for imagem
-                other_media = stories_media if label == FEED_LABEL else feed_media
-                if other_media and other_media['type'] == 'image':
-                    video_data['image_hash'] = other_media['hash']
-                    self._log(f"🖼️ Thumbnail para vídeo {label} linkada à imagem do par.")
-                # Se não tem imagem do par, usar thumb_hash extraída durante upload
-                elif media.get('thumb_hash'):
-                    video_data['image_hash'] = media['thumb_hash']
-                    self._log(f"✅ Thumbnail auto-gerada usada para vídeo {label}.")
-                
                 videos.append(video_data)
 
         add_media(feed_media, FEED_LABEL)
@@ -1408,20 +1400,24 @@ class MetaUploader:
             result = source.create_copy(params=params)
             copied_id = result.get('copied_adset_id') or result.get('id')
 
-            # Renomear se new_name foi fornecido
-            if new_name and copied_id:
+            # Forçar status PAUSED + renomear (create_copy nem sempre respeita status_option)
+            if copied_id:
                 try:
-                    url = f"https://graph.facebook.com/v22.0/{copied_id}"
-                    resp = requests.post(url, data={
-                        'name': new_name,
+                    update_data = {
+                        'status': 'PAUSED',
                         'access_token': self.access_token
-                    }).json()
+                    }
+                    if new_name:
+                        update_data['name'] = new_name
+
+                    url = f"https://graph.facebook.com/v22.0/{copied_id}"
+                    resp = requests.post(url, data=update_data).json()
                     if 'error' in resp:
-                        self._log(f"⚠️ Falha ao renomear Ad Set: {resp['error'].get('message')}")
+                        self._log(f"⚠️ Falha ao atualizar Ad Set: {resp['error'].get('message')}")
                     else:
-                        self._log(f"✏️ Ad Set renomeado para: {new_name}")
+                        self._log(f"✅ Ad Set configurado: PAUSED{' / ' + new_name if new_name else ''}")
                 except Exception as e:
-                    self._log(f"⚠️ Erro ao renomear: {e}")
+                    self._log(f"⚠️ Erro ao atualizar Ad Set: {e}")
 
             return copied_id
 
