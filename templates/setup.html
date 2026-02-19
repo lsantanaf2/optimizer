@@ -966,8 +966,7 @@
                     if (dupResult.success && dupResult.adset_id) {
                         duplicatedAdsetId = dupResult.adset_id;
                         logConsole(`✅ Conjunto duplicado: ${duplicatedAdsetId}${adsetNewName ? ' — "' + adsetNewName + '"' : ''}`, 'log-success');
-                        // Log sub-steps
-                        if (dupResult.logs) dupResult.logs.forEach(l => logConsole(`   ${l}`, logClass(l)));
+                        if (dupResult.logs) dupResult.logs.forEach(l => logConsole(`   ${l}`, 'log-info'));
                     } else {
                         logConsole(`❌ Falha ao duplicar conjunto: ${dupResult.error}`, 'log-error');
                         btn.disabled = false;
