@@ -27,7 +27,7 @@ TOKEN_FILE = 'token.json'
 app = Flask(__name__, static_folder='static')
 app.secret_key = 'chave-secreta-optimizer-2024'
 
-VERSION = "v1.4.0"
+VERSION = "v1.4.1"
 
 @app.context_processor
 def inject_version():
@@ -230,8 +230,7 @@ def setup_campanha(campaign_id):
         campaign_name = campanha_info.get('name', campaign_id)
 
         adsets_data = campanha.get_ad_sets(
-            fields=['id', 'name', 'effective_status'],
-            params={'filtering': [{'field': 'effective_status', 'operator': 'IN', 'value': ['ACTIVE', 'PAUSED']}]}
+            fields=['id', 'name', 'effective_status']
         )
         adsets = [{'id': a.get('id'), 'name': a.get('name'), 'status': a.get('effective_status', '')} for a in adsets_data]
 
