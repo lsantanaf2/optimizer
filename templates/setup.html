@@ -117,6 +117,9 @@
                         <option value="">— Selecione o molde —</option>
                         {% for adset in adsets %}<option value="{{ adset.id }}">{{ adset.name }}</option>{% endfor %}
                     </select>
+                    <label style="margin-top:8px;">Nome do novo conjunto</label>
+                    <input type="text" id="adset_new_name" placeholder="Ex: Conjunto Teste Criativos"
+                        style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text);">
                     <div class="card-desc" style="margin-top:6px;">O sistema copiará público, posicionamento e
                         orçamento.</div>
                 </div>
@@ -128,6 +131,9 @@
                     <option value="">— Selecione o molde —</option>
                     {% for adset in adsets %}<option value="{{ adset.id }}">{{ adset.name }}</option>{% endfor %}
                 </select>
+                <label style="margin-top:8px;">Nome do novo conjunto</label>
+                <input type="text" id="adset_new_name_garimpo" placeholder="Ex: Garimpo - Lote 1"
+                    style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text);">
                 <div class="card-desc" style="margin-top:6px;">Cada criativo ganhará um novo conjunto baseado neste
                     molde.</div>
             </div>
@@ -938,9 +944,43 @@
             const adsetExistente = document.getElementById('adset_existente')?.value;
             const adsetModelo = document.getElementById('adset_modelo')?.value;
             const adsetModeloGarimpo = document.getElementById('adset_modelo_garimpo')?.value;
+            const adsetNewName = document.getElementById('adset_new_name')?.value || document.getElementById('adset_new_name_garimpo')?.value || '';
 
             // Start log console
             logConsole(`🚀 Lote iniciado — ${filaAnuncios.length} anúncio(s) na fila`, 'log-info');
+
+            // ===== BUG FIX: Duplicar ad set 1x ANTES do loop =====
+            let duplicatedAdsetId = null;
+            if (destino === 'duplicar' || estrategia.value === 'garimpo') {
+                const modelo = adsetModelo || adsetModeloGarimpo;
+                if (!modelo) { mostrarToast('❌ Selecione um conjunto modelo para duplicar'); btn.disabled = false; return; }
+
+                logConsole('📋 Duplicando conjunto de anúncios (1x para todo o lote)...', 'log-info');
+                try {
+                    const dupFd = new FormData();
+                    dupFd.append('adset_modelo', modelo);
+                    dupFd.append('adset_name', adsetNewName);
+                    const dupResp = await fetch(`/campanha/${CAMPAIGN_ID}/duplicate-adset`, { method: 'POST', body: dupFd });
+                    const dupResult = await dupResp.json();
+
+                    if (dupResult.success && dupResult.adset_id) {
+                        duplicatedAdsetId = dupResult.adset_id;
+                        logConsole(`✅ Conjunto duplicado: ${duplicatedAdsetId}${adsetNewName ? ' — "' + adsetNewName + '"' : ''}`, 'log-success');
+                        // Log sub-steps
+                        if (dupResult.logs) dupResult.logs.forEach(l => logConsole(`   ${l}`, logClass(l)));
+                    } else {
+                        logConsole(`❌ Falha ao duplicar conjunto: ${dupResult.error}`, 'log-error');
+                        btn.disabled = false;
+                        btn.textContent = '🚀 Subir Todos';
+                        return;
+                    }
+                } catch (e) {
+                    logConsole(`❌ Erro de rede ao duplicar conjunto: ${e.message}`, 'log-error');
+                    btn.disabled = false;
+                    btn.textContent = '🚀 Subir Todos';
+                    return;
+                }
+            }
 
             let enviados = 0, erros = 0;
 
@@ -952,9 +992,18 @@
 
                 const fd = new FormData();
                 fd.append('estrategia', estrategia.value);
-                fd.append('destino_conjunto', destino || '');
-                fd.append('adset_existente', adsetExistente || '');
-                fd.append('adset_modelo', adsetModelo || adsetModeloGarimpo || '');
+
+                // Se já duplicou, enviar como 'existente' com o ID duplicado
+                if (duplicatedAdsetId) {
+                    fd.append('destino_conjunto', 'existente');
+                    fd.append('adset_existente', duplicatedAdsetId);
+                    fd.append('adset_modelo', '');
+                } else {
+                    fd.append('destino_conjunto', destino || '');
+                    fd.append('adset_existente', adsetExistente || '');
+                    fd.append('adset_modelo', adsetModelo || adsetModeloGarimpo || '');
+                }
+
                 fd.append('ad_name', item.adName);
                 fd.append('url_destino', cfg.url);
                 fd.append('utm_pattern', cfg.utms);

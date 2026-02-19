@@ -1397,15 +1397,32 @@ class MetaUploader:
 
         def _do():
             source = AdSet(source_adset_id)
-            result = source.create_copy(params={
+            params = {
                 'deep_copy': False,
                 'status_option': 'PAUSED',
-                'rename_options': {
+            }
+            if not new_name:
+                params['rename_options'] = {
                     'rename_suffix': f' - Cópia {int(time.time())}',
-                } if not new_name else {},
-            })
-            # result returns the copied adset data
+                }
+            result = source.create_copy(params=params)
             copied_id = result.get('copied_adset_id') or result.get('id')
+
+            # Renomear se new_name foi fornecido
+            if new_name and copied_id:
+                try:
+                    url = f"https://graph.facebook.com/v22.0/{copied_id}"
+                    resp = requests.post(url, data={
+                        'name': new_name,
+                        'access_token': self.access_token
+                    }).json()
+                    if 'error' in resp:
+                        self._log(f"⚠️ Falha ao renomear Ad Set: {resp['error'].get('message')}")
+                    else:
+                        self._log(f"✏️ Ad Set renomeado para: {new_name}")
+                except Exception as e:
+                    self._log(f"⚠️ Erro ao renomear: {e}")
+
             return copied_id
 
         adset_id = self._with_retry(f"Duplicar Ad Set", _do)

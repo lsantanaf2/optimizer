@@ -27,7 +27,7 @@ TOKEN_FILE = 'token.json'
 app = Flask(__name__, static_folder='static')
 app.secret_key = 'chave-secreta-optimizer-2024'
 
-VERSION = "v1.4.1"
+VERSION = "v1.5.0"
 
 @app.context_processor
 def inject_version():
@@ -512,11 +512,8 @@ def upload_single(campaign_id):
             actual_adset_id = uploader.duplicate_adset(target_adset_id)
             uploader.smart_delay()
 
-        # Build full URL
+        # Build full URL (UTMs vão apenas no url_tags, não na URL do link)
         full_url = url_destino
-        if utm_pattern:
-            sep = '&' if '?' in full_url else '?'
-            full_url = f"{full_url}{sep}{utm_pattern}"
 
         # Create creative with placement rules
         try:
@@ -565,6 +562,36 @@ def upload_single(campaign_id):
             'error': str(e),
             'logs': uploader.logs if uploader else [],
         }), 500
+
+
+@app.route('/campanha/<campaign_id>/duplicate-adset', methods=['POST'])
+def duplicate_adset_route(campaign_id):
+    """Duplica um Ad Set 1x. Retorna o ID do novo. Chamado ANTES do loop de criativos."""
+    access_token = obter_token()
+    if not access_token:
+        return jsonify({'success': False, 'error': 'Não autenticado'}), 401
+
+    try:
+        account_id = session.get('account_id', '')
+        adset_modelo = request.form.get('adset_modelo', '')
+        adset_name = request.form.get('adset_name', '')
+
+        if not adset_modelo:
+            return jsonify({'success': False, 'error': 'Nenhum Ad Set modelo informado'}), 400
+
+        uploader = MetaUploader(account_id, access_token, APP_ID, APP_SECRET)
+        new_adset_id = uploader.duplicate_adset(adset_modelo, new_name=adset_name or None)
+
+        return jsonify({
+            'success': True,
+            'adset_id': new_adset_id,
+            'logs': uploader.logs,
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 if __name__ == '__main__':
