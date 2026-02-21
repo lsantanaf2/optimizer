@@ -442,7 +442,7 @@ class MetaUploader:
     # ======================== RETRY ========================
 
     def _with_retry(self, operation_name, func):
-        """Executa uma função com até MAX_RETRIES tentativas."""
+        """Executa uma função com até MAX_RETRIES tentativas. Para imediatamente em rate limit."""
         last_error = None
         for attempt in range(1, self.MAX_RETRIES + 1):
             try:
@@ -450,12 +450,23 @@ class MetaUploader:
                 return result
             except Exception as e:
                 last_error = e
+                err_str = str(e).lower()
+
+                # Rate limit (code 17) — parar imediatamente, sem retentar
+                if 'request limit' in err_str or 'rate limit' in err_str or 'too many calls' in err_str or 'user request limit' in err_str:
+                    self._log(
+                        f"🚫 {operation_name}: RATE LIMIT atingido. Parando retentativas para proteger a conta."
+                    )
+                    raise e
+
                 if attempt < self.MAX_RETRIES:
+                    # Backoff exponencial: 5s → 10s → 20s
+                    wait = self.RETRY_BACKOFF * (2 ** (attempt - 1))
                     self._log(
                         f"⚠️ {operation_name} falhou (tentativa {attempt}/{self.MAX_RETRIES}): "
-                        f"{str(e)[:100]}. Retentando em {self.RETRY_BACKOFF}s..."
+                        f"{str(e)[:100]}. Retentando em {wait}s..."
                     )
-                    time.sleep(self.RETRY_BACKOFF)
+                    time.sleep(wait)
                 else:
                     self._log(
                         f"❌ {operation_name} falhou após {self.MAX_RETRIES} tentativas: "
@@ -488,14 +499,14 @@ class MetaUploader:
         return link
 
     def _download_file(self, url, dest_path):
-        """Baixa um arquivo de uma URL, tratando confirmação de vírus do Google Drive (5 estratégias)."""
+        """Baixa um arquivo de uma URL, tratando confirmação de vírus do Google Drive (2 estratégias)."""
         try:
             session = requests.Session()
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
             }
 
-            # Extrair file_id do Google Drive (usado nas estratégias 3-5)
+            # Extrair file_id do Google Drive
             file_id = None
             if 'drive.google.com' in url or 'docs.google.com' in url:
                 id_match = re.search(r'(?:id=|/d/)([a-zA-Z0-9_-]+)', url)
@@ -514,7 +525,7 @@ class MetaUploader:
                     sz = os.path.getsize(dest_path)
                     if sz == 0:
                         self._log("⚠️ Arquivo baixado tem 0 bytes — tratando como falha.")
-                        return True  # Tratar 0KB como "não é o arquivo real"
+                        return True
                     with open(dest_path, 'rb') as f:
                         head = f.read(500)
                     if b'<html' in head.lower() or b'<!doctype' in head.lower():
@@ -543,82 +554,20 @@ class MetaUploader:
 
             self._log("⚠️ [E1] Drive retornou HTML.")
 
-            # ─── ESTRATÉGIA 2: GET confirm=t (legacy) ───
+            # ─── ESTRATÉGIA 2: Novo domínio drive.usercontent.google.com ───
             if file_id:
-                self._log("📥 [E2] Tentando confirm=t...")
-                dl_url = f"https://drive.google.com/uc?export=download&id={file_id}&confirm=t"
-                response = session.get(dl_url, stream=True, timeout=120, headers=headers)
-                _save_stream(response)
-                if not _is_html():
-                    file_size = os.path.getsize(dest_path)
-                    self._log(f"✅ Download concluído (E2): ({file_size / 1024:.0f} KB)")
-                    return True
-                self._log("⚠️ [E2] Falhou.")
-
-            # ─── ESTRATÉGIA 3: POST do formulário de confirmação ───
-            self._log("📥 [E3] Extraindo formulário POST do HTML...")
-            try:
-                with open(dest_path, 'rb') as f:
-                    html_content = f.read().decode('utf-8', errors='replace')
-
-                # Extrair action URL e campos hidden
-                action_match = re.search(r'action="([^"]+)"', html_content)
-                id_match_form = re.search(r'name="id"\s+value="([^"]+)"', html_content)
-                uuid_match = re.search(r'name="uuid"\s+value="([^"]+)"', html_content)
-
-                if action_match:
-                    action_url = action_match.group(1).replace('&amp;', '&')
-                    post_data = {}
-                    if id_match_form:
-                        post_data['id'] = id_match_form.group(1)
-                    if uuid_match:
-                        post_data['uuid'] = uuid_match.group(1)
-                    post_data['confirm'] = 't'
-
-                    self._log(f"🔑 [E3] POST para: {action_url[:50]}...")
-                    response = session.post(action_url, data=post_data, stream=True, timeout=120, headers=headers)
-                    _save_stream(response)
-                    if not _is_html():
-                        file_size = os.path.getsize(dest_path)
-                        self._log(f"✅ Download concluído (E3): ({file_size / 1024:.0f} KB)")
-                        return True
-                    self._log("⚠️ [E3] POST retornou HTML.")
-                else:
-                    self._log("⚠️ [E3] action URL não encontrada no HTML.")
-            except Exception as e3:
-                self._log(f"⚠️ [E3] Erro: {e3}")
-
-            # ─── ESTRATÉGIA 4: gdown (biblioteca especializada) ───
-            if file_id:
-                try:
-                    import gdown
-                    self._log("📥 [E4] Usando gdown...")
-                    gdown_url = f"https://drive.google.com/uc?id={file_id}"
-                    output = gdown.download(gdown_url, dest_path, quiet=True, fuzzy=True)
-                    if output and os.path.exists(dest_path) and not _is_html():
-                        file_size = os.path.getsize(dest_path)
-                        self._log(f"✅ Download concluído (E4/gdown): ({file_size / 1024:.0f} KB)")
-                        return True
-                    self._log("⚠️ [E4] gdown falhou ou retornou HTML.")
-                except ImportError:
-                    self._log("⚠️ [E4] gdown não instalado. Pulando...")
-                except Exception as e4:
-                    self._log(f"⚠️ [E4] gdown erro: {e4}")
-
-            # ─── ESTRATÉGIA 5: Novo domínio drive.usercontent.google.com ───
-            if file_id:
-                self._log("📥 [E5] Tentando novo domínio (drive.usercontent.google.com)...")
+                self._log("📥 [E2] Tentando novo domínio (drive.usercontent.google.com)...")
                 new_url = f"https://drive.usercontent.google.com/download?id={file_id}&export=download&confirm=t"
                 response = session.get(new_url, stream=True, timeout=120, headers=headers)
                 _save_stream(response)
                 if not _is_html():
                     file_size = os.path.getsize(dest_path)
-                    self._log(f"✅ Download concluído (E5): ({file_size / 1024:.0f} KB)")
+                    self._log(f"✅ Download concluído (E2): ({file_size / 1024:.0f} KB)")
                     return True
-                self._log("⚠️ [E5] Novo domínio também retornou HTML.")
+                self._log("⚠️ [E2] Novo domínio também retornou HTML.")
 
-            # ─── FALHA TOTAL: salvar HTML para debug ───
-            self._log(f"❌ Download falhou em TODAS as 5 estratégias.")
+            # ─── FALHA: arquivo provavelmente está privado ───
+            self._log(f"❌ Download falhou nas 2 estratégias.")
             self._log(f"   → Verifique se o arquivo tem permissão 'Qualquer pessoa com o link pode visualizar'.")
             try:
                 debug_path = os.path.join(tempfile.gettempdir(), f"drive_debug_{int(time.time())}.html")
@@ -1196,12 +1145,12 @@ class MetaUploader:
             return creative_id, error
 
         def _do():
-            # Tentar Complexo primeiro para manter Stories 9:16
-            cid, err = try_complex_creative()
+            # Tentar Simples primeiro (funciona na maioria dos casos, menos chamadas)
+            cid, err = try_simple_creative()
             if cid: return cid
             
-            # Se falhou, tenta Simples
-            cid, err = try_simple_creative()
+            # Se falhou, tenta Complexo (asset_feed_spec com customização de placements)
+            cid, err = try_complex_creative()
             if cid: return cid
             
             raise Exception(f"Criação de criativo falhou em todas as estratégias. Último erro: {err}")

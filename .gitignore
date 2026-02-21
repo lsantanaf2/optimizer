@@ -7,3 +7,45 @@ __pycache__/
 *.log
 temp/
 optimizer_*/
+
+# Environment & Secrets (AIOS)
+.env.local
+.env.*.local
+*.key
+*.pem
+
+# Dependencies (AIOS)
+node_modules/
+node_modules
+
+# Build & Logs (AIOS)
+dist/
+build/
+logs/
+
+# IDE & OS (AIOS)
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+
+# AIOS Local (AIOS)
+.aios-core/local/
+.claude/settings.local.json
+.aios/install-log.txt
+
+# AIOS Session Files (Framework)
+.aios-core/
+.antigravity/
+.claude/
+
+# Documentation & Session Files (Claude Code)
+CLAUDE.md
+DATA-ARCHITECTURE-SUMMARY.txt
+OPTIMIZER_PROJECT_KB.md
+TESTING_GUIDE.md
+TEST_PRACTICAL.md
+.env.example
+
+# Test Results
+test-results.json
