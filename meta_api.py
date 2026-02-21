@@ -75,8 +75,8 @@ class MetaUploader:
     RATE_LIMIT_PAUSE_SECONDS = 300   # 5 minutos
     DELAY_MIN = 1.5
     DELAY_MAX = 3.0
-    MAX_RETRIES = 3
-    RETRY_BACKOFF = 5                # Segundos entre retries
+    MAX_RETRIES = 5
+    RETRY_BACKOFF = 10               # Início do backoff aumentado
 
     def __init__(self, account_id, access_token, app_id, app_secret):
         self.account_id = account_id
@@ -459,12 +459,21 @@ class MetaUploader:
                     )
                     raise e
 
+                # Identificar erros de rede/SSL específicos
+                is_network_error = any(k in err_str for k in [
+                    'connectionpool', 'sslerror', 'unexpected_eof', 'remote disconnected', 
+                    'connection aborted', 'broken pipe', 'timeout', 'timeout_expired'
+                ])
+
                 if attempt < self.MAX_RETRIES:
-                    # Backoff exponencial: 5s → 10s → 20s
+                    # Backoff exponencial agressivo para erros de rede: 10s → 20s → 40s → 80s
                     wait = self.RETRY_BACKOFF * (2 ** (attempt - 1))
+                    if is_network_error:
+                        wait += random.randint(1, 5) # Jitter para evitar "thundering herd"
+
                     self._log(
-                        f"⚠️ {operation_name} falhou (tentativa {attempt}/{self.MAX_RETRIES}): "
-                        f"{str(e)[:100]}. Retentando em {wait}s..."
+                        f"⚠️ {operation_name} falhou ({attempt}/{self.MAX_RETRIES}): "
+                        f"{str(e)[:120]}. Retentando em {wait}s..."
                     )
                     time.sleep(wait)
                 else:
@@ -639,7 +648,7 @@ class MetaUploader:
         api_url = f"https://graph.facebook.com/v22.0/{self.account_id}/advideos"
         
         def _do():
-            resp = requests.post(api_url, data={'file_url': url, 'access_token': self.access_token})
+            resp = requests.post(api_url, data={'file_url': url, 'access_token': self.access_token}, timeout=300)
             result = resp.json()
             if 'error' in result:
                 msg = result['error'].get('message', '')

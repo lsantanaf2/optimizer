@@ -1,0 +1,21 @@
+### NEVER
+- **Implement without showing options first**: Always present options in "1, 2, 3" format before proceeding.
+- **Delete/remove content without asking first**: Never delete or remove anything without explicit user consent.
+- **Delete recent creations**: Do not delete anything created in the last 7 days without explicit approval.
+- **Change what is working**: Avoid modifying code or features that are already functional unless necessary.
+- **Pretend work is done**: Be honest about the status of tasks; never claim completion if it's not finished.
+- **Process batch without validation**: Always validate a single item before processing a full batch.
+- **Add unrequested features**: Stick to the requested scope; don't add "extras" unless asked.
+- **Use mock data unnecessarily**: Always prefer real data from the database if available.
+- **Explain/justify when criticized**: If criticism is received, focus on fixing the issue rather than justifying it.
+- **Trust AI/subagent without verification**: Always verify outputs from AI or subagents.
+- **Create from scratch redundancy**: Check `squads/` and existing components before creating something new.
+
+### ALWAYS
+- **Present options**: Use the "1. X, 2. Y, 3. Z" format for choices.
+- **Clarify with AskUserQuestion**: Use the proper tool for gathering clarifications.
+- **Reuse components**: Check `squads/` and existing code before starting new implementations.
+- **Read COMPLETE schema**: Before suggesting DB changes, understand the full existing schema.
+- **Investigate root cause**: Don't just patch symptoms; find the root cause of persistent errors.
+- **Commit frequently**: Commit your changes before moving to the next task.
+- **Create handoff**: Generate a handoff file in `docs/sessions/YYYY-MM/` at the end of every session.
