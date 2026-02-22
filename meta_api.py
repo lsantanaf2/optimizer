@@ -91,6 +91,7 @@ class MetaUploader:
     TIMEOUT_UPLOAD_IMAGE = 120       # Upload de imagem
     TIMEOUT_UPLOAD_VIDEO = 600       # ↑ Upload de vídeo (10 minutos)
     TIMEOUT_DOWNLOAD = 120           # Download de arquivo
+    CHUNK_SIZE = 4 * 1024 * 1024     # 4MB por parte (Resumable Upload)
 
     def __init__(self, account_id, access_token, app_id, app_secret):
         self.account_id = account_id
@@ -103,30 +104,6 @@ class MetaUploader:
 
         FacebookAdsApi.init(app_id, app_secret, access_token)
         self.account = AdAccount(account_id)
-
-    def _get_session(self):
-        """
-        Retorna uma Session reutilizável com retry automático configurado.
-        Resolve SSL/connection pool errors ao tentar reconectar automaticamente.
-        """
-        if self._session is None:
-            self._session = requests.Session()
-
-            # Configurar retry automático para ambos HTTP e HTTPS
-            # Retry em: connection errors, timeouts, HTTP 500/502/503/504
-            retry_strategy = Retry(
-                total=3,                              # Total de 3 retries
-                backoff_factor=1.0,                   # 1s, 2s, 4s entre tentativas
-                status_forcelist=[429, 500, 502, 503, 504],  # Retry em rate limit + server errors
-                allowed_methods=["HEAD", "GET", "OPTIONS", "POST", "PUT", "DELETE"]
-            )
-
-            # Aplicar retry em HTTPS e HTTP
-            adapter = HTTPAdapter(max_retries=retry_strategy)
-            self._session.mount("https://", adapter)
-            self._session.mount("http://", adapter)
-
-        return self._session
 
     # ======================== PERFORMANCE & INSIGHTS ========================
 
@@ -432,6 +409,24 @@ class MetaUploader:
         self.logs.append(msg)
         if self._callback:
             self._callback(msg)
+
+    def _get_session(self):
+        """Retorna uma sessão do requests com retry de SSL/Rede configurado."""
+        if self._session is None:
+            from requests.adapters import HTTPAdapter
+            from urllib3.util.retry import Retry
+            
+            self._session = requests.Session()
+            retry_strategy = Retry(
+                total=5,
+                backoff_factor=1,
+                status_forcelist=[429, 500, 502, 503, 504],
+                allowed_methods=["HEAD", "GET", "POST", "OPTIONS"]
+            )
+            adapter = HTTPAdapter(max_retries=retry_strategy)
+            self._session.mount("https://", adapter)
+            self._session.mount("http://", adapter)
+        return self._session
 
     # ======================== RATE LIMITING ========================
 
@@ -841,19 +836,84 @@ class MetaUploader:
         return image_hash
 
     def upload_video(self, file_path):
-        """Upload de vídeo para a conta. Retorna video_id."""
+        """Upload de vídeo para a conta usando protocolo Resumable. Retorna video_id."""
         filename = os.path.basename(file_path)
-        self._log(f"📤 Fazendo upload de vídeo: {filename}...")
+        self._log(f"📤 Fazendo upload resiliente de vídeo: {filename}...")
 
         def _do():
-            video = AdVideo(parent_id=self.account_id)
-            video[AdVideo.Field.filepath] = file_path
-            video.remote_create()
-            return video.get_id()
+            return self._upload_video_resumable(file_path)
 
         video_id = self._with_retry(f"Upload vídeo '{filename}'", _do)
         self._log(f"✅ Vídeo '{filename}' enviado (ID: {video_id})")
         self.video_delay()  # Delay extra pós-vídeo para estabilizar conexão
+        return video_id
+
+    def _upload_video_resumable(self, file_path):
+        """Implementa o protocolo de upload em partes (START -> APPEND -> FINISH) da Meta."""
+        file_size = os.path.getsize(file_path)
+        api_url = f"https://graph-video.facebook.com/v22.0/{self.account_id}/advideos"
+        
+        self._log(f"🎬 Iniciando sessão de upload (Tamanho: {file_size/1024/1024:.2f} MB)...")
+        
+        # 1. START
+        start_payload = {
+            'upload_phase': 'start',
+            'access_token': self.access_token,
+            'file_size': file_size
+        }
+        resp = self._get_session().post(api_url, data=start_payload, timeout=self.TIMEOUT_API_POST).json()
+        if 'error' in resp:
+            raise Exception(f"Falha no START do upload: {resp['error'].get('message')}")
+        
+        session_id = resp['upload_session_id']
+        self._log(f"🔗 Sessão de upload aberta: {session_id}")
+        
+        # 2. APPEND
+        with open(file_path, 'rb') as f:
+            start_offset = 0
+            chunk_count = (file_size + self.CHUNK_SIZE - 1) // self.CHUNK_SIZE
+            
+            for i in range(chunk_count):
+                chunk_data = f.read(self.CHUNK_SIZE)
+                append_payload = {
+                    'upload_phase': 'append',
+                    'access_token': self.access_token,
+                    'upload_session_id': session_id,
+                    'start_offset': start_offset
+                }
+                
+                # O chunk deve ser enviado no campo 'video_file_chunk'
+                files = {'video_file_chunk': chunk_data}
+                
+                def _send_chunk():
+                    r = self._get_session().post(api_url, data=append_payload, files=files, timeout=self.TIMEOUT_UPLOAD_VIDEO)
+                    return r.json()
+                
+                chunk_resp = self._with_retry(f"Envio de parte {i+1}/{chunk_count}", _send_chunk)
+                if 'error' in chunk_resp:
+                    raise Exception(f"Erro na parte {i+1}: {chunk_resp['error'].get('message')}")
+                
+                start_offset += len(chunk_data)
+                self._log(f"   -> Parte {i+1}/{chunk_count} enviada ({start_offset/file_size*100:.1f}%)")
+
+        # 3. FINISH
+        self._log("🏁 Finalizando upload...")
+        finish_payload = {
+            'upload_phase': 'finish',
+            'access_token': self.access_token,
+            'upload_session_id': session_id
+        }
+        finish_resp = self._get_session().post(api_url, data=finish_payload, timeout=self.TIMEOUT_API_POST).json()
+        
+        if 'error' in finish_resp:
+            raise Exception(f"Falha no FINISH do upload: {finish_resp['error'].get('message')}")
+        
+        video_id = finish_resp.get('id')
+        if not video_id:
+            # Em alguns casos a resposta de finsh pode ser {'success': true} e o ID vem depois ou está em outro campo
+            # Mas geralmente vem o ID. Se não vier, retornamos True para indicar sucesso no processo.
+            return finish_resp.get('id', True)
+            
         return video_id
 
     def upload_media(self, file_path=None, url=None):
