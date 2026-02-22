@@ -847,45 +847,85 @@ class MetaUploader:
             self._log(f"⚠️ Erro em extract_video_thumbnail_from_id: {e}")
             return None
 
+    def _upload_image_curl(self, file_path):
+        """Upload de imagem usando o binário CURL do sistema (Fallback Resiliente)."""
+        import subprocess
+        filename = os.path.basename(file_path)
+        api_url = f"https://graph.facebook.com/v22.0/{self.account_id}/adimages"
+        
+        self._log(f"🚀 [CURL Engine] Iniciando upload de {filename}...")
+        
+        cmd = [
+            "curl", "-v",
+            "-X", "POST",
+            api_url,
+            "-F", f"access_token={self.access_token}",
+            "-F", f"filename=@{file_path};type=image/png",
+            "--connect-timeout", "30",
+            "--max-time", str(self.TIMEOUT_UPLOAD_IMAGE),
+            "--retry", "3"
+        ]
+        
+        try:
+            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            stdout, stderr = process.communicate()
+            
+            if process.returncode != 0:
+                self._log(f"❌ CURL Error ({process.returncode}): {stderr[-200:]}")
+                raise Exception(f"CURL falhou com código {process.returncode}")
+            
+            resp = json.loads(stdout)
+            if 'error' in resp:
+                raise Exception(f"Erro API Meta (via CURL): {resp['error'].get('message')}")
+            
+            if 'images' in resp:
+                img_data = list(resp['images'].values())[0]
+                return img_data.get('hash')
+            return resp.get('hash')
+        except Exception as e:
+            self._log(f"⚠️ Falha no motor CURL: {e}")
+            raise
+
     def upload_image(self, file_path):
         """Upload de imagem para a conta usando requests puro. Retorna image_hash."""
         filename = os.path.basename(file_path)
         self._log(f"📤 Fazendo upload de imagem: {filename}...")
 
         def _do():
-            api_url = f"https://graph.facebook.com/v22.0/{self.account_id}/adimages"
-            # Carregar em memória para garantir Content-Length e desativar chunked encoding
-            with open(file_path, 'rb') as f:
-                image_bytes = f.read()
-            
-            files = {'filename': (filename, image_bytes, 'image/png')}
-            data = {'access_token': self.access_token}
-            
-            # Print URL debug (ajuda na auditoria)
-            self._log(f"🔗 API URL: {api_url}")
-            
-            resp_raw = self._get_session().post(
-                api_url, 
-                data=data, 
-                files=files, 
-                timeout=self.TIMEOUT_UPLOAD_IMAGE
-            )
-            
-            if resp_raw.status_code != 200:
-                self._log(f"⚠️ Erro HTTP {resp_raw.status_code}: {resp_raw.text[:200]}")
+            try:
+                api_url = f"https://graph.facebook.com/v22.0/{self.account_id}/adimages"
+                # Carregar em memória para garantir Content-Length e desativar chunked encoding
+                with open(file_path, 'rb') as f:
+                    image_bytes = f.read()
                 
-            resp = resp_raw.json()
+                files = {'filename': (filename, image_bytes, 'image/png')}
+                data = {'access_token': self.access_token}
                 
-            if 'error' in resp:
-                raise Exception(f"Erro API: {resp['error'].get('message')}")
-            
-            # O retorno de imagem é um dicionário onde a chave é o nome do arquivo
-            # ou o hash direto se usar o SDK. Via API pures costuma vir em 'images'
-            if 'images' in resp:
-                # 'images' é um dict: {"filename": {"hash": "..."}}
-                img_data = list(resp['images'].values())[0]
-                return img_data.get('hash')
-            return resp.get('hash')
+                self._log(f"🔗 API URL: {api_url}")
+                
+                resp_raw = self._get_session().post(
+                    api_url, 
+                    data=data, 
+                    files=files, 
+                    timeout=self.TIMEOUT_UPLOAD_IMAGE
+                )
+                
+                if resp_raw.status_code != 200:
+                    self._log(f"⚠️ Erro HTTP {resp_raw.status_code}. Tentando fallback para CURL...")
+                    return self._upload_image_curl(file_path)
+                    
+                resp = resp_raw.json()
+                if 'error' in resp:
+                    raise Exception(f"Erro API: {resp['error'].get('message')}")
+                
+                if 'images' in resp:
+                    img_data = list(resp['images'].values())[0]
+                    return img_data.get('hash')
+                return resp.get('hash')
+
+            except (requests.exceptions.ConnectionError, requests.exceptions.ChunkedEncodingError) as e:
+                self._log(f"📡 Erro de conexão Python ({type(e).__name__}). Acionando motor CURL...")
+                return self._upload_image_curl(file_path)
 
         image_hash = self._with_retry(f"Upload imagem '{filename}'", _do)
         self._log(f"✅ Imagem '{filename}' enviada (hash: {image_hash[:12]}...)")

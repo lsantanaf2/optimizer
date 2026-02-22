@@ -29,7 +29,8 @@ TOKEN_FILE = 'token.json'
 app = Flask(__name__, static_folder='static')
 app.secret_key = 'chave-secreta-optimizer-2024'
 
-VERSION = "v1.6.7 (Sniper Audit)"
+VERSION = "v1.6.8 (CURL Resilient)"
+
 
 
 
