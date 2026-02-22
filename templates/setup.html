@@ -1030,44 +1030,27 @@
                     logConsole(`📤 Fazendo upload de "${item.adName}"...`, 'log-info');
 
                     const r = await fetch(`/campanha/${CAMPAIGN_ID}/upload`, { method: 'POST', body: fd });
-
-                    if (!r.ok) {
+                    const text = await r.text();
+                    let res;
+                    try {
+                        res = JSON.parse(text);
+                    } catch (e) {
                         erros++;
-                        logConsole(`❌ Erro HTTP ${r.status}: Falha no upload.`, 'log-error');
+                        logConsole(`❌ Erro do Servidor (500/Timeout): Resposta inválida.`, 'log-error');
+                        console.error('Resposta não-JSON:', text);
                         continue;
                     }
 
-                    // Ler Stream NDJSON
-                    const reader = r.body.getReader();
-                    const decoder = new TextDecoder();
-                    let buffer = '';
+                    if (res.success) {
+                        enviados++;
+                        logConsole(`✅ "${item.adName}" criado com sucesso — ID: ${res.ad_id}`, 'log-success');
+                    } else {
+                        erros++;
+                        logConsole(`❌ "${item.adName}" falhou: ${res.error}`, 'log-error');
+                    }
 
-                    while (true) {
-                        const { value, done } = await reader.read();
-                        if (done) break;
-
-                        buffer += decoder.decode(value, { stream: true });
-                        const lines = buffer.split('\n');
-                        buffer = lines.pop(); // Mantém a última linha incompleta no buffer
-
-                        for (const line of lines) {
-                            if (!line.trim()) continue;
-                            try {
-                                const chunk = JSON.parse(line);
-
-                                if (chunk.type === 'log') {
-                                    logConsole(chunk.msg, classifyLog(chunk.msg));
-                                } else if (chunk.success === true) {
-                                    enviados++;
-                                    logConsole(`✅ "${item.adName}" criado com sucesso — ID: ${chunk.ad_id}`, 'log-success');
-                                } else if (chunk.success === false) {
-                                    erros++;
-                                    logConsole(`❌ "${item.adName}" falhou: ${chunk.error}`, 'log-error');
-                                }
-                            } catch (e) {
-                                console.error('Erro ao processar chunk NDJSON:', e, line);
-                            }
-                        }
+                    if (res.logs) {
+                        res.logs.forEach(l => logConsole(l, classifyLog(l)));
                     }
 
                     if (i < filaAnuncios.length - 1) {
