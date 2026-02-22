@@ -119,38 +119,26 @@ class MetaUploader:
             
             results = []
             for ins in insights:
-                # Extrair resultados (compras ou leads conforme o objetivo)
-                # Heurística: se o objetivo for LEAD_GENERATION, busca 'lead'
-                # se for OUTCOMES/CONVERSIONS, busca 'purchase' ou 'offsite_conversion.fb_pixel_purchase'
-                
-                actions = ins.get('actions', [])
-                objective = ins.get('objective', '')
-                
-                res_count = 0
-                cac = 0
-                spend = float(ins.get('spend', 0))
-                
-                # Mapeamento dinâmico de resultados
+                # Métricas específicas para o Optimizer
+                compras = 0
+                checkouts = 0
                 for action in actions:
                     a_type = action.get('action_type', '')
-                    if objective == 'LEAD_GENERATION' and a_type == 'lead':
-                        res_count += int(action.get('value', 0))
-                    elif 'purchase' in a_type:
-                        res_count += int(action.get('value', 0))
-                    elif a_type == 'onsite_conversion.messaging_conversation_started_7d':
-                        res_count += int(action.get('value', 0))
+                    val = int(action.get('value', 0))
+                    if a_type in ['purchase', 'offsite_conversion.fb_pixel_purchase', 'onsite_conversion.purchase']:
+                        compras += val
+                    if a_type in ['initiate_checkout', 'offsite_conversion.fb_pixel_initiate_checkout']:
+                        checkouts += val
 
-                if res_count > 0:
-                    cac = spend / res_count
-                
                 results.append({
                     'id': ins.get('campaign_id'),
                     'name': ins.get('campaign_name'),
                     'spend': spend,
-                    'results': res_count,
-                    'cac': cac,
-                    'currency': ins.get('account_currency', 'BRL'),
-                    'status': 'ACTIVE'
+                    'compras': compras,
+                    'checkouts': checkouts,
+                    'cpa_compra': spend / compras if compras > 0 else 0,
+                    'cpa_checkout': spend / checkouts if checkouts > 0 else 0,
+                    'currency': ins.get('account_currency', 'BRL')
                 })
             
             print(f"📈 [get_campaign_insights] {len(results)} campanhas auditadas.")

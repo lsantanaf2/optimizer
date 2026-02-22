@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+
+{% block title %}Otimizar — OPTIMIZER{% endblock %}
+
+{% block breadcrumb %}
+<a href="{{ url_for('listar_contas') }}">Contas</a> / <span>Otimização</span>
+{% endblock %}
+
+{% block content %}
+<div class="card border-accent">
+    <div class="card-title">
+        <span>📊 Dashboard de Otimização</span>
+        <span class="badge badge-cyan">Alpha</span>
+    </div>
+    <p class="card-desc">Monitore a performance das suas campanhas em tempo real e identifique gargalos de custos.</p>
+
+    <!-- Filtros -->
+    <div style="display: flex; gap: 12px; align-items: flex-end; margin-bottom: 24px;">
+        <div style="flex: 1;">
+            <label>Período de Análise</label>
+            <select id="date-preset" onchange="loadInsights()">
+                <option value="today">Hoje</option>
+                <option value="yesterday">Ontem</option>
+                <option value="last_7d">Últimos 7 dias</option>
+                <option value="last_30d">Últimos 30 dias</option>
+                <option value="this_month">Este Mês</option>
+                <option value="last_month">Mês Passado</option>
+                <option value="maximum">Tempo Todo</option>
+            </select>
+        </div>
+        <button class="btn-history" onclick="loadInsights()" id="btn-refresh">🔄 Atualizar</button>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-title">🚀 Campanhas Ativas</div>
+
+    <div id="insights-container" style="margin-top: 20px;">
+        <div class="queue-empty" id="insights-loading">
+            Carregando métricas da Meta Ads API...
+        </div>
+
+        <table class="data-table" id="insights-table" style="display: none; width: 100%; border-collapse: collapse;">
+            <thead>
+                <tr
+                    style="text-align: left; border-bottom: 1px solid var(--border); color: var(--text-muted); font-size: 11px; text-transform: uppercase;">
+                    <th style="padding: 12px 0;">Campanha</th>
+                    <th style="padding: 12px 0;">Gasto</th>
+                    <th style="padding: 12px 0;">Compras</th>
+                    <th style="padding: 12px 0;">Checkouts</th>
+                    <th style="padding: 12px 0;">CPA Compra</th>
+                    <th style="padding: 12px 0; text-align: right;">CPA Check</th>
+                </tr>
+            </thead>
+            <tbody id="insights-body">
+                <!-- Injetado via JS -->
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<style>
+    .data-table tr {
+        border-bottom: 1px solid var(--border-subtle);
+        transition: background 0.2s;
+    }
+
+    .data-table tr:hover {
+        background: var(--bg-surface);
+    }
+
+    .data-table td {
+        padding: 14px 0;
+        font-size: 13px;
+    }
+
+    .metric-value {
+        font-family: var(--font-mono);
+        font-weight: 500;
+        color: var(--accent);
+    }
+
+    .metric-cost {
+        color: var(--text-secondary);
+        font-size: 12px;
+    }
+
+    .impact-high {
+        color: var(--danger);
+    }
+
+    .impact-good {
+        color: var(--success);
+    }
+</style>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const ACCOUNT_ID = "{{ account_id }}";
+
+    async function loadInsights() {
+        const container = document.getElementById('insights-container');
+        const loading = document.getElementById('insights-loading');
+        const table = document.getElementById('insights-table');
+        const body = document.getElementById('insights-body');
+        const preset = document.getElementById('date-preset').value;
+        const btn = document.getElementById('btn-refresh');
+
+        loading.style.display = 'block';
+        table.style.display = 'none';
+        btn.disabled = true;
+        btn.textContent = '⏳...';
+
+        try {
+            const r = await fetch(`/api/account/${ACCOUNT_ID}/insights?date_preset=${preset}`);
+            const res = await r.json();
+
+            if (!res.success) throw new Error(res.error);
+
+            body.innerHTML = '';
+
+            if (res.data.length === 0) {
+                loading.textContent = 'Nenhuma campanha ativa encontrada para este período.';
+                return;
+            }
+
+            res.data.forEach(camp => {
+                const tr = document.createElement('tr');
+                const fmtCury = (val) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: camp.currency }).format(val);
+
+                tr.innerHTML = `
+                    <td title="${camp.id}">
+                        <div style="font-weight: 600;">${camp.name}</div>
+                        <div style="font-size: 10px; color: var(--text-muted);">ID: ${camp.id}</div>
+                    </td>
+                    <td class="metric-value">${fmtCury(camp.spend)}</td>
+                    <td>
+                        <div class="metric-value">${camp.compras}</div>
+                    </td>
+                    <td>
+                        <div class="metric-value">${camp.checkouts}</div>
+                    </td>
+                    <td>
+                        <div class="metric-value">${fmtCury(camp.cpa_compra)}</div>
+                    </td>
+                    <td style="text-align: right;">
+                        <div class="metric-value">${fmtCury(camp.cpa_checkout)}</div>
+                    </td>
+                `;
+                body.appendChild(tr);
+            });
+
+            loading.style.display = 'none';
+            table.style.display = 'table';
+
+        } catch (err) {
+            loading.textContent = '❌ Erro: ' + err.message;
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '🔄 Atualizar';
+        }
+    }
+
+    // Inicializar
+    document.addEventListener('DOMContentLoaded', loadInsights);
+</script>
+{% endblock %}

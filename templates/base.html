@@ -12,15 +12,48 @@
 </head>
 
 <body>
-    <div class="topbar">
-        <h1>⚡ OPTIMIZER <span class="version-tag">{{ version }}</span></h1>
-        <div class="breadcrumb">
-            {% block breadcrumb %}{% endblock %}
-        </div>
-    </div>
+    <div class="app-layout">
+        <aside class="sidebar">
+            <div class="sidebar-logo">
+                <span class="lightning-icon">⚡</span>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="{{ url_for('listar_contas') }}"
+                    class="nav-item {% if request.endpoint == 'listar_contas' %}active{% endif %}" title="Contas">
+                    <span class="nav-icon">👤</span>
+                </a>
+                {% if session.get('account_id') %}
+                <a href="{{ url_for('listar_campanhas', account_id=session.get('account_id')) }}"
+                    class="nav-item {% if request.endpoint in ['listar_campanhas', 'setup_campanha'] %}active{% endif %}"
+                    title="Subir Criativos">
+                    <span class="nav-icon">📤</span>
+                </a>
+                <a href="{{ url_for('otimizar_campanhas', account_id=session.get('account_id')) }}"
+                    class="nav-item {% if request.endpoint == 'otimizar_campanhas' %}active{% endif %}"
+                    title="Otimizar">
+                    <span class="nav-icon">📊</span>
+                </a>
+                {% endif %}
+            </nav>
+            <div class="sidebar-footer">
+                <a href="{{ url_for('logout') }}" class="nav-item" title="Sair">
+                    <span class="nav-icon">🚪</span>
+                </a>
+            </div>
+        </aside>
 
-    <div class="container">
-        {% block content %}{% endblock %}
+        <main class="main-content">
+            <div class="topbar">
+                <h1>⚡ OPTIMIZER <span class="version-tag">{{ version }}</span></h1>
+                <div class="breadcrumb">
+                    {% block breadcrumb %}{% endblock %}
+                </div>
+            </div>
+
+            <div class="container">
+                {% block content %}{% endblock %}
+            </div>
+        </main>
     </div>
 
     <!-- Toast Container -->
