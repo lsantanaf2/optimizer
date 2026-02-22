@@ -2,9 +2,10 @@
 MetaUploader — Classe utilitária para upload seguro de anúncios na Meta API.
 
 Features:
-  - Delay inteligente (1.5-3s) entre uploads
+  - Delay inteligente (3-6s) entre uploads + delay extra de 5-10s após vídeos
+  - Session com retry automático a nível de socket (urllib3.Retry) — resolve SSL/connection pool errors
+  - Timeouts ajustados por tipo: API (30-60s), Upload Video (600s), Download (120s)
   - Rate limit monitor via header x-business-use-case-usage
-  - Retry automático (até 3x) com backoff
   - Status PAUSED por padrão em todos os Ads criados
   - Asset Customization Rules para Feed vs Stories
 """
@@ -17,6 +18,10 @@ import tempfile
 import requests
 import re
 import shutil
+import subprocess
+import urllib.parse
+from urllib3.util.retry import Retry
+from requests.adapters import HTTPAdapter
 from facebook_business.api import FacebookAdsApi
 from facebook_business.adobjects.adaccount import AdAccount
 from facebook_business.adobjects.adimage import AdImage
@@ -73,10 +78,19 @@ class MetaUploader:
 
     RATE_LIMIT_THRESHOLD = 80        # Pausa se uso >= 80%
     RATE_LIMIT_PAUSE_SECONDS = 300   # 5 minutos
-    DELAY_MIN = 1.5
-    DELAY_MAX = 3.0
+    DELAY_MIN = 3.0                  # ↑ Aumentado de 1.5s (mais espaçamento entre uploads)
+    DELAY_MAX = 6.0                  # ↑ Aumentado de 3.0s (mais espaçamento entre uploads)
+    DELAY_VIDEO_MIN = 5.0            # Delay extra para uploads de vídeo (resiliência)
+    DELAY_VIDEO_MAX = 10.0           # Delay extra para uploads de vídeo
     MAX_RETRIES = 5
     RETRY_BACKOFF = 10               # Início do backoff aumentado
+
+    # Timeouts por tipo de operação (em segundos)
+    TIMEOUT_API_GET = 30             # GET simples (metadata)
+    TIMEOUT_API_POST = 60            # POST simples (sem arquivo)
+    TIMEOUT_UPLOAD_IMAGE = 120       # Upload de imagem
+    TIMEOUT_UPLOAD_VIDEO = 600       # ↑ Upload de vídeo (10 minutos)
+    TIMEOUT_DOWNLOAD = 120           # Download de arquivo
 
     def __init__(self, account_id, access_token, app_id, app_secret):
         self.account_id = account_id
@@ -85,9 +99,34 @@ class MetaUploader:
         self.app_secret = app_secret
         self.logs = []
         self._callback = None
+        self._session = None  # Session reutilizável com retry automático
 
         FacebookAdsApi.init(app_id, app_secret, access_token)
         self.account = AdAccount(account_id)
+
+    def _get_session(self):
+        """
+        Retorna uma Session reutilizável com retry automático configurado.
+        Resolve SSL/connection pool errors ao tentar reconectar automaticamente.
+        """
+        if self._session is None:
+            self._session = requests.Session()
+
+            # Configurar retry automático para ambos HTTP e HTTPS
+            # Retry em: connection errors, timeouts, HTTP 500/502/503/504
+            retry_strategy = Retry(
+                total=3,                              # Total de 3 retries
+                backoff_factor=1.0,                   # 1s, 2s, 4s entre tentativas
+                status_forcelist=[429, 500, 502, 503, 504],  # Retry em rate limit + server errors
+                allowed_methods=["HEAD", "GET", "OPTIONS", "POST", "PUT", "DELETE"]
+            )
+
+            # Aplicar retry em HTTPS e HTTP
+            adapter = HTTPAdapter(max_retries=retry_strategy)
+            self._session.mount("https://", adapter)
+            self._session.mount("http://", adapter)
+
+        return self._session
 
     # ======================== PERFORMANCE & INSIGHTS ========================
 
@@ -434,9 +473,15 @@ class MetaUploader:
     # ======================== DELAY ========================
 
     def smart_delay(self):
-        """Aplica delay aleatório entre uploads (1.5-3s)."""
+        """Aplica delay aleatório entre uploads (3-6s)."""
         delay = random.uniform(self.DELAY_MIN, self.DELAY_MAX)
         self._log(f"⏳ Aguardando delay de segurança ({delay:.1f}s)...")
+        time.sleep(delay)
+
+    def video_delay(self):
+        """Aplica delay extra após upload de vídeo (5-10s) para melhorar resiliência."""
+        delay = random.uniform(self.DELAY_VIDEO_MIN, self.DELAY_VIDEO_MAX)
+        self._log(f"⏳ Delay pós-vídeo ({delay:.1f}s) para estabilizar conexão...")
         time.sleep(delay)
 
     # ======================== RETRY ========================
@@ -510,7 +555,8 @@ class MetaUploader:
     def _download_file(self, url, dest_path):
         """Baixa um arquivo de uma URL, tratando confirmação de vírus do Google Drive (2 estratégias)."""
         try:
-            session = requests.Session()
+            # Usar session com retry automático (reutilizando estratégia de resiliência)
+            session = self._get_session()
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
             }
@@ -545,7 +591,7 @@ class MetaUploader:
 
             # ─── ESTRATÉGIA 1: Download direto com cookie ───
             self._log("📥 [E1] Download direto...")
-            response = session.get(url, stream=True, timeout=60, headers=headers)
+            response = session.get(url, stream=True, timeout=self.TIMEOUT_DOWNLOAD, headers=headers)
             token = None
             for key, value in response.cookies.items():
                 if key.startswith('download_warning'):
@@ -553,7 +599,7 @@ class MetaUploader:
                     break
             if token:
                 self._log(f"🛡️ Token via cookie detectado: {token[:8]}...")
-                response = session.get(url, params={'confirm': token}, stream=True, timeout=120, headers=headers)
+                response = session.get(url, params={'confirm': token}, stream=True, timeout=self.TIMEOUT_DOWNLOAD, headers=headers)
             _save_stream(response)
 
             if not _is_html():
@@ -567,7 +613,7 @@ class MetaUploader:
             if file_id:
                 self._log("📥 [E2] Tentando novo domínio (drive.usercontent.google.com)...")
                 new_url = f"https://drive.usercontent.google.com/download?id={file_id}&export=download&confirm=t"
-                response = session.get(new_url, stream=True, timeout=120, headers=headers)
+                response = session.get(new_url, stream=True, timeout=self.TIMEOUT_DOWNLOAD, headers=headers)
                 _save_stream(response)
                 if not _is_html():
                     file_size = os.path.getsize(dest_path)
@@ -603,9 +649,13 @@ class MetaUploader:
         self._log(f"🔗 Enviando URL de imagem para a Meta: {url[:60]}...")
         
         api_url = f"https://graph.facebook.com/v22.0/{self.account_id}/adimages"
-        
+
         def _do():
-            resp = requests.post(api_url, data={'url': url, 'access_token': self.access_token})
+            resp = self._get_session().post(
+                api_url,
+                data={'url': url, 'access_token': self.access_token},
+                timeout=self.TIMEOUT_UPLOAD_IMAGE
+            )
             result = resp.json()
             if 'error' in result:
                 msg = result['error'].get('message', '')
@@ -648,7 +698,11 @@ class MetaUploader:
         api_url = f"https://graph.facebook.com/v22.0/{self.account_id}/advideos"
         
         def _do():
-            resp = requests.post(api_url, data={'file_url': url, 'access_token': self.access_token}, timeout=300)
+            resp = self._get_session().post(
+                api_url,
+                data={'file_url': url, 'access_token': self.access_token},
+                timeout=self.TIMEOUT_UPLOAD_VIDEO
+            )
             result = resp.json()
             if 'error' in result:
                 msg = result['error'].get('message', '')
@@ -748,7 +802,7 @@ class MetaUploader:
                 'fields': 'source',
                 'access_token': self.access_token
             }
-            resp = requests.get(url, params=params).json()
+            resp = self._get_session().get(url, params=params, timeout=self.TIMEOUT_API_GET).json()
             
             if 'error' in resp or 'source' not in resp:
                 self._log(f"⚠️ Não foi possível obter URL do vídeo: {resp.get('error', {}).get('message', 'sem source')}")
@@ -799,6 +853,7 @@ class MetaUploader:
 
         video_id = self._with_retry(f"Upload vídeo '{filename}'", _do)
         self._log(f"✅ Vídeo '{filename}' enviado (ID: {video_id})")
+        self.video_delay()  # Delay extra pós-vídeo para estabilizar conexão
         return video_id
 
     def upload_media(self, file_path=None, url=None):
@@ -880,7 +935,7 @@ class MetaUploader:
                     'fields': 'status',
                     'access_token': self.access_token
                 }
-                resp = requests.get(url, params=params).json()
+                resp = self._get_session().get(url, params=params, timeout=self.TIMEOUT_API_GET).json()
                 
                 if 'error' in resp:
                     self._log(f"⚠️ Erro ao consultar status: {resp['error'].get('message')}")
@@ -925,7 +980,7 @@ class MetaUploader:
                     'fields': 'hash,status',
                     'access_token': self.access_token
                 }
-                resp = requests.get(url, params=params).json()
+                resp = self._get_session().get(url, params=params, timeout=self.TIMEOUT_API_GET).json()
                 
                 if 'error' in resp:
                     self._log(f"⚠️ Erro ao consultar imagem: {resp['error'].get('message')}")
@@ -1026,7 +1081,7 @@ class MetaUploader:
             for h in image_hashes:
                 self.wait_for_image_ready(h)
 
-            resp = requests.post(api_url, data=post_data)
+            resp = self._get_session().post(api_url, data=post_data, timeout=self.TIMEOUT_API_POST)
             result = resp.json()
 
             if 'error' in result:
@@ -1314,8 +1369,8 @@ class MetaUploader:
             # Log completo dos params (sem access_token)
             debug_data = {k: v for k, v in post_data.items() if k != 'access_token'}
             print(f"🔍 [create_ad] Params enviados: {json.dumps(debug_data, indent=2)}")
-            
-            resp = requests.post(url, data=post_data).json()
+
+            resp = self._get_session().post(url, data=post_data, timeout=self.TIMEOUT_API_POST).json()
             print(f"🔍 [create_ad] Resposta completa: {json.dumps(resp, indent=2, ensure_ascii=False)}")
 
             if 'error' in resp:
@@ -1369,7 +1424,7 @@ class MetaUploader:
                         update_data['name'] = new_name
 
                     url = f"https://graph.facebook.com/v22.0/{copied_id}"
-                    resp = requests.post(url, data=update_data).json()
+                    resp = self._get_session().post(url, data=update_data, timeout=self.TIMEOUT_API_POST).json()
                     if 'error' in resp:
                         self._log(f"⚠️ Falha ao atualizar Ad Set: {resp['error'].get('message')}")
                     else:
