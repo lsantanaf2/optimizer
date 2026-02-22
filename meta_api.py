@@ -119,6 +119,9 @@ class MetaUploader:
             
             results = []
             for ins in insights:
+                actions = ins.get('actions', [])
+                spend = float(ins.get('spend', 0))
+                
                 # Métricas específicas para o Optimizer
                 compras = 0
                 checkouts = 0
