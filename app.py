@@ -80,6 +80,7 @@ def index():
             limpar_token()
     return pagina_login()
 
+@app.route('/login')
 def pagina_login():
     # Scopes: Basic Hygiene Package
     scopes = 'public_profile,email,ads_read,ads_management,pages_show_list,pages_read_engagement,instagram_basic,read_insights,pages_manage_ads'
@@ -125,6 +126,7 @@ def logout():
     limpar_token()
     return redirect(url_for('index'))
 
+@app.route('/api/accounts')
 def listar_contas():
     try:
         me = User(fbid='me')
@@ -624,6 +626,9 @@ def api_insights(account_id):
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/ping')
+def ping_vps():
+    return "🚀 BATEU NA VPS! O Docker novo está rodando o nosso código atualizado e a página subiu!!", 200
 
 if __name__ == '__main__':
     print("Servidor rodando! Acesse http://localhost:5000 no seu navegador.")
