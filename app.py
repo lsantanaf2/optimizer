@@ -27,7 +27,8 @@ TOKEN_FILE = 'token.json'
 app = Flask(__name__, static_folder='static')
 app.secret_key = 'chave-secreta-optimizer-2024'
 
-VERSION = "v1.6.2"
+VERSION = "v1.6.3"
+
 
 
 @app.context_processor

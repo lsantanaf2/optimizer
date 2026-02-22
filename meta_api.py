@@ -411,12 +411,21 @@ class MetaUploader:
             self._callback(msg)
 
     def _get_session(self):
-        """Retorna uma sessão do requests com retry de SSL/Rede configurado."""
+        """Retorna uma sessão do requests com headers de navegador e retry configurado."""
         if self._session is None:
             from requests.adapters import HTTPAdapter
             from urllib3.util.retry import Retry
             
             self._session = requests.Session()
+            
+            # Headers para "disfarçar" o script como um navegador real
+            self._session.headers.update({
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                'Accept': '*/*',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Connection': 'keep-alive', # Ou 'close' se o EOF persistir muito
+            })
+            
             retry_strategy = Retry(
                 total=5,
                 backoff_factor=1,
@@ -821,15 +830,27 @@ class MetaUploader:
             return None
 
     def upload_image(self, file_path):
-        """Upload de imagem para a conta. Retorna image_hash."""
+        """Upload de imagem para a conta usando requests puro. Retorna image_hash."""
         filename = os.path.basename(file_path)
         self._log(f"📤 Fazendo upload de imagem: {filename}...")
 
         def _do():
-            image = AdImage(parent_id=self.account_id)
-            image[AdImage.Field.filename] = file_path
-            image.remote_create()
-            return image[AdImage.Field.hash]
+            api_url = f"https://graph.facebook.com/v22.0/{self.account_id}/adimages"
+            with open(file_path, 'rb') as f:
+                files = {'filename': (filename, f, 'image/png')}
+                data = {'access_token': self.access_token}
+                resp = self._get_session().post(api_url, data=data, files=files, timeout=self.TIMEOUT_UPLOAD_IMAGE).json()
+                
+                if 'error' in resp:
+                    raise Exception(f"Erro API: {resp['error'].get('message')}")
+                
+                # O retorno de imagem é um dicionário onde a chave é o nome do arquivo
+                # ou o hash direto se usar o SDK. Via API pures costuma vir em 'images'
+                if 'images' in resp:
+                    # 'images' é um dict: {"filename": {"hash": "..."}}
+                    img_data = list(resp['images'].values())[0]
+                    return img_data.get('hash')
+                return resp.get('hash')
 
         image_hash = self._with_retry(f"Upload imagem '{filename}'", _do)
         self._log(f"✅ Imagem '{filename}' enviada (hash: {image_hash[:12]}...)")
