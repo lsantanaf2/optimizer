@@ -2,10 +2,9 @@
 MetaUploader — Classe utilitária para upload seguro de anúncios na Meta API.
 
 Features:
-  - Delay inteligente (3-6s) entre uploads + delay extra de 5-10s após vídeos
-  - Session com retry automático a nível de socket (urllib3.Retry) — resolve SSL/connection pool errors
-  - Timeouts ajustados por tipo: API (30-60s), Upload Video (600s), Download (120s)
+  - Delay inteligente (1.5-3s) entre uploads
   - Rate limit monitor via header x-business-use-case-usage
+  - Retry automático (até 3x) com backoff
   - Status PAUSED por padrão em todos os Ads criados
   - Asset Customization Rules para Feed vs Stories
 """
@@ -18,10 +17,6 @@ import tempfile
 import requests
 import re
 import shutil
-import subprocess
-import urllib.parse
-from urllib3.util.retry import Retry
-from requests.adapters import HTTPAdapter
 from facebook_business.api import FacebookAdsApi
 from facebook_business.adobjects.adaccount import AdAccount
 from facebook_business.adobjects.adimage import AdImage
@@ -78,31 +73,18 @@ class MetaUploader:
 
     RATE_LIMIT_THRESHOLD = 80        # Pausa se uso >= 80%
     RATE_LIMIT_PAUSE_SECONDS = 300   # 5 minutos
-    DELAY_MIN = 3.0                  # ↑ Aumentado de 1.5s (mais espaçamento entre uploads)
-    DELAY_MAX = 6.0                  # ↑ Aumentado de 3.0s (mais espaçamento entre uploads)
-    DELAY_VIDEO_MIN = 5.0            # Delay extra para uploads de vídeo (resiliência)
-    DELAY_VIDEO_MAX = 10.0           # Delay extra para uploads de vídeo
-    MAX_RETRIES = 5
-    RETRY_BACKOFF = 10               # Início do backoff aumentado
+    DELAY_MIN = 1.5
+    DELAY_MAX = 3.0
+    MAX_RETRIES = 3
+    RETRY_BACKOFF = 5                # Segundos entre retries
 
-    # Timeouts por tipo de operação (em segundos)
-    TIMEOUT_API_GET = 30             # GET simples (metadata)
-    TIMEOUT_API_POST = 60            # POST simples (sem arquivo)
-    TIMEOUT_UPLOAD_IMAGE = 120       # Upload de imagem
-    TIMEOUT_UPLOAD_VIDEO = 600       # ↑ Upload de vídeo (10 minutos)
-    TIMEOUT_DOWNLOAD = 120           # Download de arquivo
-    CHUNK_SIZE = 4 * 1024 * 1024     # 4MB por parte (Resumable Upload)
-
-    def __init__(self, account_id, access_token, app_id, app_secret, callback=None):
-
+    def __init__(self, account_id, access_token, app_id, app_secret):
         self.account_id = account_id
         self.access_token = access_token
         self.app_id = app_id
         self.app_secret = app_secret
         self.logs = []
-        self._callback = callback
-
-        self._session = None  # Session reutilizável com retry automático
+        self._callback = None
 
         FacebookAdsApi.init(app_id, app_secret, access_token)
         self.account = AdAccount(account_id)
@@ -412,49 +394,6 @@ class MetaUploader:
         if self._callback:
             self._callback(msg)
 
-    def _log_network_info(self):
-        """Loga informações de rede para diagnóstico de bloqueio/timeout."""
-        try:
-            # Tenta obter o IP de saída
-            resp = requests.get('https://api.ipify.org?format=json', timeout=5)
-            ip = resp.json().get('ip', 'Desconhecido')
-            self._log(f"🌐 IP de Saída da VPS: {ip}")
-        except:
-            self._log("⚠️ Não foi possível determinar o IP de saída.")
-
-    def _get_session(self):
-        """Retorna uma sessão do requests configurada para resiliência máxima."""
-        if self._session is None:
-            from requests.adapters import HTTPAdapter
-            from urllib3.util.retry import Retry
-            
-            self._session = requests.Session()
-            
-            # Headers simplificados (Sniper Strategy)
-            # Evita inconsistências de fingerprint TLS/HTTP2 que causam bloqueio edge
-            self._session.headers.update({
-                'User-Agent': 'facebook-python-business-sdk-v22.0.0',
-                'Accept': '*/*',
-                'Connection': 'close', # Forçar fechamento para evitar sockets sujos
-            })
-            
-            # Retry agressivo para erros de rede comuns na VPS
-            retry_strategy = Retry(
-                total=5,
-                backoff_factor=2, # Aumentado para dar mais fôlego à VPS
-                status_forcelist=[429, 500, 502, 503, 504],
-                allowed_methods=["HEAD", "GET", "POST", "OPTIONS"],
-                raise_on_status=False
-            )
-            adapter = HTTPAdapter(
-                max_retries=retry_strategy,
-                pool_connections=10, 
-                pool_maxsize=10
-            )
-            self._session.mount("https://", adapter)
-            self._session.mount("http://", adapter)
-        return self._session
-
     # ======================== RATE LIMITING ========================
 
     def check_rate_limit(self, response_headers=None):
@@ -495,21 +434,15 @@ class MetaUploader:
     # ======================== DELAY ========================
 
     def smart_delay(self):
-        """Aplica delay aleatório entre uploads (3-6s)."""
+        """Aplica delay aleatório entre uploads (1.5-3s)."""
         delay = random.uniform(self.DELAY_MIN, self.DELAY_MAX)
         self._log(f"⏳ Aguardando delay de segurança ({delay:.1f}s)...")
-        time.sleep(delay)
-
-    def video_delay(self):
-        """Aplica delay extra após upload de vídeo (5-10s) para melhorar resiliência."""
-        delay = random.uniform(self.DELAY_VIDEO_MIN, self.DELAY_VIDEO_MAX)
-        self._log(f"⏳ Delay pós-vídeo ({delay:.1f}s) para estabilizar conexão...")
         time.sleep(delay)
 
     # ======================== RETRY ========================
 
     def _with_retry(self, operation_name, func):
-        """Executa uma função com até MAX_RETRIES tentativas. Para imediatamente em rate limit."""
+        """Executa uma função com até MAX_RETRIES tentativas."""
         last_error = None
         for attempt in range(1, self.MAX_RETRIES + 1):
             try:
@@ -517,32 +450,12 @@ class MetaUploader:
                 return result
             except Exception as e:
                 last_error = e
-                err_str = str(e).lower()
-
-                # Rate limit (code 17) — parar imediatamente, sem retentar
-                if 'request limit' in err_str or 'rate limit' in err_str or 'too many calls' in err_str or 'user request limit' in err_str:
-                    self._log(
-                        f"🚫 {operation_name}: RATE LIMIT atingido. Parando retentativas para proteger a conta."
-                    )
-                    raise e
-
-                # Identificar erros de rede/SSL específicos
-                is_network_error = any(k in err_str for k in [
-                    'connectionpool', 'sslerror', 'unexpected_eof', 'remote disconnected', 
-                    'connection aborted', 'broken pipe', 'timeout', 'timeout_expired'
-                ])
-
                 if attempt < self.MAX_RETRIES:
-                    # Backoff exponencial agressivo para erros de rede: 10s → 20s → 40s → 80s
-                    wait = self.RETRY_BACKOFF * (2 ** (attempt - 1))
-                    if is_network_error:
-                        wait += random.randint(1, 5) # Jitter para evitar "thundering herd"
-
                     self._log(
-                        f"⚠️ {operation_name} falhou ({attempt}/{self.MAX_RETRIES}): "
-                        f"{str(e)[:120]}. Retentando em {wait}s..."
+                        f"⚠️ {operation_name} falhou (tentativa {attempt}/{self.MAX_RETRIES}): "
+                        f"{str(e)[:100]}. Retentando em {self.RETRY_BACKOFF}s..."
                     )
-                    time.sleep(wait)
+                    time.sleep(self.RETRY_BACKOFF)
                 else:
                     self._log(
                         f"❌ {operation_name} falhou após {self.MAX_RETRIES} tentativas: "
@@ -575,15 +488,14 @@ class MetaUploader:
         return link
 
     def _download_file(self, url, dest_path):
-        """Baixa um arquivo de uma URL, tratando confirmação de vírus do Google Drive (2 estratégias)."""
+        """Baixa um arquivo de uma URL, tratando confirmação de vírus do Google Drive (5 estratégias)."""
         try:
-            # Usar session com retry automático (reutilizando estratégia de resiliência)
-            session = self._get_session()
+            session = requests.Session()
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
             }
 
-            # Extrair file_id do Google Drive
+            # Extrair file_id do Google Drive (usado nas estratégias 3-5)
             file_id = None
             if 'drive.google.com' in url or 'docs.google.com' in url:
                 id_match = re.search(r'(?:id=|/d/)([a-zA-Z0-9_-]+)', url)
@@ -602,7 +514,7 @@ class MetaUploader:
                     sz = os.path.getsize(dest_path)
                     if sz == 0:
                         self._log("⚠️ Arquivo baixado tem 0 bytes — tratando como falha.")
-                        return True
+                        return True  # Tratar 0KB como "não é o arquivo real"
                     with open(dest_path, 'rb') as f:
                         head = f.read(500)
                     if b'<html' in head.lower() or b'<!doctype' in head.lower():
@@ -613,7 +525,7 @@ class MetaUploader:
 
             # ─── ESTRATÉGIA 1: Download direto com cookie ───
             self._log("📥 [E1] Download direto...")
-            response = session.get(url, stream=True, timeout=self.TIMEOUT_DOWNLOAD, headers=headers)
+            response = session.get(url, stream=True, timeout=60, headers=headers)
             token = None
             for key, value in response.cookies.items():
                 if key.startswith('download_warning'):
@@ -621,7 +533,7 @@ class MetaUploader:
                     break
             if token:
                 self._log(f"🛡️ Token via cookie detectado: {token[:8]}...")
-                response = session.get(url, params={'confirm': token}, stream=True, timeout=self.TIMEOUT_DOWNLOAD, headers=headers)
+                response = session.get(url, params={'confirm': token}, stream=True, timeout=120, headers=headers)
             _save_stream(response)
 
             if not _is_html():
@@ -631,20 +543,82 @@ class MetaUploader:
 
             self._log("⚠️ [E1] Drive retornou HTML.")
 
-            # ─── ESTRATÉGIA 2: Novo domínio drive.usercontent.google.com ───
+            # ─── ESTRATÉGIA 2: GET confirm=t (legacy) ───
             if file_id:
-                self._log("📥 [E2] Tentando novo domínio (drive.usercontent.google.com)...")
-                new_url = f"https://drive.usercontent.google.com/download?id={file_id}&export=download&confirm=t"
-                response = session.get(new_url, stream=True, timeout=self.TIMEOUT_DOWNLOAD, headers=headers)
+                self._log("📥 [E2] Tentando confirm=t...")
+                dl_url = f"https://drive.google.com/uc?export=download&id={file_id}&confirm=t"
+                response = session.get(dl_url, stream=True, timeout=120, headers=headers)
                 _save_stream(response)
                 if not _is_html():
                     file_size = os.path.getsize(dest_path)
                     self._log(f"✅ Download concluído (E2): ({file_size / 1024:.0f} KB)")
                     return True
-                self._log("⚠️ [E2] Novo domínio também retornou HTML.")
+                self._log("⚠️ [E2] Falhou.")
 
-            # ─── FALHA: arquivo provavelmente está privado ───
-            self._log(f"❌ Download falhou nas 2 estratégias.")
+            # ─── ESTRATÉGIA 3: POST do formulário de confirmação ───
+            self._log("📥 [E3] Extraindo formulário POST do HTML...")
+            try:
+                with open(dest_path, 'rb') as f:
+                    html_content = f.read().decode('utf-8', errors='replace')
+
+                # Extrair action URL e campos hidden
+                action_match = re.search(r'action="([^"]+)"', html_content)
+                id_match_form = re.search(r'name="id"\s+value="([^"]+)"', html_content)
+                uuid_match = re.search(r'name="uuid"\s+value="([^"]+)"', html_content)
+
+                if action_match:
+                    action_url = action_match.group(1).replace('&amp;', '&')
+                    post_data = {}
+                    if id_match_form:
+                        post_data['id'] = id_match_form.group(1)
+                    if uuid_match:
+                        post_data['uuid'] = uuid_match.group(1)
+                    post_data['confirm'] = 't'
+
+                    self._log(f"🔑 [E3] POST para: {action_url[:50]}...")
+                    response = session.post(action_url, data=post_data, stream=True, timeout=120, headers=headers)
+                    _save_stream(response)
+                    if not _is_html():
+                        file_size = os.path.getsize(dest_path)
+                        self._log(f"✅ Download concluído (E3): ({file_size / 1024:.0f} KB)")
+                        return True
+                    self._log("⚠️ [E3] POST retornou HTML.")
+                else:
+                    self._log("⚠️ [E3] action URL não encontrada no HTML.")
+            except Exception as e3:
+                self._log(f"⚠️ [E3] Erro: {e3}")
+
+            # ─── ESTRATÉGIA 4: gdown (biblioteca especializada) ───
+            if file_id:
+                try:
+                    import gdown
+                    self._log("📥 [E4] Usando gdown...")
+                    gdown_url = f"https://drive.google.com/uc?id={file_id}"
+                    output = gdown.download(gdown_url, dest_path, quiet=True, fuzzy=True)
+                    if output and os.path.exists(dest_path) and not _is_html():
+                        file_size = os.path.getsize(dest_path)
+                        self._log(f"✅ Download concluído (E4/gdown): ({file_size / 1024:.0f} KB)")
+                        return True
+                    self._log("⚠️ [E4] gdown falhou ou retornou HTML.")
+                except ImportError:
+                    self._log("⚠️ [E4] gdown não instalado. Pulando...")
+                except Exception as e4:
+                    self._log(f"⚠️ [E4] gdown erro: {e4}")
+
+            # ─── ESTRATÉGIA 5: Novo domínio drive.usercontent.google.com ───
+            if file_id:
+                self._log("📥 [E5] Tentando novo domínio (drive.usercontent.google.com)...")
+                new_url = f"https://drive.usercontent.google.com/download?id={file_id}&export=download&confirm=t"
+                response = session.get(new_url, stream=True, timeout=120, headers=headers)
+                _save_stream(response)
+                if not _is_html():
+                    file_size = os.path.getsize(dest_path)
+                    self._log(f"✅ Download concluído (E5): ({file_size / 1024:.0f} KB)")
+                    return True
+                self._log("⚠️ [E5] Novo domínio também retornou HTML.")
+
+            # ─── FALHA TOTAL: salvar HTML para debug ───
+            self._log(f"❌ Download falhou em TODAS as 5 estratégias.")
             self._log(f"   → Verifique se o arquivo tem permissão 'Qualquer pessoa com o link pode visualizar'.")
             try:
                 debug_path = os.path.join(tempfile.gettempdir(), f"drive_debug_{int(time.time())}.html")
@@ -671,13 +645,9 @@ class MetaUploader:
         self._log(f"🔗 Enviando URL de imagem para a Meta: {url[:60]}...")
         
         api_url = f"https://graph.facebook.com/v22.0/{self.account_id}/adimages"
-
+        
         def _do():
-            resp = self._get_session().post(
-                api_url,
-                data={'url': url, 'access_token': self.access_token},
-                timeout=self.TIMEOUT_UPLOAD_IMAGE
-            )
+            resp = requests.post(api_url, data={'url': url, 'access_token': self.access_token})
             result = resp.json()
             if 'error' in result:
                 msg = result['error'].get('message', '')
@@ -720,11 +690,7 @@ class MetaUploader:
         api_url = f"https://graph.facebook.com/v22.0/{self.account_id}/advideos"
         
         def _do():
-            resp = self._get_session().post(
-                api_url,
-                data={'file_url': url, 'access_token': self.access_token},
-                timeout=self.TIMEOUT_UPLOAD_VIDEO
-            )
+            resp = requests.post(api_url, data={'file_url': url, 'access_token': self.access_token})
             result = resp.json()
             if 'error' in result:
                 msg = result['error'].get('message', '')
@@ -824,7 +790,7 @@ class MetaUploader:
                 'fields': 'source',
                 'access_token': self.access_token
             }
-            resp = self._get_session().get(url, params=params, timeout=self.TIMEOUT_API_GET).json()
+            resp = requests.get(url, params=params).json()
             
             if 'error' in resp or 'source' not in resp:
                 self._log(f"⚠️ Não foi possível obter URL do vídeo: {resp.get('error', {}).get('message', 'sem source')}")
@@ -847,169 +813,34 @@ class MetaUploader:
             self._log(f"⚠️ Erro em extract_video_thumbnail_from_id: {e}")
             return None
 
-    def _upload_image_curl(self, file_path):
-        """Upload de imagem usando o binário CURL do sistema (Fallback Resiliente)."""
-        import subprocess
-        filename = os.path.basename(file_path)
-        api_url = f"https://graph.facebook.com/v22.0/{self.account_id}/adimages"
-        
-        self._log(f"🚀 [CURL Engine] Iniciando upload de {filename}...")
-        
-        cmd = [
-            "curl", "-v",
-            "-X", "POST",
-            api_url,
-            "-F", f"access_token={self.access_token}",
-            "-F", f"filename=@{file_path};type=image/png",
-            "--connect-timeout", "30",
-            "--max-time", str(self.TIMEOUT_UPLOAD_IMAGE),
-            "--retry", "3"
-        ]
-        
-        try:
-            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-            stdout, stderr = process.communicate()
-            
-            if process.returncode != 0:
-                self._log(f"❌ CURL Error ({process.returncode}): {stderr[-200:]}")
-                raise Exception(f"CURL falhou com código {process.returncode}")
-            
-            resp = json.loads(stdout)
-            if 'error' in resp:
-                raise Exception(f"Erro API Meta (via CURL): {resp['error'].get('message')}")
-            
-            if 'images' in resp:
-                img_data = list(resp['images'].values())[0]
-                return img_data.get('hash')
-            return resp.get('hash')
-        except Exception as e:
-            self._log(f"⚠️ Falha no motor CURL: {e}")
-            raise
-
     def upload_image(self, file_path):
-        """Upload de imagem para a conta usando requests puro. Retorna image_hash."""
+        """Upload de imagem para a conta. Retorna image_hash."""
         filename = os.path.basename(file_path)
         self._log(f"📤 Fazendo upload de imagem: {filename}...")
 
         def _do():
-            try:
-                api_url = f"https://graph.facebook.com/v22.0/{self.account_id}/adimages"
-                # Carregar em memória para garantir Content-Length e desativar chunked encoding
-                with open(file_path, 'rb') as f:
-                    image_bytes = f.read()
-                
-                files = {'filename': (filename, image_bytes, 'image/png')}
-                data = {'access_token': self.access_token}
-                
-                self._log(f"🔗 API URL: {api_url}")
-                
-                resp_raw = self._get_session().post(
-                    api_url, 
-                    data=data, 
-                    files=files, 
-                    timeout=self.TIMEOUT_UPLOAD_IMAGE
-                )
-                
-                if resp_raw.status_code != 200:
-                    self._log(f"⚠️ Erro HTTP {resp_raw.status_code}. Tentando fallback para CURL...")
-                    return self._upload_image_curl(file_path)
-                    
-                resp = resp_raw.json()
-                if 'error' in resp:
-                    raise Exception(f"Erro API: {resp['error'].get('message')}")
-                
-                if 'images' in resp:
-                    img_data = list(resp['images'].values())[0]
-                    return img_data.get('hash')
-                return resp.get('hash')
-
-            except (requests.exceptions.ConnectionError, requests.exceptions.ChunkedEncodingError) as e:
-                self._log(f"📡 Erro de conexão Python ({type(e).__name__}). Acionando motor CURL...")
-                return self._upload_image_curl(file_path)
+            image = AdImage(parent_id=self.account_id)
+            image[AdImage.Field.filename] = file_path
+            image.remote_create()
+            return image[AdImage.Field.hash]
 
         image_hash = self._with_retry(f"Upload imagem '{filename}'", _do)
         self._log(f"✅ Imagem '{filename}' enviada (hash: {image_hash[:12]}...)")
         return image_hash
 
     def upload_video(self, file_path):
-        """Upload de vídeo para a conta usando protocolo Resumable. Retorna video_id."""
+        """Upload de vídeo para a conta. Retorna video_id."""
         filename = os.path.basename(file_path)
-        self._log(f"📤 Fazendo upload resiliente de vídeo: {filename}...")
+        self._log(f"📤 Fazendo upload de vídeo: {filename}...")
 
         def _do():
-            return self._upload_video_resumable(file_path)
+            video = AdVideo(parent_id=self.account_id)
+            video[AdVideo.Field.filepath] = file_path
+            video.remote_create()
+            return video.get_id()
 
         video_id = self._with_retry(f"Upload vídeo '{filename}'", _do)
         self._log(f"✅ Vídeo '{filename}' enviado (ID: {video_id})")
-        self.video_delay()  # Delay extra pós-vídeo para estabilizar conexão
-        return video_id
-
-    def _upload_video_resumable(self, file_path):
-        """Implementa o protocolo de upload em partes (START -> APPEND -> FINISH) da Meta."""
-        file_size = os.path.getsize(file_path)
-        api_url = f"https://graph-video.facebook.com/v22.0/{self.account_id}/advideos"
-        
-        self._log(f"🎬 Iniciando sessão de upload (Tamanho: {file_size/1024/1024:.2f} MB)...")
-        
-        # 1. START
-        start_payload = {
-            'upload_phase': 'start',
-            'access_token': self.access_token,
-            'file_size': file_size
-        }
-        resp = self._get_session().post(api_url, data=start_payload, timeout=self.TIMEOUT_API_POST).json()
-        if 'error' in resp:
-            raise Exception(f"Falha no START do upload: {resp['error'].get('message')}")
-        
-        session_id = resp['upload_session_id']
-        self._log(f"🔗 Sessão de upload aberta: {session_id}")
-        
-        # 2. APPEND
-        with open(file_path, 'rb') as f:
-            start_offset = 0
-            chunk_count = (file_size + self.CHUNK_SIZE - 1) // self.CHUNK_SIZE
-            
-            for i in range(chunk_count):
-                chunk_data = f.read(self.CHUNK_SIZE)
-                append_payload = {
-                    'upload_phase': 'append',
-                    'access_token': self.access_token,
-                    'upload_session_id': session_id,
-                    'start_offset': start_offset
-                }
-                
-                # O chunk deve ser enviado no campo 'video_file_chunk'
-                files = {'video_file_chunk': chunk_data}
-                
-                def _send_chunk():
-                    r = self._get_session().post(api_url, data=append_payload, files=files, timeout=self.TIMEOUT_UPLOAD_VIDEO)
-                    return r.json()
-                
-                chunk_resp = self._with_retry(f"Envio de parte {i+1}/{chunk_count}", _send_chunk)
-                if 'error' in chunk_resp:
-                    raise Exception(f"Erro na parte {i+1}: {chunk_resp['error'].get('message')}")
-                
-                start_offset += len(chunk_data)
-                self._log(f"   -> Parte {i+1}/{chunk_count} enviada ({start_offset/file_size*100:.1f}%)")
-
-        # 3. FINISH
-        self._log("🏁 Finalizando upload...")
-        finish_payload = {
-            'upload_phase': 'finish',
-            'access_token': self.access_token,
-            'upload_session_id': session_id
-        }
-        finish_resp = self._get_session().post(api_url, data=finish_payload, timeout=self.TIMEOUT_API_POST).json()
-        
-        if 'error' in finish_resp:
-            raise Exception(f"Falha no FINISH do upload: {finish_resp['error'].get('message')}")
-        
-        video_id = finish_resp.get('id')
-        if not video_id:
-            # Em alguns casos a resposta de finsh pode ser {'success': true} e o ID vem depois ou está em outro campo
-            # Mas geralmente vem o ID. Se não vier, retornamos True para indicar sucesso no processo.
-            return finish_resp.get('id', True)
-            
         return video_id
 
     def upload_media(self, file_path=None, url=None):
@@ -1091,7 +922,7 @@ class MetaUploader:
                     'fields': 'status',
                     'access_token': self.access_token
                 }
-                resp = self._get_session().get(url, params=params, timeout=self.TIMEOUT_API_GET).json()
+                resp = requests.get(url, params=params).json()
                 
                 if 'error' in resp:
                     self._log(f"⚠️ Erro ao consultar status: {resp['error'].get('message')}")
@@ -1136,7 +967,7 @@ class MetaUploader:
                     'fields': 'hash,status',
                     'access_token': self.access_token
                 }
-                resp = self._get_session().get(url, params=params, timeout=self.TIMEOUT_API_GET).json()
+                resp = requests.get(url, params=params).json()
                 
                 if 'error' in resp:
                     self._log(f"⚠️ Erro ao consultar imagem: {resp['error'].get('message')}")
@@ -1237,7 +1068,7 @@ class MetaUploader:
             for h in image_hashes:
                 self.wait_for_image_ready(h)
 
-            resp = self._get_session().post(api_url, data=post_data, timeout=self.TIMEOUT_API_POST)
+            resp = requests.post(api_url, data=post_data)
             result = resp.json()
 
             if 'error' in result:
@@ -1365,12 +1196,12 @@ class MetaUploader:
             return creative_id, error
 
         def _do():
-            # Tentar Simples primeiro (funciona na maioria dos casos, menos chamadas)
-            cid, err = try_simple_creative()
+            # Tentar Complexo primeiro para manter Stories 9:16
+            cid, err = try_complex_creative()
             if cid: return cid
             
-            # Se falhou, tenta Complexo (asset_feed_spec com customização de placements)
-            cid, err = try_complex_creative()
+            # Se falhou, tenta Simples
+            cid, err = try_simple_creative()
             if cid: return cid
             
             raise Exception(f"Criação de criativo falhou em todas as estratégias. Último erro: {err}")
@@ -1525,8 +1356,8 @@ class MetaUploader:
             # Log completo dos params (sem access_token)
             debug_data = {k: v for k, v in post_data.items() if k != 'access_token'}
             print(f"🔍 [create_ad] Params enviados: {json.dumps(debug_data, indent=2)}")
-
-            resp = self._get_session().post(url, data=post_data, timeout=self.TIMEOUT_API_POST).json()
+            
+            resp = requests.post(url, data=post_data).json()
             print(f"🔍 [create_ad] Resposta completa: {json.dumps(resp, indent=2, ensure_ascii=False)}")
 
             if 'error' in resp:
@@ -1580,7 +1411,7 @@ class MetaUploader:
                         update_data['name'] = new_name
 
                     url = f"https://graph.facebook.com/v22.0/{copied_id}"
-                    resp = self._get_session().post(url, data=update_data, timeout=self.TIMEOUT_API_POST).json()
+                    resp = requests.post(url, data=update_data).json()
                     if 'error' in resp:
                         self._log(f"⚠️ Falha ao atualizar Ad Set: {resp['error'].get('message')}")
                     else:
