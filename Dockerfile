@@ -21,4 +21,7 @@ COPY . .
 EXPOSE 5000
 
 # Comando para rodar com Gunicorn (Produção)
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "--timeout", "300", "app:app"]
+# Usamos gthread para lidar melhor com conexões de streaming (pode demorar)
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--worker-class", "gthread", "--threads", "4", "--timeout", "600", "app:app"]
+
+

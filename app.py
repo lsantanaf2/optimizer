@@ -7,6 +7,8 @@ from flask import (
     Flask, request, redirect, session, render_template,
     jsonify, Response, stream_with_context, url_for
 )
+import queue
+import threading
 from urllib.parse import quote
 from dotenv import load_dotenv
 from facebook_business.api import FacebookAdsApi
@@ -27,7 +29,9 @@ TOKEN_FILE = 'token.json'
 app = Flask(__name__, static_folder='static')
 app.secret_key = 'chave-secreta-optimizer-2024'
 
-VERSION = "v1.6.3"
+VERSION = "v1.6.5"
+
+
 
 
 
@@ -428,102 +432,101 @@ def historico_textos(campaign_id):
 
 @app.route('/campanha/<campaign_id>/upload', methods=['POST'])
 def upload_single(campaign_id):
-    """Upload de um único anúncio. Chamado pelo frontend para cada item da fila."""
+    """Upload de um único anúncio com streaming de logs em tempo real (NDJSON)."""
     access_token = obter_token()
     if not access_token:
         return jsonify({'success': False, 'error': 'Não autenticado'}), 401
 
-    uploader = None
-    try:
-        account_id = session.get('account_id', '')
-        # Identity & Tracking from form
-        page_id = request.form.get('page_id')
-        instagram_actor_id = request.form.get('instagram_actor_id') or None
-        pixel_id = request.form.get('pixel_id') or None
+    # Capturar dados necessários ANTES de entrar na thread
+    account_id = session.get('account_id', '')
+    form_data = request.form.to_dict(flat=False) # Para pegar listas como primary_text[]
+    # request.files não pode ser acessado em thread facilmente, vamos salvar os arquivos antes
+    
+    # Salvar arquivos em diretório temporário antes da thread
+    temp_dir = tempfile.mkdtemp(prefix='optimizer_')
+    feed_path = None
+    stories_path = None
+    
+    if 'arquivo_feed' in request.files:
+        f = request.files['arquivo_feed']
+        if f.filename:
+            feed_path = os.path.join(temp_dir, f.filename)
+            f.save(feed_path)
+            
+    if 'arquivo_stories' in request.files:
+        f = request.files['arquivo_stories']
+        if f.filename:
+            stories_path = os.path.join(temp_dir, f.filename)
+            f.save(stories_path)
 
-        estrategia = request.form.get('estrategia')
-        destino = request.form.get('destino_conjunto', '')
-        adset_existente = request.form.get('adset_existente', '')
-        adset_modelo = request.form.get('adset_modelo', '')
-        ad_name = request.form.get('ad_name', 'Anúncio sem nome')
-        url_destino = request.form.get('url_destino', '')
-        utm_pattern = request.form.get('utm_pattern', '')
-        cta = request.form.get('cta', 'LEARN_MORE')
-        textos = request.form.getlist('primary_text[]')
-        titulos = request.form.getlist('headline[]')
-        lead_gen_form_id = request.form.get('lead_gen_form_id') or None
+    log_queue = queue.Queue()
 
-        # New: Links from Drive/Remote
-        url_feed_remote = request.form.get('url_feed_remote') or None
-        url_stories_remote = request.form.get('url_stories_remote') or None
-
-        # Save uploaded files to temp dir
-        temp_dir = tempfile.mkdtemp(prefix='optimizer_')
-        feed_path = None
-        stories_path = None
-
-        if 'arquivo_feed' in request.files:
-            f = request.files['arquivo_feed']
-            if f.filename:
-                feed_path = os.path.join(temp_dir, f.filename)
-                f.save(feed_path)
-
-        if 'arquivo_stories' in request.files:
-            f = request.files['arquivo_stories']
-            if f.filename:
-                stories_path = os.path.join(temp_dir, f.filename)
-                f.save(stories_path)
-
-        if not feed_path and not stories_path and not url_feed_remote and not url_stories_remote:
-            return jsonify({'success': False, 'error': 'Nenhuma mídia (arquivo ou link) enviada'}), 400
-
-        # Initialize uploader
-        uploader = MetaUploader(account_id, access_token, APP_ID, APP_SECRET)
-
-        # Upload media files
-        feed_media = None
-        stories_media = None
-
-        # Case 1: Prioritize Remote URLs (Drive)
-        if url_feed_remote:
-            feed_media = uploader.upload_media(url=url_feed_remote)
-            uploader.smart_delay()
-        elif feed_path:
-            feed_media = uploader.upload_media(file_path=feed_path)
-            uploader.smart_delay()
-
-        if url_stories_remote:
-            stories_media = uploader.upload_media(url=url_stories_remote)
-            uploader.smart_delay()
-        elif stories_path:
-            stories_media = uploader.upload_media(file_path=stories_path)
-            uploader.smart_delay()
-
-        # Determine target adset
-        target_adset_id = adset_existente or adset_modelo
-        if not target_adset_id:
-            return jsonify({'success': False, 'error': 'Nenhum Ad Set selecionado'}), 400
-
-        # Validation for Identity
-        if not page_id:
-             return jsonify({'success': False, 'error': 'Página do Facebook Obrigatória'}), 400
-
-        # Handle strategy: duplicate adset if needed
-        actual_adset_id = target_adset_id
-        if estrategia == 'garimpo' or destino == 'duplicar':
-            actual_adset_id = uploader.duplicate_adset(target_adset_id)
-            uploader.smart_delay()
-
-        # Build full URL (UTMs vão apenas no url_tags, não na URL do link)
-        full_url = url_destino
-
-        # Create creative with placement rules
+    def run_upload_task():
+        uploader = None
         try:
+            # Reconstituir variáveis do form_data (que agora é um dict de listas)
+            def get_f(key, default=None):
+                val = form_data.get(key)
+                return val[0] if val else default
+
+            page_id = get_f('page_id')
+            instagram_actor_id = get_f('instagram_actor_id')
+            pixel_id = get_f('pixel_id')
+            estrategia = get_f('estrategia')
+            destino = get_f('destino_conjunto')
+            adset_existente = get_f('adset_existente')
+            adset_modelo = get_f('adset_modelo')
+            ad_name = get_f('ad_name', 'Anúncio sem nome')
+            url_destino = get_f('url_destino', '')
+            utm_pattern = get_f('utm_pattern', '')
+            cta = get_f('cta', 'LEARN_MORE')
+            textos = form_data.get('primary_text[]', [])
+            titulos = form_data.get('headline[]', [])
+            lead_gen_form_id = get_f('lead_gen_form_id')
+            url_feed_remote = get_f('url_feed_remote')
+            url_stories_remote = get_f('url_stories_remote')
+
+            if not feed_path and not stories_path and not url_feed_remote and not url_stories_remote:
+                log_queue.put({'success': False, 'error': 'Nenhuma mídia enviada'})
+                return
+
+            # Inicializar uploader com callback na queue
+            uploader = MetaUploader(account_id, access_token, APP_ID, APP_SECRET, 
+                                    callback=lambda msg: log_queue.put({'type': 'log', 'msg': msg}))
+
+            # Log de diagnóstico de rede (Architect Audit)
+            uploader._log_network_info()
+
+            # Upload mídias
+            feed_media = None
+            stories_media = None
+
+            if url_feed_remote:
+                feed_media = uploader.upload_media(url=url_feed_remote)
+                uploader.smart_delay()
+            elif feed_path:
+                feed_media = uploader.upload_media(file_path=feed_path)
+                uploader.smart_delay()
+
+            if url_stories_remote:
+                stories_media = uploader.upload_media(url=url_stories_remote)
+                uploader.smart_delay()
+            elif stories_path:
+                stories_media = uploader.upload_media(file_path=stories_path)
+                uploader.smart_delay()
+
+            target_adset_id = adset_existente or adset_modelo
+            actual_adset_id = target_adset_id
+            
+            if estrategia == 'garimpo' or destino == 'duplicar':
+                actual_adset_id = uploader.duplicate_adset(target_adset_id)
+                uploader.smart_delay()
+
             creative_id = uploader.create_creative_with_placements(
                 page_id=page_id,
                 feed_media=feed_media,
                 stories_media=stories_media,
-                link_url=full_url,
+                link_url=url_destino,
                 primary_texts=textos,
                 headlines=titulos,
                 cta_type=cta,
@@ -531,39 +534,49 @@ def upload_single(campaign_id):
                 url_tags=utm_pattern,
                 lead_gen_form_id=lead_gen_form_id,
             )
-        except ValueError as e:
-             return jsonify({'success': False, 'error': str(e)}), 400
+            uploader.smart_delay()
 
-        uploader.smart_delay()
+            ad_id = uploader.create_ad(actual_adset_id, creative_id, ad_name, pixel_id=pixel_id)
 
-        # Create ad — always PAUSED
-        ad_id = uploader.create_ad(actual_adset_id, creative_id, ad_name, pixel_id=pixel_id)
+            # Sucesso
+            log_queue.put({
+                'success': True, 
+                'ad_id': ad_id, 
+                'message': f'Ad "{ad_name}" criado com sucesso'
+            })
 
-        # Cleanup temp files
-        try:
-            if feed_path and os.path.exists(feed_path):
-                os.remove(feed_path)
-            if stories_path and os.path.exists(stories_path):
-                os.remove(stories_path)
-            os.rmdir(temp_dir)
-        except OSError:
-            pass
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            log_queue.put({'success': False, 'error': str(e)})
+        finally:
+            # Cleanup
+            try:
+                if feed_path and os.path.exists(feed_path): os.remove(feed_path)
+                if stories_path and os.path.exists(stories_path): os.remove(stories_path)
+                os.rmdir(temp_dir)
+            except: pass
+            log_queue.put(None) # Fim da stream
 
-        return jsonify({
-            'success': True,
-            'ad_id': ad_id,
-            'message': f'Ad "{ad_name}" criado com sucesso (PAUSADO)',
-            'logs': uploader.logs,
-        })
+    # Iniciar thread
+    threading.Thread(target=run_upload_task).start()
 
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({
-            'success': False,
-            'error': str(e),
-            'logs': uploader.logs if uploader else [],
-        }), 500
+    def generate_ndjson():
+        while True:
+            item = log_queue.get()
+            if item is None: break
+            yield json.dumps(item) + '\n'
+
+    return Response(
+        stream_with_context(generate_ndjson()), 
+        mimetype='application/x-ndjson',
+        headers={
+            'X-Accel-Buffering': 'no',  # Impede que o Nginx faça buffer do stream
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive'
+        }
+    )
+
 
 
 @app.route('/campanha/<campaign_id>/duplicate-adset', methods=['POST'])

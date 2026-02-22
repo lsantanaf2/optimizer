@@ -93,13 +93,15 @@ class MetaUploader:
     TIMEOUT_DOWNLOAD = 120           # Download de arquivo
     CHUNK_SIZE = 4 * 1024 * 1024     # 4MB por parte (Resumable Upload)
 
-    def __init__(self, account_id, access_token, app_id, app_secret):
+    def __init__(self, account_id, access_token, app_id, app_secret, callback=None):
+
         self.account_id = account_id
         self.access_token = access_token
         self.app_id = app_id
         self.app_secret = app_secret
         self.logs = []
-        self._callback = None
+        self._callback = callback
+
         self._session = None  # Session reutilizável com retry automático
 
         FacebookAdsApi.init(app_id, app_secret, access_token)
@@ -410,29 +412,50 @@ class MetaUploader:
         if self._callback:
             self._callback(msg)
 
+    def _log_network_info(self):
+        """Loga informações de rede para diagnóstico de bloqueio/timeout."""
+        try:
+            # Tenta obter o IP de saída
+            resp = requests.get('https://api.ipify.org?format=json', timeout=5)
+            ip = resp.json().get('ip', 'Desconhecido')
+            self._log(f"🌐 IP de Saída da VPS: {ip}")
+        except:
+            self._log("⚠️ Não foi possível determinar o IP de saída.")
+
     def _get_session(self):
-        """Retorna uma sessão do requests com headers de navegador e retry configurado."""
+        """Retorna uma sessão do requests configurada para resiliência máxima."""
         if self._session is None:
             from requests.adapters import HTTPAdapter
             from urllib3.util.retry import Retry
             
             self._session = requests.Session()
             
-            # Headers para "disfarçar" o script como um navegador real
+            # Headers stealth para simular navegador real
             self._session.headers.update({
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-                'Accept': '*/*',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Connection': 'keep-alive', # Ou 'close' se o EOF persistir muito
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+                'Cache-Control': 'no-cache',
+                'Pragma': 'no-cache',
+                'Sec-Ch-Ua': '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"',
+                'Sec-Ch-Ua-Mobile': '?0',
+                'Sec-Ch-Ua-Platform': '"Windows"',
+                'Connection': 'keep-alive'
             })
             
+            # Retry agressivo para erros de rede comuns na VPS
             retry_strategy = Retry(
                 total=5,
-                backoff_factor=1,
+                backoff_factor=2, # Aumentado para dar mais fôlego à VPS
                 status_forcelist=[429, 500, 502, 503, 504],
-                allowed_methods=["HEAD", "GET", "POST", "OPTIONS"]
+                allowed_methods=["HEAD", "GET", "POST", "OPTIONS"],
+                raise_on_status=False
             )
-            adapter = HTTPAdapter(max_retries=retry_strategy)
+            adapter = HTTPAdapter(
+                max_retries=retry_strategy,
+                pool_connections=10, 
+                pool_maxsize=10
+            )
             self._session.mount("https://", adapter)
             self._session.mount("http://", adapter)
         return self._session
