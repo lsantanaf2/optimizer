@@ -29,7 +29,8 @@ TOKEN_FILE = 'token.json'
 app = Flask(__name__, static_folder='static')
 app.secret_key = 'chave-secreta-optimizer-2024'
 
-VERSION = "v1.6.5"
+VERSION = "v1.6.7 (Sniper Audit)"
+
 
 
 
@@ -608,6 +609,40 @@ def duplicate_adset_route(campaign_id):
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
 
+
+@app.route('/debug/diag')
+def debug_diag():
+    """Executa diagnóstico profundo de rede e retorna os resultados."""
+    results = {
+        'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
+        'environment': 'VPS Docker' if os.path.exists('/.dockerenv') else 'Local',
+        'tests': []
+    }
+    
+    # Teste 1: IPify
+    try:
+        ip_resp = requests.get('https://api.ipify.org?format=json', timeout=10).json()
+        results['tests'].append({'name': 'IP Lookup', 'status': 'OK', 'value': ip_resp.get('ip')})
+    except Exception as e:
+        results['tests'].append({'name': 'IP Lookup', 'status': 'FAIL', 'error': str(e)})
+
+    # Teste 2: Graph API Connectivity (CURL)
+    try:
+        cmd = ["curl", "-v", "-I", "https://graph.facebook.com/v22.0/"]
+        import subprocess
+        output = subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True, timeout=15)
+        results['tests'].append({'name': 'Meta Connectivity (CURL)', 'status': 'OK', 'details': output})
+    except Exception as e:
+        results['tests'].append({'name': 'Meta Connectivity (CURL)', 'status': 'FAIL', 'error': str(e)})
+
+    # Teste 3: Graph API Connectivity (Requests)
+    try:
+        r = requests.get("https://graph.facebook.com/v22.0/", timeout=15)
+        results['tests'].append({'name': 'Meta Connectivity (Requests)', 'status': 'OK', 'code': r.status_code})
+    except Exception as e:
+        results['tests'].append({'name': 'Meta Connectivity (Requests)', 'status': 'FAIL', 'error': str(e)})
+
+    return Response(json.dumps(results, indent=2), mimetype='application/json')
 
 if __name__ == '__main__':
     print("Servidor rodando! Acesse http://localhost:5000 no seu navegador.")
