@@ -12,19 +12,9 @@ git add .; git commit -m "Descritivo da mudança"; git push origin main
 ```
 
 ### 🚀 VPS (Linux / Docker)
-Acesse a VPS via SSH e execute:
+As instruções completas, arquitetura do servidor e comandos do Docker Compose para deploy em VPS foram movidas para a Base de Conhecimento do projeto por questões de documentação.
 
-```bash
-cd /var/www/optimizer
-git pull origin main
-docker build -t optimizer-image:auto .
-docker rm -f meta-optimizer-sniper || true
-docker run -d --name meta-optimizer-sniper -p 5000:5000 \
-  -e APP_ID="seu_app_id" \
-  -e APP_SECRET="seu_app_secret" \
-  -e REDIRECT_URI="https://seu-dominio.com/callback" \
-  --restart always optimizer-image:auto
-```
+👉 [Consulte o Guia de Deploy VPS no OPTIMIZER_PROJECT_KB.md](OPTIMIZER_PROJECT_KB.md)
 
 ## 🛠️ Tecnologias
 - Python 3.10+
