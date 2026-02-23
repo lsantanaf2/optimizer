@@ -101,10 +101,10 @@ def callback():
     if not code:
         return "Erro: Código de autorização não recebido."
 
-    # Não usamos quote(REDIRECT_URI) aqui porque a biblioteca requests faz o encoding automático dos parâmetros na URL
+    encoded_uri = quote(REDIRECT_URI)
     token_url = (
         f"https://graph.facebook.com/v22.0/oauth/access_token?"
-        f"client_id={APP_ID}&redirect_uri={REDIRECT_URI}&"
+        f"client_id={APP_ID}&redirect_uri={encoded_uri}&"
         f"client_secret={APP_SECRET}&code={code}"
     )
 
