@@ -7,7 +7,7 @@ from flask import (
     Flask, request, redirect, session, render_template,
     jsonify, Response, stream_with_context, url_for
 )
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 from dotenv import load_dotenv
 from facebook_business.api import FacebookAdsApi
 from facebook_business.adobjects.user import User
@@ -84,11 +84,12 @@ def index():
 def pagina_login():
     # Scopes: Basic Hygiene Package
     scopes = 'public_profile,email,ads_read,ads_management,pages_show_list,pages_read_engagement,instagram_basic,read_insights,pages_manage_ads'
-    encoded_uri = quote(REDIRECT_URI)
-    auth_url = (
-        f"https://www.facebook.com/v22.0/dialog/oauth?"
-        f"client_id={APP_ID}&redirect_uri={encoded_uri}&scope={scopes}"
-    )
+    params = {
+        'client_id': APP_ID,
+        'redirect_uri': REDIRECT_URI,
+        'scope': scopes
+    }
+    auth_url = f"https://www.facebook.com/v22.0/dialog/oauth?{urlencode(params)}"
     print(f"DEBUG: Generating login page. REDIRECT_URI={REDIRECT_URI}")
     return render_template('login.html', auth_url=auth_url)
 
@@ -101,15 +102,16 @@ def callback():
     if not code:
         return "Erro: Código de autorização não recebido."
 
-    # Não usamos quote(REDIRECT_URI) aqui porque a biblioteca requests faz o encoding automático dos parâmetros na URL
-    token_url = (
-        f"https://graph.facebook.com/v22.0/oauth/access_token?"
-        f"client_id={APP_ID}&redirect_uri={REDIRECT_URI}&"
-        f"client_secret={APP_SECRET}&code={code}"
-    )
+    token_url = "https://graph.facebook.com/v22.0/oauth/access_token"
+    params = {
+        'client_id': APP_ID,
+        'redirect_uri': REDIRECT_URI,
+        'client_secret': APP_SECRET,
+        'code': code
+    }
 
-    print(f"DEBUG: Requesting token with URL: {token_url.replace(APP_SECRET or '', 'SECRET_HIDDEN')}")
-    response = requests.get(token_url).json()
+    print(f"DEBUG: Requesting token with params: { {k: v for k, v in params.items() if k != 'client_secret'} }")
+    response = requests.get(token_url, params=params).json()
     access_token = response.get('access_token')
 
     if not access_token:
