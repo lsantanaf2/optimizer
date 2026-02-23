@@ -38,6 +38,10 @@ Thumbs.db
 .aios-core/
 .antigravity/
 .claude/
+.gemini/
+.agent/
+_agent/
+.agents/
 
 # Documentation & Session Files (Claude Code)
 CLAUDE.md
