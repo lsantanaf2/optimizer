@@ -1,0 +1,2087 @@
+﻿diff --git a/.clauderules b/.clauderules
+new file mode 100644
+index 0000000..74357ae
+--- /dev/null
++++ b/.clauderules
+@@ -0,0 +1,21 @@
++### NEVER
++- **Implement without showing options first**: Always present options in "1, 2, 3" format before proceeding.
++- **Delete/remove content without asking first**: Never delete or remove anything without explicit user consent.
++- **Delete recent creations**: Do not delete anything created in the last 7 days without explicit approval.
++- **Change what is working**: Avoid modifying code or features that are already functional unless necessary.
++- **Pretend work is done**: Be honest about the status of tasks; never claim completion if it's not finished.
++- **Process batch without validation**: Always validate a single item before processing a full batch.
++- **Add unrequested features**: Stick to the requested scope; don't add "extras" unless asked.
++- **Use mock data unnecessarily**: Always prefer real data from the database if available.
++- **Explain/justify when criticized**: If criticism is received, focus on fixing the issue rather than justifying it.
++- **Trust AI/subagent without verification**: Always verify outputs from AI or subagents.
++- **Create from scratch redundancy**: Check `squads/` and existing components before creating something new.
++
++### ALWAYS
++- **Present options**: Use the "1. X, 2. Y, 3. Z" format for choices.
++- **Clarify with AskUserQuestion**: Use the proper tool for gathering clarifications.
++- **Reuse components**: Check `squads/` and existing code before starting new implementations.
++- **Read COMPLETE schema**: Before suggesting DB changes, understand the full existing schema.
++- **Investigate root cause**: Don't just patch symptoms; find the root cause of persistent errors.
++- **Commit frequently**: Commit your changes before moving to the next task.
++- **Create handoff**: Generate a handoff file in `docs/sessions/YYYY-MM/` at the end of every session.
+diff --git a/.gitignore b/.gitignore
+index bec52b2..d23c98a 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -7,3 +7,49 @@ __pycache__/
+ *.log
+ temp/
+ optimizer_*/
++
++# Environment & Secrets (AIOS)
++.env.local
++.env.*.local
++*.key
++*.pem
++
++# Dependencies (AIOS)
++node_modules/
++node_modules
++
++# Build & Logs (AIOS)
++dist/
++build/
++logs/
++
++# IDE & OS (AIOS)
++.DS_Store
++Thumbs.db
++.idea/
++*.swp
++
++# AIOS Local (AIOS)
++.aios-core/local/
++.claude/settings.local.json
++.aios/install-log.txt
++
++# AIOS Session Files (Framework)
++.aios-core/
++.antigravity/
++.claude/
++.gemini/
++.agent/
++_agent/
++.agents/
++
++# Documentation & Session Files (Claude Code)
++CLAUDE.md
++DATA-ARCHITECTURE-SUMMARY.txt
++OPTIMIZER_PROJECT_KB.md
++TESTING_GUIDE.md
++TEST_PRACTICAL.md
++.env.example
++
++# Test Results
++test-results.json
+diff --git a/README.md b/README.md
+index c1b79dc..8546063 100644
+--- a/README.md
++++ b/README.md
+@@ -12,19 +12,9 @@ git add .; git commit -m "Descritivo da mudan├ºa"; git push origin main
+ ```
+ 
+ ### ­ƒÜÇ VPS (Linux / Docker)
+-Acesse a VPS via SSH e execute:
++As instru├º├Áes completas, arquitetura do servidor e comandos do Docker Compose para deploy em VPS foram movidas para a Base de Conhecimento do projeto por quest├Áes de documenta├º├úo.
+ 
+-```bash
+-cd /var/www/optimizer
+-git pull origin main
+-docker build -t optimizer-image:auto .
+-docker rm -f meta-optimizer-sniper || true
+-docker run -d --name meta-optimizer-sniper -p 5000:5000 \
+-  -e APP_ID="seu_app_id" \
+-  -e APP_SECRET="seu_app_secret" \
+-  -e REDIRECT_URI="https://seu-dominio.com/callback" \
+-  --restart always optimizer-image:auto
+-```
++­ƒæë [Consulte o Guia de Deploy VPS no OPTIMIZER_PROJECT_KB.md](OPTIMIZER_PROJECT_KB.md)
+ 
+ ## ­ƒøá´©Å Tecnologias
+ - Python 3.10+
+diff --git a/VPS_DEBUG_COMMANDS.md b/VPS_DEBUG_COMMANDS.md
+new file mode 100644
+index 0000000..b2ea5e6
+--- /dev/null
++++ b/VPS_DEBUG_COMMANDS.md
+@@ -0,0 +1,35 @@
++# Guia de Diagn├│stico de Infraestrutura (VPS)
++
++Execute estes comandos no terminal da VPS e me envie o resultado para identificarmos o "assassino de conex├Áes" de 60 segundos.
++
++### 1. Testar Conectividade Direta (CURL)
++Isso testa se o problema ├® o Python ou a rede da VPS.
++```bash
++curl -v -I https://graph.facebook.com/v22.0/
++```
++
++### 2. Testar Fragmenta├º├úo de Pacotes (MTU)
++Se o pacote for grande demais para o roteador, a conex├úo cai. Teste com um pacote de 1472 bytes.
++```bash
++ping -M do -s 1472 -c 4 graph.facebook.com
++```
++*Se der "Frag needed", o seu MTU est├í configurado errado na rede da Vivo/VPS.*
++
++### 3. Verificar IPv6 (O grande vil├úo)
++Muitas vezes o IPv6 est├í configurado mas a rota est├í quebrada. Tente for├ºar IPv4:
++```bash
++curl -4 -v -I https://graph.facebook.com/v22.0/
++```
++
++### 4. Rastrear a Rota (MTR)
++Verifica onde o pacote "morre" no caminho para a Meta.
++```bash
++mtr -rw graph.facebook.com
++```
++*(Se n├úo tiver mtr instalado, use `traceroute graph.facebook.com`)*
++
++### 5. Verificar logs do Docker
++Veja se o container est├í cuspindo algum erro de baixo n├¡vel:
++```bash
++docker logs --tail 50 meta-optimizer-sniper
++```
+diff --git a/app.py b/app.py
+index b58bd3f..764f6f4 100644
+--- a/app.py
++++ b/app.py
+@@ -27,7 +27,7 @@ TOKEN_FILE = 'token.json'
+ app = Flask(__name__, static_folder='static')
+ app.secret_key = 'chave-secreta-optimizer-2024'
+ 
+-VERSION = "v1.5.0"
++VERSION = "v1.7.0"
+ 
+ @app.context_processor
+ def inject_version():
+@@ -68,6 +68,7 @@ def limpar_token():
+         os.remove(TOKEN_FILE)
+ 
+ # --- Rotas ---
++ACCOUNTS_CACHE = {} # Memory Cache { token: { 'time': 1234, 'accounts': [...] } }
+ 
+ @app.route('/')
+ def index():
+@@ -75,11 +76,14 @@ def index():
+     if token:
+         try:
+             inicializar_api(token)
+-            return listar_contas()
++            if not session.get('account_id'):
++                return redirect(url_for('listar_contas'))
++            return redirect(url_for('listar_campanhas', account_id=session.get('account_id')))
+         except Exception:
+             limpar_token()
+     return pagina_login()
+ 
++@app.route('/login')
+ def pagina_login():
+     # Scopes: Basic Hygiene Package
+     scopes = 'public_profile,email,ads_read,ads_management,pages_show_list,pages_read_engagement,instagram_basic,read_insights,pages_manage_ads'
+@@ -123,10 +127,47 @@ def callback():
+ @app.route('/logout')
+ def logout():
+     limpar_token()
++    session.pop('account_id', None)
++    session.pop('account_name', None)
+     return redirect(url_for('index'))
+ 
++@app.route('/set_account/<account_id>')
++def set_account(account_id):
++    """Define a conta globalmente na sess├úo e redireciona para a p├ígina principal."""
++    access_token = obter_token()
++    if not access_token:
++        return redirect(url_for('pagina_login'))
++
++    if not account_id.startswith('act_'):
++        account_id = f"act_{account_id}"
++
++    session['account_id'] = account_id
++
++    # Busca o nome da conta para exibir no Top Bar
++    try:
++        inicializar_api(access_token)
++        conta = AdAccount(account_id)
++        info = conta.api_get(fields=['name'])
++        session['account_name'] = info.get('name', 'Conta de An├║ncios')
++    except Exception as e:
++        print(f"ÔØî Erro ao buscar nome da conta {account_id}: {e}")
++        session['account_name'] = account_id
++
++    return redirect(url_for('listar_campanhas', account_id=account_id))
++
++@app.route('/api/accounts')
+ def listar_contas():
++    token = obter_token()
++    if not token:
++        return redirect(url_for('pagina_login'))
++        
++    # Check cache to prevent slow navigation (holds for 1 hour)
++    if token in ACCOUNTS_CACHE:
++        if time.time() - ACCOUNTS_CACHE[token]['time'] < 3600:
++            return render_template('accounts.html', accounts=ACCOUNTS_CACHE[token]['accounts'])
++
+     try:
++        inicializar_api(token)
+         me = User(fbid='me')
+         # Fetch accounts directly from user context
+         # Fields: name, id, currency, status, business info
+@@ -153,6 +194,12 @@ def listar_contas():
+                     'business_name': conta.get('business_name') or 'Conta Pessoal'
+                 })
+ 
++        # Save to memory cache
++        ACCOUNTS_CACHE[token] = {
++            'time': time.time(),
++            'accounts': contas
++        }
++
+         return render_template('accounts.html', accounts=contas)
+ 
+     except Exception as e:
+@@ -594,6 +641,40 @@ def duplicate_adset_route(campaign_id):
+         return jsonify({'success': False, 'error': str(e)}), 500
+ 
+ 
++@app.route('/account/<account_id>/otimizar')
++def otimizar_campanhas(account_id):
++    """P├ígina principal do m├│dulo de Otimiza├º├úo."""
++    access_token = obter_token()
++    if not access_token:
++        return redirect(url_for('pagina_login'))
++    
++    session['account_id'] = account_id
++    return render_template('optimizer.html', account_id=account_id)
++
++
++@app.route('/api/account/<account_id>/insights')
++def api_insights(account_id):
++    """Retorna dados de performance das campanhas."""
++    access_token = obter_token()
++    if not access_token:
++        return jsonify({'success': False, 'error': 'N├úo autenticado'}), 401
++    
++    date_preset = request.args.get('date_preset', 'today')
++    
++    try:
++        uploader = MetaUploader(account_id, access_token, APP_ID, APP_SECRET)
++        data = uploader.get_campaign_insights(date_preset=date_preset)
++        return jsonify({
++            'success': True,
++            'data': data
++        })
++    except Exception as e:
++        return jsonify({'success': False, 'error': str(e)}), 500
++
++@app.route('/ping')
++def ping_vps():
++    return "­ƒÜÇ BATEU NA VPS! O Docker novo est├í rodando o nosso c├│digo atualizado e a p├ígina subiu!!", 200
++
+ if __name__ == '__main__':
+     print("Servidor rodando! Acesse http://localhost:5000 no seu navegador.")
+     app.run(port=5000)
+diff --git a/app_old.py b/app_old.py
+new file mode 100644
+index 0000000..bc0c3d4
+--- /dev/null
++++ b/app_old.py
+@@ -0,0 +1,630 @@
++´╗┐import os
++import json
++import time
++import tempfile
++import requests
++from flask import (
++    Flask, request, redirect, session, render_template,
++    jsonify, Response, stream_with_context, url_for
++)
++from urllib.parse import quote
++from dotenv import load_dotenv
++from facebook_business.api import FacebookAdsApi
++from facebook_business.adobjects.user import User
++from facebook_business.adobjects.adaccount import AdAccount
++from facebook_business.adobjects.campaign import Campaign
++from facebook_business.adobjects.adset import AdSet
++from facebook_business.adobjects.business import Business
++from meta_api import MetaUploader
++
++load_dotenv('notepad.env')
++
++APP_ID = os.getenv('APP_ID')
++APP_SECRET = os.getenv('APP_SECRET')
++REDIRECT_URI = os.getenv('REDIRECT_URI', 'http://localhost:5000/callback')
++TOKEN_FILE = 'token.json'
++
++app = Flask(__name__, static_folder='static')
++app.secret_key = 'chave-secreta-optimizer-2024'
++
++VERSION = "v1.7.0"
++
++@app.context_processor
++def inject_version():
++    return dict(version=VERSION)
++
++# --- FunÔö£┬║Ôö£├ües auxiliares para persistÔö£┬¼ncia do token ---
++
++def salvar_token(access_token):
++    """Salva o access_token em um arquivo local."""
++    with open(TOKEN_FILE, 'w') as f:
++        json.dump({'access_token': access_token}, f)
++
++def carregar_token():
++    """Carrega o access_token do arquivo local, se existir."""
++    if os.path.exists(TOKEN_FILE):
++        with open(TOKEN_FILE, 'r') as f:
++            data = json.load(f)
++            return data.get('access_token')
++    return None
++
++def obter_token():
++    """Retorna o token da sessÔö£├║o ou do arquivo persistido."""
++    token = session.get('access_token')
++    if not token:
++        token = carregar_token()
++        if token:
++            session['access_token'] = token
++    return token
++
++def inicializar_api(access_token):
++    """Inicializa a API do Facebook com o token fornecido."""
++    FacebookAdsApi.init(APP_ID, APP_SECRET, access_token)
++
++def limpar_token():
++    """Remove o token da sessÔö£├║o e do arquivo."""
++    session.pop('access_token', None)
++    if os.path.exists(TOKEN_FILE):
++        os.remove(TOKEN_FILE)
++
++# --- Rotas ---
++
++@app.route('/')
++def index():
++    token = obter_token()
++    if token:
++        try:
++            inicializar_api(token)
++            return listar_contas()
++        except Exception:
++            limpar_token()
++    return pagina_login()
++
++def pagina_login():
++    # Scopes: Basic Hygiene Package
++    scopes = 'public_profile,email,ads_read,ads_management,pages_show_list,pages_read_engagement,instagram_basic,read_insights,pages_manage_ads'
++    encoded_uri = quote(REDIRECT_URI)
++    auth_url = (
++        f"https://www.facebook.com/v22.0/dialog/oauth?"
++        f"client_id={APP_ID}&redirect_uri={encoded_uri}&scope={scopes}"
++    )
++    print(f"DEBUG: Generating login page. REDIRECT_URI={REDIRECT_URI}")
++    return render_template('login.html', auth_url=auth_url)
++
++@app.route('/callback')
++def callback():
++    print(f"DEBUG: Callback received. request.url={request.url}")
++    print(f"DEBUG: Using REDIRECT_URI={REDIRECT_URI}")
++    
++    code = request.args.get('code')
++    if not code:
++        return "Erro: CÔö£Ôöédigo de autorizaÔö£┬║Ôö£├║o nÔö£├║o recebido."
++
++    encoded_uri = quote(REDIRECT_URI)
++    token_url = (
++        f"https://graph.facebook.com/v22.0/oauth/access_token?"
++        f"client_id={APP_ID}&redirect_uri={encoded_uri}&"
++        f"client_secret={APP_SECRET}&code={code}"
++    )
++
++    print(f"DEBUG: Requesting token with URL: {token_url.replace(APP_SECRET or '', 'SECRET_HIDDEN')}")
++    response = requests.get(token_url).json()
++    access_token = response.get('access_token')
++
++    if not access_token:
++        print(f"DEBUG: Token Error: {response}")
++        return f"Erro ao obter token: {response}"
++
++    session['access_token'] = access_token
++    salvar_token(access_token)
++    inicializar_api(access_token)
++    return redirect(url_for('index'))
++
++@app.route('/logout')
++def logout():
++    limpar_token()
++    return redirect(url_for('index'))
++
++def listar_contas():
++    try:
++        me = User(fbid='me')
++        # Fetch accounts directly from user context
++        # Fields: name, id, currency, status, business info
++        contas_raw = me.get_ad_accounts(
++            fields=['name', 'account_id', 'currency', 'account_status', 'business_name'],
++            params={'limit': 100}
++        )
++
++        contas = []
++        # SDK handles pagination automatically when iterating
++        for conta in contas_raw:
++            # We list all accounts, let the template decide how to show non-active ones if needed
++            # or filter here. The request didn't specify hiding inactive, but previous code did.
++            # Let's keep showing only active (status=1) for cleaner UX, or maybe all?
++            # User said "list accounts", passing extra fields. I'll stick to active for now to reduce noise,
++            # but I'll store the object.
++            
++            # Status: 1=ACTIVE, 2=DISABLED, 3=UNSETTLED, 7=PENDING_RISK_REVIEW, etc.
++            if conta.get('account_status') == 1: 
++                contas.append({
++                    'name': conta.get('name'),
++                    'account_id': conta.get('account_id'),
++                    'currency': conta.get('currency'),
++                    'business_name': conta.get('business_name') or 'Conta Pessoal'
++                })
++
++        return render_template('accounts.html', accounts=contas)
++
++    except Exception as e:
++        print(f"├ö├ÿ├« Error listing accounts: {e}")
++        limpar_token()
++        return redirect(url_for('index'))
++
++@app.route('/api/businesses')
++def api_businesses():
++    """Retorna lista de Business Portfolios (BMs) que o usuÔö£├¡rio tem acesso."""
++    access_token = obter_token()
++    if not access_token:
++        return jsonify({'error': 'NÔö£├║o autenticado'}), 401
++    
++    try:
++        inicializar_api(access_token)
++        me = User(fbid='me')
++        bms_raw = me.get_businesses(fields=['name', 'id'])
++        
++        bms = []
++        for bm in bms_raw:
++            bms.append({
++                'id': bm.get('id'),
++                'name': bm.get('name')
++            })
++        return jsonify({'businesses': bms})
++    except Exception as e:
++        return jsonify({'error': str(e)}), 500
++
++@app.route('/conta/<account_id>')
++def listar_campanhas(account_id):
++    if not account_id.startswith('act_'):
++        account_id = f"act_{account_id}"
++    access_token = obter_token()
++    if not access_token:
++        return redirect(url_for('index'))
++
++    try:
++        inicializar_api(access_token)
++        session['account_id'] = account_id
++
++        conta = AdAccount(account_id)
++        campanhas_data = conta.get_campaigns(
++            fields=['id', 'name', 'objective', 'effective_status'],
++            params={'filtering': [{'field': 'effective_status', 'operator': 'IN', 'value': ['ACTIVE', 'PAUSED']}]}
++        )
++
++        campanhas = []
++        if campanhas_data:
++            for c in campanhas_data:
++                campanhas.append({
++                    'id': c.get('id'),
++                    'name': c.get('name'),
++                    'objective': c.get('objective'),
++                    'status': c.get('effective_status', 'UNKNOWN')
++                })
++
++        return render_template('campaigns.html', campaigns=campanhas, account_id=account_id)
++
++    except Exception as e:
++        return f"Erro ao listar campanhas: {e}<br><a href='/'>Voltar</a>"
++
++@app.route('/campanha/<campaign_id>/setup', methods=['GET'])
++def setup_campanha(campaign_id):
++    access_token = obter_token()
++    if not access_token:
++        return redirect('/')
++
++    try:
++        inicializar_api(access_token)
++        account_id = session.get('account_id', '')
++
++        campanha = Campaign(campaign_id)
++        campanha_info = campanha.api_get(fields=['name'])
++        campaign_name = campanha_info.get('name', campaign_id)
++
++        adsets_data = campanha.get_ad_sets(
++            fields=['id', 'name', 'effective_status']
++        )
++        adsets = [{'id': a.get('id'), 'name': a.get('name'), 'status': a.get('effective_status', '')} for a in adsets_data]
++
++        return render_template(
++            'setup.html',
++            campaign_id=campaign_id,
++            campaign_name=campaign_name,
++            account_id=account_id,
++            adsets=adsets
++        )
++
++    except Exception as e:
++        return f"Erro ao carregar setup: {e}<br><a href='/'>Voltar</a>"
++
++# ======================== API: IDENTITY & TRACKING ========================
++
++@app.route('/api/conta/<account_id>/identity')
++def api_identity(account_id):
++    """Endpoint combinado: pÔö£├¡ginas + instagrams + pixels em 1 chamada."""
++    access_token = obter_token()
++    if not access_token: return jsonify({'error': 'Not authenticated'}), 401
++    try:
++        if not account_id.startswith('act_'): account_id = f'act_{account_id}'
++        inicializar_api(access_token)
++        
++        uploader = MetaUploader(account_id, access_token, APP_ID, APP_SECRET)
++        data = uploader.get_identity_data()
++        return jsonify(data)
++    except Exception as e:
++        print(f"├ö├ÿ├« Error fetching identity: {e}")
++        return jsonify({'error': str(e)}), 500
++
++@app.route('/api/drive/list_folder', methods=['POST'])
++def api_drive_list_folder():
++    """Lista arquivos de uma pasta do Drive e faz o pareamento automÔö£├¡tico."""
++    from meta_api import list_drive_folder
++    data = request.json
++    folder_url = data.get('url')
++    if not folder_url:
++        return jsonify({'error': 'URL da pasta nÔö£├║o fornecida'}), 400
++
++    res = list_drive_folder(folder_url)
++    if 'error' in res:
++        return jsonify({'error': res['error']}), 500
++
++    files = res.get('files', [])
++    
++    # LÔö£Ôöégica de Pareamento
++    # Arquivos: "Anuncio1_FEED.mp4", "Anuncio1_REELS.mp4"
++    pares = {} # { prefixo: {feed_url, reels_url, nome} }
++    
++    for f in files:
++        name = f['name']
++        f_id = f['id']
++        direct_url = f"https://drive.google.com/uc?export=download&id={f_id}"
++        
++        # Tenta identificar sufixos
++        clean_name = os.path.splitext(name)[0].upper()
++        
++        if '_FEED' in clean_name:
++            prefix = clean_name.split('_FEED')[0]
++            if prefix not in pares: pares[prefix] = {'nome': prefix}
++            pares[prefix]['feed_url'] = direct_url
++            pares[prefix]['feed_name'] = name
++        elif '_REELS' in clean_name:
++            prefix = clean_name.split('_REELS')[0]
++            if prefix not in pares: pares[prefix] = {'nome': prefix}
++            pares[prefix]['reels_url'] = direct_url
++            pares[prefix]['reels_name'] = name
++        elif '_STORIES' in clean_name: # Fallback para stories
++            prefix = clean_name.split('_STORIES')[0]
++            if prefix not in pares: pares[prefix] = {'nome': prefix}
++            pares[prefix]['reels_url'] = direct_url
++            pares[prefix]['reels_name'] = name
++
++    # Converter para lista e filtrar apenas os que tem pelo menos um dos dois
++    resultado = [v for v in pares.values() if 'feed_url' in v or 'reels_url' in v]
++    
++    return jsonify({'pares': resultado})
++
++@app.route('/api/pagina/<page_id>/leadgen_forms')
++def api_leadgen_forms(page_id):
++    """Busca formulÔö£├¡rios de lead de uma pÔö£├¡gina."""
++    access_token = obter_token()
++    if not access_token: return jsonify({'error': 'Not authenticated'}), 401
++    try:
++        account_id = session.get('account_id', '')
++        uploader = MetaUploader(account_id, access_token, APP_ID, APP_SECRET)
++        forms = uploader.get_leadgen_forms(page_id)
++        return jsonify({'forms': forms})
++    except Exception as e:
++        print(f"├ö├ÿ├« Error fetching lead forms: {e}")
++        return jsonify({'error': str(e)}), 500
++
++# ======================== API: HISTÔö£├┤RICO ========================
++
++@app.route('/api/campanha/<campaign_id>/historico_textos')
++def historico_textos(campaign_id):
++    """Busca criativos recentes da campanha e retorna URLs, UTMs, textos e tÔö£┬ítulos Ôö£Ôòænicos."""
++    access_token = obter_token()
++    if not access_token:
++        return jsonify({'error': 'NÔö£├║o autenticado'}), 401
++
++    try:
++        inicializar_api(access_token)
++
++        campanha = Campaign(campaign_id)
++        ads = campanha.get_ads(
++            fields=['creative{effective_object_story_spec,url_tags,name,body,title,link_url,asset_feed_spec}'],
++            params={'limit': 50}
++        )
++
++        urls, utms, textos, titulos = set(), set(), set(), set()
++
++        for ad in ads:
++            creative = ad.get('creative', {})
++
++            link_url = creative.get('link_url')
++            if link_url:
++                if '?' in link_url:
++                    base_url, query = link_url.split('?', 1)
++                    urls.add(base_url)
++                    utms.add(query)
++                else:
++                    urls.add(link_url)
++
++            url_tags = creative.get('url_tags')
++            if url_tags:
++                utms.add(url_tags)
++
++            body = creative.get('body')
++            if body:
++                textos.add(body)
++
++            title = creative.get('title')
++            if title:
++                titulos.add(title)
++
++            asset_feed = creative.get('asset_feed_spec', {})
++            if asset_feed:
++                for b in asset_feed.get('bodies', []):
++                    if b.get('text'):
++                        textos.add(b['text'])
++                for t in asset_feed.get('titles', []):
++                    if t.get('text'):
++                        titulos.add(t['text'])
++                for lu in asset_feed.get('link_urls', []):
++                    if lu.get('website_url'):
++                        u = lu['website_url']
++                        if '?' in u:
++                            base, q = u.split('?', 1)
++                            urls.add(base)
++                            utms.add(q)
++                        else:
++                            urls.add(u)
++
++            story_spec = creative.get('effective_object_story_spec', {})
++            if story_spec:
++                ld = story_spec.get('link_data', {})
++                if ld:
++                    if ld.get('link'):
++                        lk = ld['link']
++                        if '?' in lk:
++                            base, q = lk.split('?', 1)
++                            urls.add(base)
++                            utms.add(q)
++                        else:
++                            urls.add(lk)
++                    if ld.get('message'):
++                        textos.add(ld['message'])
++                    if ld.get('name'):
++                        titulos.add(ld['name'])
++
++                vd = story_spec.get('video_data', {})
++                if vd:
++                    if vd.get('message'):
++                        textos.add(vd['message'])
++                    if vd.get('title'):
++                        titulos.add(vd['title'])
++
++        return jsonify({
++            'urls': sorted(urls),
++            'utms': sorted(utms),
++            'textos': sorted(textos),
++            'titulos': sorted(titulos),
++        })
++
++    except Exception as e:
++        return jsonify({'error': str(e)}), 500
++
++
++# ======================== UPLOAD: POR ITEM ========================
++
++@app.route('/campanha/<campaign_id>/upload', methods=['POST'])
++def upload_single(campaign_id):
++    """Upload de um Ôö£Ôòænico anÔö£Ôòæncio. Chamado pelo frontend para cada item da fila."""
++    access_token = obter_token()
++    if not access_token:
++        return jsonify({'success': False, 'error': 'NÔö£├║o autenticado'}), 401
++
++    uploader = None
++    try:
++        account_id = session.get('account_id', '')
++        # Identity & Tracking from form
++        page_id = request.form.get('page_id')
++        instagram_actor_id = request.form.get('instagram_actor_id') or None
++        pixel_id = request.form.get('pixel_id') or None
++
++        estrategia = request.form.get('estrategia')
++        destino = request.form.get('destino_conjunto', '')
++        adset_existente = request.form.get('adset_existente', '')
++        adset_modelo = request.form.get('adset_modelo', '')
++        ad_name = request.form.get('ad_name', 'AnÔö£Ôòæncio sem nome')
++        url_destino = request.form.get('url_destino', '')
++        utm_pattern = request.form.get('utm_pattern', '')
++        cta = request.form.get('cta', 'LEARN_MORE')
++        textos = request.form.getlist('primary_text[]')
++        titulos = request.form.getlist('headline[]')
++        lead_gen_form_id = request.form.get('lead_gen_form_id') or None
++
++        # New: Links from Drive/Remote
++        url_feed_remote = request.form.get('url_feed_remote') or None
++        url_stories_remote = request.form.get('url_stories_remote') or None
++
++        # Save uploaded files to temp dir
++        temp_dir = tempfile.mkdtemp(prefix='optimizer_')
++        feed_path = None
++        stories_path = None
++
++        if 'arquivo_feed' in request.files:
++            f = request.files['arquivo_feed']
++            if f.filename:
++                feed_path = os.path.join(temp_dir, f.filename)
++                f.save(feed_path)
++
++        if 'arquivo_stories' in request.files:
++            f = request.files['arquivo_stories']
++            if f.filename:
++                stories_path = os.path.join(temp_dir, f.filename)
++                f.save(stories_path)
++
++        if not feed_path and not stories_path and not url_feed_remote and not url_stories_remote:
++            return jsonify({'success': False, 'error': 'Nenhuma mÔö£┬ídia (arquivo ou link) enviada'}), 400
++
++        # Initialize uploader
++        uploader = MetaUploader(account_id, access_token, APP_ID, APP_SECRET)
++
++        # Upload media files
++        feed_media = None
++        stories_media = None
++
++        # Case 1: Prioritize Remote URLs (Drive)
++        if url_feed_remote:
++            feed_media = uploader.upload_media(url=url_feed_remote)
++            uploader.smart_delay()
++        elif feed_path:
++            feed_media = uploader.upload_media(file_path=feed_path)
++            uploader.smart_delay()
++
++        if url_stories_remote:
++            stories_media = uploader.upload_media(url=url_stories_remote)
++            uploader.smart_delay()
++        elif stories_path:
++            stories_media = uploader.upload_media(file_path=stories_path)
++            uploader.smart_delay()
++
++        # Determine target adset
++        target_adset_id = adset_existente or adset_modelo
++        if not target_adset_id:
++            return jsonify({'success': False, 'error': 'Nenhum Ad Set selecionado'}), 400
++
++        # Validation for Identity
++        if not page_id:
++             return jsonify({'success': False, 'error': 'PÔö£├¡gina do Facebook ObrigatÔö£Ôöéria'}), 400
++
++        # Handle strategy: duplicate adset if needed
++        actual_adset_id = target_adset_id
++        if estrategia == 'garimpo' or destino == 'duplicar':
++            actual_adset_id = uploader.duplicate_adset(target_adset_id)
++            uploader.smart_delay()
++
++        # Build full URL (UTMs vÔö£├║o apenas no url_tags, nÔö£├║o na URL do link)
++        full_url = url_destino
++
++        # Create creative with placement rules
++        try:
++            creative_id = uploader.create_creative_with_placements(
++                page_id=page_id,
++                feed_media=feed_media,
++                stories_media=stories_media,
++                link_url=full_url,
++                primary_texts=textos,
++                headlines=titulos,
++                cta_type=cta,
++                instagram_user_id=instagram_actor_id,
++                url_tags=utm_pattern,
++                lead_gen_form_id=lead_gen_form_id,
++            )
++        except ValueError as e:
++             return jsonify({'success': False, 'error': str(e)}), 400
++
++        uploader.smart_delay()
++
++        # Create ad ├ö├ç├Â always PAUSED
++        ad_id = uploader.create_ad(actual_adset_id, creative_id, ad_name, pixel_id=pixel_id)
++
++        # Cleanup temp files
++        try:
++            if feed_path and os.path.exists(feed_path):
++                os.remove(feed_path)
++            if stories_path and os.path.exists(stories_path):
++                os.remove(stories_path)
++            os.rmdir(temp_dir)
++        except OSError:
++            pass
++
++        return jsonify({
++            'success': True,
++            'ad_id': ad_id,
++            'message': f'Ad "{ad_name}" criado com sucesso (PAUSADO)',
++            'logs': uploader.logs,
++        })
++
++    except Exception as e:
++        import traceback
++        traceback.print_exc()
++        return jsonify({
++            'success': False,
++            'error': str(e),
++            'logs': uploader.logs if uploader else [],
++        }), 500
++
++
++@app.route('/campanha/<campaign_id>/duplicate-adset', methods=['POST'])
++def duplicate_adset_route(campaign_id):
++    """Duplica um Ad Set 1x. Retorna o ID do novo. Chamado ANTES do loop de criativos."""
++    access_token = obter_token()
++    if not access_token:
++        return jsonify({'success': False, 'error': 'NÔö£├║o autenticado'}), 401
++
++    try:
++        account_id = session.get('account_id', '')
++        adset_modelo = request.form.get('adset_modelo', '')
++        adset_name = request.form.get('adset_name', '')
++
++        if not adset_modelo:
++            return jsonify({'success': False, 'error': 'Nenhum Ad Set modelo informado'}), 400
++
++        uploader = MetaUploader(account_id, access_token, APP_ID, APP_SECRET)
++        new_adset_id = uploader.duplicate_adset(adset_modelo, new_name=adset_name or None)
++
++        return jsonify({
++            'success': True,
++            'adset_id': new_adset_id,
++            'logs': uploader.logs,
++        })
++
++    except Exception as e:
++        import traceback
++        traceback.print_exc()
++        return jsonify({'success': False, 'error': str(e)}), 500
++
++
++@app.route('/account/<account_id>/otimizar')
++def otimizar_campanhas(account_id):
++    """PÔö£├¡gina principal do mÔö£Ôöédulo de OtimizaÔö£┬║Ôö£├║o."""
++    access_token = obter_token()
++    if not access_token:
++        return redirect(url_for('pagina_login'))
++    
++    session['account_id'] = account_id
++    return render_template('optimizer.html', account_id=account_id)
++
++
++@app.route('/api/account/<account_id>/insights')
++def api_insights(account_id):
++    """Retorna dados de performance das campanhas."""
++    access_token = obter_token()
++    if not access_token:
++        return jsonify({'success': False, 'error': 'NÔö£├║o autenticado'}), 401
++    
++    date_preset = request.args.get('date_preset', 'today')
++    
++    try:
++        uploader = MetaUploader(account_id, access_token, APP_ID, APP_SECRET)
++        data = uploader.get_campaign_insights(date_preset=date_preset)
++        return jsonify({
++            'success': True,
++            'data': data
++        })
++    except Exception as e:
++        return jsonify({'success': False, 'error': str(e)}), 500
++
++
++if __name__ == '__main__':
++    print("Servidor rodando! Acesse http://localhost:5000 no seu navegador.")
++    app.run(port=5000)
+diff --git a/diag_squad.py b/diag_squad.py
+new file mode 100644
+index 0000000..de20084
+--- /dev/null
++++ b/diag_squad.py
+@@ -0,0 +1,38 @@
++import requests
++import time
++import sys
++import subprocess
++import json
++
++def test_requests():
++    print("--- Teste via Requests ---")
++    url = "https://graph.facebook.com/v22.0/act_446772417972343/adimages"
++    start = time.time()
++    try:
++        # Teste sem arquivo primeiro (GET)
++        resp = requests.get(url, timeout=30)
++        print(f"GET Status: {resp.status_code}")
++    except Exception as e:
++        print(f"GET Erro: {e}")
++    
++    print(f"Tempo decorrido: {time.time() - start:.2f}s")
++
++def test_curl():
++    print("\n--- Teste via CURL ---")
++    start = time.time()
++    try:
++        output = subprocess.check_output([
++            "curl", "-v", "-I", "https://graph.facebook.com/v22.0/act_446772417972343/adimages"
++        ], stderr=subprocess.STDOUT, text=True)
++        print("CURL Conectado com sucesso!")
++        for line in output.split('\n'):
++            if "HTTP/" in line or "SSL" in line:
++                print(line)
++    except Exception as e:
++        print(f"CURL Erro: {e}")
++    print(f"Tempo decorrido: {time.time() - start:.2f}s")
++
++if __name__ == "__main__":
++    print("Iniciando Diagn├│stico Profundo Squad AIOS...")
++    test_curl()
++    test_requests()
+diff --git a/docs/v1.6.2-DEPLOYMENT.md b/docs/v1.6.2-DEPLOYMENT.md
+new file mode 100644
+index 0000000..f1317e3
+--- /dev/null
++++ b/docs/v1.6.2-DEPLOYMENT.md
+@@ -0,0 +1,160 @@
++# v1.6.2 Deployment Guide
++
++**Data**: 2026-02-21
++**Status**: Ready for VPS deployment
++**Commits**:
++- d8feff9: fix: v1.6.2 - resili├¬ncia de upload com urllib3.Retry + timeouts ajustados
++- 1f754ec: chore: v1.6.2 - vers├úo bump
++
++---
++
++## ­ƒÄ» O Que Foi Corrigido
++
++### Problema
++Erros recorrentes ao fazer upload de v├¡deos (4┬¬ tentativa):
++```
++SSLError: UNEXPECTED_EOF_WHILE_READING
++RemoteDisconnected: Remote end closed connection without response
++HTTPSConnectionPool: Max retries exceeded
++```
++
++### Causa Root
++`meta_api.py` usava `requests` sem configura├º├úo de retry autom├ítico na camada de socket.
++
++---
++
++## Ô£à Solu├º├úo Implementada
++
++### 1. **urllib3.Retry + HTTPAdapter**
++- Retry autom├ítico a n├¡vel de socket (3 tentativas)
++- Backoff exponencial: 1s ÔåÆ 2s ÔåÆ 4s
++- Reutiliza pool de conex├Áes
++- Reconecta em SSL errors, timeouts, connection resets
++
++**C├│digo**:
++```python
++def _get_session(self):
++    """Session com retry autom├ítico"""
++    retry_strategy = Retry(
++        total=3,
++        backoff_factor=1.0,
++        status_forcelist=[429, 500, 502, 503, 504],
++        allowed_methods=["HEAD", "GET", "OPTIONS", "POST", "PUT", "DELETE"]
++    )
++    adapter = HTTPAdapter(max_retries=retry_strategy)
++    session.mount("https://", adapter)
++    session.mount("http://", adapter)
++    return session
++```
++
++### 2. **Delays Maiores Entre Uploads**
++- `DELAY_MIN`: 1.5s ÔåÆ **3.0s**
++- `DELAY_MAX`: 3.0s ÔåÆ **6.0s**
++- `DELAY_VIDEO_MIN`: **5.0s** (novo)
++- `DELAY_VIDEO_MAX`: **10.0s** (novo)
++
++**Efeito**: Reduz agressividade, respeita rate limit preventivamente
++
++### 3. **Timeouts Ajustados**
++```python
++TIMEOUT_API_GET = 30          # Metadata
++TIMEOUT_API_POST = 60         # Cria├º├úo de criativo/ad
++TIMEOUT_UPLOAD_VIDEO = 600    # 10 minutos (v├¡deos grandes!)
++TIMEOUT_DOWNLOAD = 120        # 2 minutos (Drive)
++```
++
++---
++
++## ­ƒôØ Mudan├ºas em `meta_api.py`
++
++| Fun├º├úo | Mudan├ºa |
++|--------|---------|
++| `_get_session()` | **Nova** ÔÇö retorna Session com Retry configurado |
++| `upload_image_url()` | Usa `self._get_session().post()` + timeout |
++| `upload_video_url()` | Usa `self._get_session().post(timeout=600)` |
++| `upload_video()` | Adiciona `video_delay()` ap├│s sucesso |
++| `_download_file()` | Usa `self._get_session()` reutiliz├ível |
++| `wait_for_video_ready()` | Usa `self._get_session().get()` + timeout |
++| `wait_for_image_ready()` | Usa `self._get_session().get()` + timeout |
++| `create_creative_with_placements()` | Usa `self._get_session().post()` + timeout |
++| `create_ad()` | Usa `self._get_session().post()` + timeout |
++| `duplicate_adset()` | Usa `self._get_session().post()` + timeout |
++
++---
++
++## ­ƒÜÇ VPS Deployment Commands
++
++```bash
++cd /var/www/optimizer
++
++# 1. Atualizar c├│digo
++git pull origin main
++
++# 2. Build da imagem Docker
++docker build -t optimizer-image:auto .
++
++# 3. Remover container antigo
++docker rm -f meta-optimizer-sniper || true
++
++# 4. Rodar novo container
++docker run -d --name meta-optimizer-sniper -p 5000:5000 \
++  -e APP_ID="1346057000583645" \
++  -e APP_SECRET="75c24875c00b19c329984b838aac35de" \
++  -e REDIRECT_URI="https://optimizer.xn--trfego-qta.com/callback" \
++  --restart always optimizer-image:auto
++
++# 5. Verificar status
++docker ps | grep meta-optimizer-sniper
++docker logs meta-optimizer-sniper
++```
++
++---
++
++## Ô£¿ Resultado Esperado
++
++- Ô£à Elimina├º├úo de SSL/UNEXPECTED_EOF_WHILE_READING errors
++- Ô£à Sem mais RemoteDisconnected errors
++- Ô£à Uploads de v├¡deo muito mais est├íveis
++- Ô£à VPS mais resiliente sob carga
++
++---
++
++## ­ƒº¬ Teste de Valida├º├úo
++
++Ap├│s deployment:
++1. Acesse: https://optimizer.xn--trfego-qta.com
++2. Fa├ºa upload de um v├¡deo (especialmente v├¡deos grandes > 10MB)
++3. Deve completar sem erros SSL
++4. Se falhar, cole logs de: `docker logs meta-optimizer-sniper`
++
++---
++
++## ­ƒôè Vers├úo
++
++- **v1.6.2**: SSL/connection resilience via urllib3.Retry + video delay
++- **Anterior**: v1.6.1 (finalizing version bump)
++- **Pr├│xima**: TBD
++
++---
++
++## ­ƒöì Debug (se necess├írio)
++
++```bash
++# Ver logs em tempo real
++docker logs -f meta-optimizer-sniper
++
++# Acessar container
++docker exec -it meta-optimizer-sniper bash
++
++# Checar porta 5000
++netstat -tlnp | grep 5000
++
++# Restart do container
++docker restart meta-optimizer-sniper
++```
++
++---
++
++**Deploy realizado em**: 2026-02-21
++**Status**: Ô£à Ready
++**Tested**: Syntax check passed
+diff --git a/meta_api.py b/meta_api.py
+index 8c7e9cb..8b0bd04 100644
+--- a/meta_api.py
++++ b/meta_api.py
+@@ -119,38 +119,29 @@ class MetaUploader:
+             
+             results = []
+             for ins in insights:
+-                # Extrair resultados (compras ou leads conforme o objetivo)
+-                # Heur├¡stica: se o objetivo for LEAD_GENERATION, busca 'lead'
+-                # se for OUTCOMES/CONVERSIONS, busca 'purchase' ou 'offsite_conversion.fb_pixel_purchase'
+-                
+                 actions = ins.get('actions', [])
+-                objective = ins.get('objective', '')
+-                
+-                res_count = 0
+-                cac = 0
+                 spend = float(ins.get('spend', 0))
+                 
+-                # Mapeamento din├ómico de resultados
++                # M├®tricas espec├¡ficas para o Optimizer
++                compras = 0
++                checkouts = 0
+                 for action in actions:
+                     a_type = action.get('action_type', '')
+-                    if objective == 'LEAD_GENERATION' and a_type == 'lead':
+-                        res_count += int(action.get('value', 0))
+-                    elif 'purchase' in a_type:
+-                        res_count += int(action.get('value', 0))
+-                    elif a_type == 'onsite_conversion.messaging_conversation_started_7d':
+-                        res_count += int(action.get('value', 0))
+-
+-                if res_count > 0:
+-                    cac = spend / res_count
+-                
++                    val = int(action.get('value', 0))
++                    if a_type in ['purchase', 'offsite_conversion.fb_pixel_purchase', 'onsite_conversion.purchase']:
++                        compras += val
++                    if a_type in ['initiate_checkout', 'offsite_conversion.fb_pixel_initiate_checkout']:
++                        checkouts += val
++
+                 results.append({
+                     'id': ins.get('campaign_id'),
+                     'name': ins.get('campaign_name'),
+                     'spend': spend,
+-                    'results': res_count,
+-                    'cac': cac,
+-                    'currency': ins.get('account_currency', 'BRL'),
+-                    'status': 'ACTIVE'
++                    'compras': compras,
++                    'checkouts': checkouts,
++                    'cpa_compra': spend / compras if compras > 0 else 0,
++                    'cpa_checkout': spend / checkouts if checkouts > 0 else 0,
++                    'currency': ins.get('account_currency', 'BRL')
+                 })
+             
+             print(f"­ƒôê [get_campaign_insights] {len(results)} campanhas auditadas.")
+@@ -1232,17 +1223,9 @@ class MetaUploader:
+             if media['type'] == 'image':
+                 images.append({'hash': media['hash'], 'adlabels': [{'name': label}]})
+             elif media['type'] == 'video':
++                # NOTA: asset_feed_spec N├âO aceita image_hash dentro de videos[]
++                # A Meta gera thumbnails automaticamente para v├¡deos nesse formato
+                 video_data = {'video_id': media['id'], 'adlabels': [{'name': label}]}
+-                # Proatividade: Tentar fornecer thumbnail se a m├¡dia oposta for imagem
+-                other_media = stories_media if label == FEED_LABEL else feed_media
+-                if other_media and other_media['type'] == 'image':
+-                    video_data['image_hash'] = other_media['hash']
+-                    self._log(f"­ƒû╝´©Å Thumbnail para v├¡deo {label} linkada ├á imagem do par.")
+-                # Se n├úo tem imagem do par, usar thumb_hash extra├¡da durante upload
+-                elif media.get('thumb_hash'):
+-                    video_data['image_hash'] = media['thumb_hash']
+-                    self._log(f"Ô£à Thumbnail auto-gerada usada para v├¡deo {label}.")
+-                
+                 videos.append(video_data)
+ 
+         add_media(feed_media, FEED_LABEL)
+@@ -1408,20 +1391,24 @@ class MetaUploader:
+             result = source.create_copy(params=params)
+             copied_id = result.get('copied_adset_id') or result.get('id')
+ 
+-            # Renomear se new_name foi fornecido
+-            if new_name and copied_id:
++            # For├ºar status PAUSED + renomear (create_copy nem sempre respeita status_option)
++            if copied_id:
+                 try:
+-                    url = f"https://graph.facebook.com/v22.0/{copied_id}"
+-                    resp = requests.post(url, data={
+-                        'name': new_name,
++                    update_data = {
++                        'status': 'PAUSED',
+                         'access_token': self.access_token
+-                    }).json()
++                    }
++                    if new_name:
++                        update_data['name'] = new_name
++
++                    url = f"https://graph.facebook.com/v22.0/{copied_id}"
++                    resp = requests.post(url, data=update_data).json()
+                     if 'error' in resp:
+-                        self._log(f"ÔÜá´©Å Falha ao renomear Ad Set: {resp['error'].get('message')}")
++                        self._log(f"ÔÜá´©Å Falha ao atualizar Ad Set: {resp['error'].get('message')}")
+                     else:
+-                        self._log(f"Ô£Å´©Å Ad Set renomeado para: {new_name}")
++                        self._log(f"Ô£à Ad Set configurado: PAUSED{' / ' + new_name if new_name else ''}")
+                 except Exception as e:
+-                    self._log(f"ÔÜá´©Å Erro ao renomear: {e}")
++                    self._log(f"ÔÜá´©Å Erro ao atualizar Ad Set: {e}")
+ 
+             return copied_id
+ 
+diff --git a/modules/__init__.py b/modules/__init__.py
+new file mode 100644
+index 0000000..79d59d9
+--- /dev/null
++++ b/modules/__init__.py
+@@ -0,0 +1 @@
++# Empty init file to define modules as a python package
+diff --git a/modules/auth.py b/modules/auth.py
+new file mode 100644
+index 0000000..173155d
+--- /dev/null
++++ b/modules/auth.py
+@@ -0,0 +1,48 @@
++from flask import Blueprint, request, redirect, session, url_for
++from urllib.parse import quote
++import os
++
++# Create Blueprint
++auth_bp = Blueprint('auth', __name__)
++
++APP_ID = os.getenv('APP_ID')
++REDIRECT_URI = os.getenv('REDIRECT_URI', 'http://localhost:5000/callback')
++
++from app import limpar_token, salvar_token
++
++@auth_bp.route('/login')
++def pagina_login():
++    scopes = "ads_management,ads_read,read_insights,pages_read_engagement,pages_show_list,pages_manage_ads,pages_manage_metadata,instagram_basic,instagram_manage_insights,business_management,leads_retrieval"
++    url = (
++        f"https://www.facebook.com/v18.0/dialog/oauth?"
++        f"client_id={APP_ID}&redirect_uri={quote(REDIRECT_URI)}&scope={quote(scopes)}"
++    )
++    return redirect(url)
++
++@auth_bp.route('/callback')
++def callback():
++    code = request.args.get('code')
++    if not code:
++        return "Erro: C├│digo de autoriza├º├úo n├úo retornado pelo Facebook.", 400
++
++    import requests
++    from app import APP_SECRET
++    token_url = (
++        f"https://graph.facebook.com/v18.0/oauth/access_token?"
++        f"client_id={APP_ID}&redirect_uri={REDIRECT_URI}&"
++        f"client_secret={APP_SECRET}&code={code}"
++    )
++    
++    response = requests.get(token_url)
++    data = response.json()
++    
++    if "access_token" in data:
++        session['access_token'] = data["access_token"]
++        salvar_token(data["access_token"])
++        return redirect(url_for('index'))
++    return f"Erro ao obter token: {data}", 400
++
++@auth_bp.route('/logout')
++def logout():
++    limpar_token()
++    return redirect(url_for('pagina_login'))
+diff --git a/modules/creatives.py b/modules/creatives.py
+new file mode 100644
+index 0000000..a014ff0
+--- /dev/null
++++ b/modules/creatives.py
+@@ -0,0 +1,324 @@
++import json
++import time
++import tempfile
++import traceback
++from flask import Blueprint, request, jsonify, session, Response, stream_with_context, render_template
++
++from app import obter_token, inicializar_api
++from meta_api import list_drive_folder
++
++creatives_bp = Blueprint('creatives', __name__)
++
++@creatives_bp.route('/api/drive/list')
++def api_drive_list_folder():
++    folder_url = request.args.get('folder_url')
++    if not folder_url:
++        return jsonify({"error": "Par├ómetro folder_url ausente"}), 400
++
++    try:
++        if "drive.google.com" not in folder_url:
++            return jsonify({"error": "A URL precisa ser do Google Drive"}), 400
++
++        files = list_drive_folder(folder_url)
++
++        # Retorna tamb├®m copies vazias pra manter compatibilidade do front_end antigo
++        images = []
++        videos = []
++        for file in files:
++            t = file['mimeType']
++            if t.startswith('image/'):
++                images.append(file)
++            elif t.startswith('video/'):
++                videos.append(file)
++
++        # Regras de pareamento (o mesmo do front-end)
++        pairs = []
++        def get_basename(name):
++            if '.' in name:
++                return name.rsplit('.', 1)[0].lower()
++            return name.lower()
++
++        unmatched_videos = []
++        for v in videos:
++            v_base = get_basename(v['name'])
++            match = None
++            for i in images:
++                i_base = get_basename(i['name'])
++                if v_base == i_base:
++                    match = i
++                    break
++            
++            if match:
++                pairs.append({'video': v, 'image': match})
++                images.remove(match) 
++            else:
++                unmatched_videos.append(v)
++        
++        return jsonify({
++            "status": "success",
++            "pairs": pairs,
++            "unmatched_videos": unmatched_videos,
++            "unmatched_images": images
++        })
++
++    except Exception as e:
++        import traceback
++        traceback.print_exc()
++        return jsonify({"error": str(e)}), 500
++
++
++@creatives_bp.route('/historico/<campaign_id>')
++def historico_textos(campaign_id):
++    """
++    Busca criativos recentes da campanha e retorna URLs, UTMs, textos e t├¡tulos ├║nicos.
++    """
++    token = obter_token()
++    if not token:
++        return jsonify({"error": "N├úo autenticado"}), 401
++
++    uploader = inicializar_api(token)
++    if not uploader:
++        return jsonify({"error": "Falha na inicializa├º├úo da API"}), 500
++
++    try:
++        from facebook_business.adobjects.campaign import Campaign
++        camp = Campaign(campaign_id)
++        
++        # Pega Ad Sets da campanha
++        adsets = camp.get_ad_sets(fields=['id'])
++        if not adsets:
++            return jsonify({
++                "urls": [],
++                "utms": [],
++                "bodies": [],
++                "titles": []
++            })
++            
++        recent_adset_id = adsets[0]['id']
++        
++        from facebook_business.adobjects.adset import AdSet
++        ads = AdSet(recent_adset_id).get_ads(fields=['creative{id,object_story_spec,url_tags,call_to_action_type}'])
++        
++        urls = set()
++        utms = set()
++        bodies = set()
++        titles = set()
++        
++        for ad in ads:
++            creative = ad.get('creative', {})
++            try:
++                story_spec = creative.get('object_story_spec', {})
++                link_data = story_spec.get('video_data') or story_spec.get('link_data')
++                
++                if link_data:
++                    url = link_data.get('call_to_action', {}).get('value', {}).get('link')
++                    if url: urls.add(url)
++                    
++                    msg = link_data.get('message')
++                    if msg: bodies.add(msg)
++                    
++                    tit = link_data.get('title')
++                    if tit: titles.add(tit)
++                    
++                url_tags = creative.get('url_tags')
++                if url_tags: utms.add(url_tags)
++                
++            except Exception as e:
++                print(f"Aviso: Erro ao ler criativo: {e}")
++                continue
++
++        return jsonify({
++            "urls": list(urls),
++            "utms": list(utms),
++            "bodies": list(bodies),
++            "titles": list(titles)
++        })
++
++    except Exception as e:
++        print(f"Erro ao buscar hist├│rico: {e}")
++        return jsonify({"error": str(e)}), 500
++
++
++@creatives_bp.route('/upload/<campaign_id>', methods=['POST'])
++def upload_single(campaign_id):
++    """
++    Upload de um ├║nico an├║ncio. Chamado pelo frontend para cada item da fila.
++    """
++    token = obter_token()
++    if not token:
++        return jsonify({"error": "N├úo autenticado"}), 401
++
++    uploader = inicializar_api(token)
++    if not uploader:
++        return jsonify({"error": "Falha na inicializa├º├úo da API"}), 500
++
++    try:
++        data = request.json
++        print("\n\n=== INICIANDO NOVO UPLOAD ===")
++        print(f"Recebido payload para {data.get('name')}:")
++        print(json.dumps(data, indent=2))
++
++        # Configura callback para enviar logs via SSE
++        def log_callback(msg):
++            print(f"[API] {msg}")
++
++        uploader.set_callback(log_callback)
++
++        # Extrai par├ómetros
++        item = data # O JSON inteiro foi passado do frontend (era queue[i] antes)
++        
++        page_id = item.get('pageId')
++        ig_id = item.get('igId')
++        pixel_id = item.get('pixelId')
++        
++        # Pega as m├¡dias - O frontend passa links do Drive
++        feed_media = item.get('feedMedia') # {id, name, link}
++        story_media = item.get('storyMedia')
++        
++        name = item.get('name')
++        text = item.get('text', '')
++        title = item.get('title', '')
++        link_url = item.get('linkUrl')
++        url_tags = item.get('urlTags', '')
++        adset_id = item.get('adsetId')
++        cta_type = item.get('ctaType', 'LEARN_MORE')
++        leadgen_form_id = item.get('leadgenFormId')  # Novo: ID do form
++        
++        # Modifica├º├úo para Formul├írios de Lead
++        if leadgen_form_id:
++            logger_msg = f"Iniciando cria├º├úo (LEADGEN): {name}"
++            # Quando for leadgen, ignoramos linkUrl e urlTags
++            parsed_url = None
++            url_tags = None
++        else:
++            logger_msg = f"Iniciando cria├º├úo (CONVERSION): {name}"
++            parsed_url = link_url
++            
++        uploader._log(logger_msg)
++            
++        print(f"Extraindo links do Google Drive...")
++        
++        # Configurar feed_media (obrigat├│rio)
++        extracted_feed = None
++        if feed_media:
++            video_link = feed_media.get('link')
++            image_link = None
++            is_video = 'video' in feed_media.get('mimeType', '')
++            if not is_video:
++                image_link = video_link
++                video_link = None
++                
++            extracted_feed = {
++                'url': video_link or image_link,
++                'is_video': is_video
++            }
++            
++        # Configurar story_media (opcional)
++        extracted_stories = None
++        if story_media:
++            s_video = story_media.get('link')
++            s_image = None
++            s_is_video = 'video' in story_media.get('mimeType', '')
++            if not s_is_video:
++                s_image = s_video
++                s_video = None
++                
++            extracted_stories = {
++                'url': s_video or s_image,
++                'is_video': s_is_video
++            }
++            
++        print(f"Feed preparado: Video={bool(extracted_feed and extracted_feed.get('is_video'))}, Image={bool(extracted_feed and not extracted_feed.get('is_video'))}")
++
++        # Cria o an├║ncio!
++        ad_id = uploader.create_ad(
++            adset_id=adset_id,
++            page_id=page_id,
++            name=name,
++            feed_media=extracted_feed,
++            stories_media=extracted_stories,
++            link_url=parsed_url,
++            bodies=[text] if text else [],
++            titles=[title] if title else [],
++            cta_type=cta_type,
++            url_tags=url_tags,
++            ig_id=ig_id,
++            pixel_id=pixel_id,
++            leadgen_form_id=leadgen_form_id
++        )
++
++        uploader._log(f"Ô£à An├║ncio Criado. ID: {ad_id}")
++        return jsonify({"status": "success", "id": ad_id})
++
++    except Exception as e:
++        error_msg = str(e)
++        import traceback
++        traceback.print_exc()
++        if hasattr(e, 'api_error_message'):
++            error_msg = e.api_error_message()
++            
++        if uploader:
++            uploader._log(f"Erro fatal: {error_msg}")
++            
++        return jsonify({"error": error_msg}), 500
++
++
++@creatives_bp.route('/duplicate_adset', methods=['POST'])
++def duplicate_adset_route():
++    """
++    Duplica um Ad Set 1x. Retorna o ID do novo. Chamado ANTES do loop de criativos.
++    """
++    token = obter_token()
++    if not token:
++        return jsonify({"error": "N├úo autenticado"}), 401
++        
++    try:
++        data = request.json
++        adset_id = data.get('adset_id')
++        new_name = data.get('new_name')
++        
++        if not adset_id:
++            return jsonify({"error": "adset_id n├úo fornecido"}), 400
++            
++        from facebook_business.adobjects.adset import AdSet
++        
++        print(f"Duplicando AdSet {adset_id}...")
++        
++        original_adset = AdSet(adset_id)
++        
++        # Meta usa o endpoint de c├│pia
++        params = {
++            'deep_copy': False, # N├úo copia os an├║ncios, apenas o AdSet em si
++        }
++        
++        if new_name:
++            params['rename_options'] = json.dumps({
++                "rename_prefix": "",
++                "rename_suffix": f" - {new_name}"
++            })
++            
++        response = original_adset.api_post(
++            endpoint='copies',
++            params=params
++        )
++        
++        copied_id = response.get('copied_adset_id')
++        
++        # Precisaremos garantir que esteja ATIVO, as vezes cria PAUSED
++        try:
++            from facebook_business.adobjects.adset import AdSet as A
++            novo = A(copied_id)
++            novo.api_update(params={'status': 'ACTIVE'})
++        except Exception as st_err:
++            print("N├úo conseguiu ativar de imediato", st_err)
++
++        print(f"Novo AdSet criado: {copied_id}")
++        return jsonify({"status": "success", "adset_id": copied_id})
++        
++    except Exception as e:
++        import traceback
++        traceback.print_exc()
++        error_msg = str(e)
++        if hasattr(e, 'api_error_message'):
++            error_msg = e.api_error_message()
++        return jsonify({"error": error_msg}), 500
+diff --git a/modules/optimization.py b/modules/optimization.py
+new file mode 100644
+index 0000000..d2b66c8
+--- /dev/null
++++ b/modules/optimization.py
+@@ -0,0 +1,39 @@
++from flask import Blueprint, jsonify, render_template
++
++from app import obter_token, inicializar_api
++
++optimization_bp = Blueprint('optimization', __name__)
++
++@optimization_bp.route('/optimize/<account_id>')
++def otimizar_campanhas(account_id):
++    """
++    P├ígina principal do m├│dulo de Otimiza├º├úo.
++    """
++    token = obter_token()
++    if not token:
++        return jsonify({"error": "N├úo autenticado"}), 401
++    
++    return render_template('optimizer.html', account_id=account_id)
++
++@optimization_bp.route('/api/insights/<account_id>')
++def api_insights(account_id):
++    """
++    Retorna dados de performance das campanhas.
++    """
++    token = obter_token()
++    if not token:
++        return jsonify({"error": "N├úo autenticado"}), 401
++
++    uploader = inicializar_api(token)
++    if not uploader:
++        return jsonify({"error": "Falha na inicializa├º├úo da API"}), 500
++
++    try:
++        uploader.account_id = account_id
++        insights_data = uploader.get_campaign_insights(date_preset='today')
++        return jsonify({"status": "success", "data": insights_data})
++
++    except Exception as e:
++        import traceback
++        traceback.print_exc()
++        return jsonify({"error": str(e)}), 500
+diff --git a/static/style.css b/static/style.css
+index 0025e7e..056a7a7 100644
+--- a/static/style.css
++++ b/static/style.css
+@@ -63,6 +63,72 @@ body {
+     -moz-osx-font-smoothing: grayscale;
+ }
+ 
++/* ======================== APP LAYOUT ======================== */
++.app-layout {
++    display: flex;
++    min-height: 100vh;
++}
++
++.sidebar {
++    width: 64px;
++    background: var(--bg-surface);
++    border-right: 1px solid var(--border);
++    display: flex;
++    flex-direction: column;
++    align-items: center;
++    padding: 20px 0;
++    position: fixed;
++    height: 100vh;
++    z-index: 200;
++}
++
++.sidebar-logo {
++    margin-bottom: 40px;
++    font-size: 20px;
++}
++
++.sidebar-nav {
++    flex: 1;
++    display: flex;
++    flex-direction: column;
++    gap: 16px;
++}
++
++.nav-item {
++    width: 42px;
++    height: 42px;
++    display: flex;
++    align-items: center;
++    justify-content: center;
++    border-radius: var(--radius-md);
++    color: var(--text-muted);
++    text-decoration: none;
++    transition: all 0.2s;
++}
++
++.nav-item:hover {
++    background: var(--bg-deep);
++    color: var(--accent);
++    border-color: var(--accent);
++}
++
++.nav-item.active {
++    background: var(--accent-glow);
++    color: var(--accent);
++    box-shadow: 0 0 10px var(--accent-glow);
++}
++
++.nav-icon {
++    font-size: 20px;
++}
++
++.main-content {
++    flex: 1;
++    margin-left: 64px;
++    display: flex;
++    flex-direction: column;
++}
++
+ /* ======================== TOPBAR ======================== */
+ .topbar {
+     background: var(--bg-surface);
+diff --git a/temp_aios_full_clone b/temp_aios_full_clone
+new file mode 160000
+index 0000000..e9711fa
+--- /dev/null
++++ b/temp_aios_full_clone
+@@ -0,0 +1 @@
++Subproject commit e9711fa8e0fb032eeebeda85f66bebc1cc23db42
+diff --git a/temp_aios_update b/temp_aios_update
+new file mode 160000
+index 0000000..e9711fa
+--- /dev/null
++++ b/temp_aios_update
+@@ -0,0 +1 @@
++Subproject commit e9711fa8e0fb032eeebeda85f66bebc1cc23db42
+diff --git a/temp_routes.py b/temp_routes.py
+new file mode 100644
+index 0000000..9578e8e
+Binary files /dev/null and b/temp_routes.py differ
+diff --git a/templates/accounts.html b/templates/accounts.html
+index ae540f6..8a70e67 100644
+--- a/templates/accounts.html
++++ b/templates/accounts.html
+@@ -16,7 +16,7 @@ Contas
+             Sair</a>
+     </div>
+     <div class="card-desc" style="display: flex; align-items: center; justify-content: space-between;">
+-        Selecione a conta que deseja gerenciar abaixo.
++        Selecione a conta de an├║ncios que deseja acessar. Esta conta ser├í usada para todas as opera├º├Áes do sistema.
+         <button onclick="consultarPortfolios()" class="btn-secondary" style="padding: 6px 12px; font-size: 11px;">­ƒÅó
+             Consultar IDs de Portf├│lio</button>
+     </div>
+@@ -45,8 +45,8 @@ Contas
+ 
+     <div class="queue-list" id="account-list">
+         {% for account in accounts %}
+-        <a href="/conta/{{ account.account_id }}" style="text-decoration: none; color: inherit;" class="account-item"
+-            data-name="{{ account.name|lower }}" data-id="{{ account.account_id }}">
++        <a href="/set_account/{{ account.account_id }}" style="text-decoration: none; color: inherit;"
++            class="account-item" data-name="{{ account.name|lower }}" data-id="{{ account.account_id }}">
+             <div class="queue-list-item"
+                 style="cursor: pointer; display: flex; align-items: center; padding: 12px; border-bottom: 1px solid var(--border); transition: background 0.2s;">
+                 <div class="queue-item-number"
+diff --git a/templates/base.html b/templates/base.html
+index f4dbae4..5df2f56 100644
+--- a/templates/base.html
++++ b/templates/base.html
+@@ -12,15 +12,60 @@
+ </head>
+ 
+ <body>
+-    <div class="topbar">
+-        <h1>ÔÜí OPTIMIZER <span class="version-tag">{{ version }}</span></h1>
+-        <div class="breadcrumb">
+-            {% block breadcrumb %}{% endblock %}
+-        </div>
+-    </div>
++    <div class="app-layout">
++        <aside class="sidebar">
++            <div class="sidebar-logo">
++                <span class="lightning-icon">ÔÜí</span>
++            </div>
++            <nav class="sidebar-nav">
++                <!-- Upload Flow -->
++                <a href="{{ url_for('listar_campanhas', account_id=session.get('account_id')) if session.get('account_id') else url_for('listar_contas') }}"
++                    class="nav-item {% if request.endpoint in ['listar_campanhas', 'setup_campanha'] or (request.endpoint == 'listar_contas' and request.args.get('next') != 'optimize') %}active{% endif %}"
++                    title="Subir Criativos">
++                    <span class="nav-icon">­ƒôñ</span>
++                </a>
++
++                <!-- Optimize Flow -->
++                <a href="{{ url_for('otimizar_campanhas', account_id=session.get('account_id')) if session.get('account_id') else url_for('listar_contas') }}"
++                    class="nav-item {% if request.endpoint in ['otimizar_campanhas', 'api_insights'] or (request.endpoint == 'listar_contas' and request.args.get('next') == 'optimize') %}active{% endif %}"
++                    title="Otimizar">
++                    <span class="nav-icon">­ƒôè</span>
++                </a>
++            </nav>
++            <div class="sidebar-footer">
++                <a href="{{ url_for('logout') }}" class="nav-item" title="Sair">
++                    <span class="nav-icon">­ƒÜ¬</span>
++                </a>
++            </div>
++        </aside>
++
++        <main class="main-content">
++            <div class="topbar">
++                <div style="display: flex; align-items: center; gap: 20px;">
++                    <h1>ÔÜí OPTIMIZER <span class="version-tag">{{ version }}</span></h1>
++                    <div class="breadcrumb">
++                        {% block breadcrumb %}{% endblock %}
++                    </div>
++                </div>
++
++                {% if session.get('account_id') %}
++                <div class="topbar-account-selector"
++                    style="display: flex; align-items: center; background: var(--bg-deep); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 4px 12px; font-size: 13px;">
++                    <span
++                        style="background: #e27d75; color: white; padding: 2px 6px; border-radius: 4px; font-weight: bold; margin-right: 8px; font-size: 11px;">B</span>
++                    <span style="color: var(--text-primary); font-weight: 500; margin-right: 8px;">{{
++                        session.get('account_name', 'Conta Selecionada') }}</span>
++                    <span style="color: var(--text-muted); font-size: 11px;">({{ session.get('account_id') }})</span>
++                    <a href="{{ url_for('listar_contas') }}"
++                        style="margin-left: 12px; color: var(--accent); text-decoration: none; font-size: 18px; line-height: 1;">Ôû¥</a>
++                </div>
++                {% endif %}
++            </div>
+ 
+-    <div class="container">
+-        {% block content %}{% endblock %}
++            <div class="container">
++                {% block content %}{% endblock %}
++            </div>
++        </main>
+     </div>
+ 
+     <!-- Toast Container -->
+diff --git a/templates/campaigns.html b/templates/campaigns.html
+index 5ef9689..a8e83ab 100644
+--- a/templates/campaigns.html
++++ b/templates/campaigns.html
+@@ -3,7 +3,7 @@
+ {% block title %}Campanhas ÔÇö {{ account_id }}{% endblock %}
+ 
+ {% block breadcrumb %}
+-<a href="/">Contas</a> ÔåÆ Campanhas
++<a href="{{ url_for('listar_contas', next='upload') }}">Trocar Conta</a> / <span>Campanhas</span>
+ {% endblock %}
+ 
+ {% block content %}
+@@ -11,8 +11,9 @@
+     <div class="card-title">
+         ­ƒÜÇ Campanhas
+         <span class="badge badge-purple" id="campaign-count">{{ campaigns|length }} Encontradas</span>
+-        <a href="/" style="margin-left: auto; color: var(--text-muted); text-decoration: none; font-size: 12px;">ÔåÉ
+-            Voltar</a>
++        <a href="{{ url_for('listar_contas', next='upload') }}"
++            style="margin-left: auto; color: var(--text-muted); text-decoration: none; font-size: 12px;">ÔåÉ
++            Trocar Conta</a>
+     </div>
+     <div class="card-desc">
+         Conta: <span style="font-family: var(--font-mono); color: var(--accent);">{{ account_id }}</span>
+diff --git a/templates/optimizer.html b/templates/optimizer.html
+new file mode 100644
+index 0000000..da10952
+--- /dev/null
++++ b/templates/optimizer.html
+@@ -0,0 +1,169 @@
++{% extends "base.html" %}
++
++{% block title %}Otimizar ÔÇö OPTIMIZER{% endblock %}
++
++{% block breadcrumb %}
++<a href="{{ url_for('listar_contas', next='optimize') }}">Trocar Conta</a> / <span>Otimiza├º├úo</span>
++{% endblock %}
++
++{% block content %}
++<div class="card border-accent">
++    <div class="card-title">
++        <span>­ƒôè Dashboard de Otimiza├º├úo</span>
++        <span class="badge badge-cyan">Alpha</span>
++    </div>
++    <p class="card-desc">Monitore a performance das suas campanhas em tempo real e identifique gargalos de custos.</p>
++
++    <!-- Filtros -->
++    <div style="display: flex; gap: 12px; align-items: flex-end; margin-bottom: 24px;">
++        <div style="flex: 1;">
++            <label>Per├¡odo de An├ílise</label>
++            <select id="date-preset" onchange="loadInsights()">
++                <option value="today">Hoje</option>
++                <option value="yesterday">Ontem</option>
++                <option value="last_7d">├Ültimos 7 dias</option>
++                <option value="last_30d">├Ültimos 30 dias</option>
++                <option value="this_month">Este M├¬s</option>
++                <option value="last_month">M├¬s Passado</option>
++                <option value="maximum">Tempo Todo</option>
++            </select>
++        </div>
++        <button class="btn-history" onclick="loadInsights()" id="btn-refresh">­ƒöä Atualizar</button>
++    </div>
++</div>
++
++<div class="card">
++    <div class="card-title">­ƒÜÇ Campanhas Ativas</div>
++
++    <div id="insights-container" style="margin-top: 20px;">
++        <div class="queue-empty" id="insights-loading">
++            Carregando m├®tricas da Meta Ads API...
++        </div>
++
++        <table class="data-table" id="insights-table" style="display: none; width: 100%; border-collapse: collapse;">
++            <thead>
++                <tr
++                    style="text-align: left; border-bottom: 1px solid var(--border); color: var(--text-muted); font-size: 11px; text-transform: uppercase;">
++                    <th style="padding: 12px 0;">Campanha</th>
++                    <th style="padding: 12px 0;">Gasto</th>
++                    <th style="padding: 12px 0;">Compras</th>
++                    <th style="padding: 12px 0;">Checkouts</th>
++                    <th style="padding: 12px 0;">CPA Compra</th>
++                    <th style="padding: 12px 0; text-align: right;">CPA Check</th>
++                </tr>
++            </thead>
++            <tbody id="insights-body">
++                <!-- Injetado via JS -->
++            </tbody>
++        </table>
++    </div>
++</div>
++
++<style>
++    .data-table tr {
++        border-bottom: 1px solid var(--border-subtle);
++        transition: background 0.2s;
++    }
++
++    .data-table tr:hover {
++        background: var(--bg-surface);
++    }
++
++    .data-table td {
++        padding: 14px 0;
++        font-size: 13px;
++    }
++
++    .metric-value {
++        font-family: var(--font-mono);
++        font-weight: 500;
++        color: var(--accent);
++    }
++
++    .metric-cost {
++        color: var(--text-secondary);
++        font-size: 12px;
++    }
++
++    .impact-high {
++        color: var(--danger);
++    }
++
++    .impact-good {
++        color: var(--success);
++    }
++</style>
++
++{% endblock %}
++
++{% block scripts %}
++<script>
++    const ACCOUNT_ID = "{{ account_id }}";
++
++    async function loadInsights() {
++        const container = document.getElementById('insights-container');
++        const loading = document.getElementById('insights-loading');
++        const table = document.getElementById('insights-table');
++        const body = document.getElementById('insights-body');
++        const preset = document.getElementById('date-preset').value;
++        const btn = document.getElementById('btn-refresh');
++
++        loading.style.display = 'block';
++        table.style.display = 'none';
++        btn.disabled = true;
++        btn.textContent = 'ÔÅ│...';
++
++        try {
++            const r = await fetch(`/api/account/${ACCOUNT_ID}/insights?date_preset=${preset}`);
++            const res = await r.json();
++
++            if (!res.success) throw new Error(res.error);
++
++            body.innerHTML = '';
++
++            if (res.data.length === 0) {
++                loading.textContent = 'Nenhuma campanha ativa encontrada para este per├¡odo.';
++                return;
++            }
++
++            res.data.forEach(camp => {
++                const tr = document.createElement('tr');
++                const fmtCury = (val) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: camp.currency }).format(val);
++
++                tr.innerHTML = `
++                    <td title="${camp.id}">
++                        <div style="font-weight: 600;">${camp.name}</div>
++                        <div style="font-size: 10px; color: var(--text-muted);">ID: ${camp.id}</div>
++                    </td>
++                    <td class="metric-value">${fmtCury(camp.spend)}</td>
++                    <td>
++                        <div class="metric-value">${camp.compras}</div>
++                    </td>
++                    <td>
++                        <div class="metric-value">${camp.checkouts}</div>
++                    </td>
++                    <td>
++                        <div class="metric-value">${fmtCury(camp.cpa_compra)}</div>
++                    </td>
++                    <td style="text-align: right;">
++                        <div class="metric-value">${fmtCury(camp.cpa_checkout)}</div>
++                    </td>
++                `;
++                body.appendChild(tr);
++            });
++
++            loading.style.display = 'none';
++            table.style.display = 'table';
++
++        } catch (err) {
++            loading.textContent = 'ÔØî Erro: ' + err.message;
++        } finally {
++            btn.disabled = false;
++            btn.textContent = '­ƒöä Atualizar';
++        }
++    }
++
++    // Inicializar
++    document.addEventListener('DOMContentLoaded', loadInsights);
++</script>
++{% endblock %}
+\ No newline at end of file
+diff --git a/templates/setup.html b/templates/setup.html
+index 42a93a4..be69c5d 100644
+--- a/templates/setup.html
++++ b/templates/setup.html
+@@ -966,8 +966,7 @@
+                     if (dupResult.success && dupResult.adset_id) {
+                         duplicatedAdsetId = dupResult.adset_id;
+                         logConsole(`Ô£à Conjunto duplicado: ${duplicatedAdsetId}${adsetNewName ? ' ÔÇö "' + adsetNewName + '"' : ''}`, 'log-success');
+-                        // Log sub-steps
+-                        if (dupResult.logs) dupResult.logs.forEach(l => logConsole(`   ${l}`, logClass(l)));
++                        if (dupResult.logs) dupResult.logs.forEach(l => logConsole(`   ${l}`, 'log-info'));
+                     } else {
+                         logConsole(`ÔØî Falha ao duplicar conjunto: ${dupResult.error}`, 'log-error');
+                         btn.disabled = false;

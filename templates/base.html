@@ -26,8 +26,8 @@
                 </a>
 
                 <!-- Optimize Flow -->
-                <a href="{{ url_for('otimizar_campanhas', account_id=session.get('account_id')) if session.get('account_id') else url_for('listar_contas') }}"
-                    class="nav-item {% if request.endpoint in ['otimizar_campanhas', 'api_insights'] or (request.endpoint == 'listar_contas' and request.args.get('next') == 'optimize') %}active{% endif %}"
+                <a href="{{ url_for('optimization.otimizar_campanhas', account_id=session.get('account_id')) if session.get('account_id') else url_for('listar_contas') }}"
+                    class="nav-item {% if request.endpoint in ['optimization.otimizar_campanhas', 'optimization.api_insights'] or (request.endpoint == 'listar_contas' and request.args.get('next') == 'optimize') %}active{% endif %}"
                     title="Otimizar">
                     <span class="nav-icon">📊</span>
                 </a>

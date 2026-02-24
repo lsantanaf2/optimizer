@@ -1,0 +1,111 @@
+﻿diff --git a/meta_api.py b/meta_api.py
+index 8c7e9cb..8b0bd04 100644
+--- a/meta_api.py
++++ b/meta_api.py
+@@ -119,38 +119,29 @@ class MetaUploader:
+             
+             results = []
+             for ins in insights:
+-                # Extrair resultados (compras ou leads conforme o objetivo)
+-                # Heur├¡stica: se o objetivo for LEAD_GENERATION, busca 'lead'
+-                # se for OUTCOMES/CONVERSIONS, busca 'purchase' ou 'offsite_conversion.fb_pixel_purchase'
+-                
+                 actions = ins.get('actions', [])
+-                objective = ins.get('objective', '')
+-                
+-                res_count = 0
+-                cac = 0
+                 spend = float(ins.get('spend', 0))
+                 
+-                # Mapeamento din├ómico de resultados
++                # M├®tricas espec├¡ficas para o Optimizer
++                compras = 0
++                checkouts = 0
+                 for action in actions:
+                     a_type = action.get('action_type', '')
+-                    if objective == 'LEAD_GENERATION' and a_type == 'lead':
+-                        res_count += int(action.get('value', 0))
+-                    elif 'purchase' in a_type:
+-                        res_count += int(action.get('value', 0))
+-                    elif a_type == 'onsite_conversion.messaging_conversation_started_7d':
+-                        res_count += int(action.get('value', 0))
+-
+-                if res_count > 0:
+-                    cac = spend / res_count
+-                
++                    val = int(action.get('value', 0))
++                    if a_type in ['purchase', 'offsite_conversion.fb_pixel_purchase', 'onsite_conversion.purchase']:
++                        compras += val
++                    if a_type in ['initiate_checkout', 'offsite_conversion.fb_pixel_initiate_checkout']:
++                        checkouts += val
++
+                 results.append({
+                     'id': ins.get('campaign_id'),
+                     'name': ins.get('campaign_name'),
+                     'spend': spend,
+-                    'results': res_count,
+-                    'cac': cac,
+-                    'currency': ins.get('account_currency', 'BRL'),
+-                    'status': 'ACTIVE'
++                    'compras': compras,
++                    'checkouts': checkouts,
++                    'cpa_compra': spend / compras if compras > 0 else 0,
++                    'cpa_checkout': spend / checkouts if checkouts > 0 else 0,
++                    'currency': ins.get('account_currency', 'BRL')
+                 })
+             
+             print(f"­ƒôê [get_campaign_insights] {len(results)} campanhas auditadas.")
+@@ -1232,17 +1223,9 @@ class MetaUploader:
+             if media['type'] == 'image':
+                 images.append({'hash': media['hash'], 'adlabels': [{'name': label}]})
+             elif media['type'] == 'video':
++                # NOTA: asset_feed_spec N├âO aceita image_hash dentro de videos[]
++                # A Meta gera thumbnails automaticamente para v├¡deos nesse formato
+                 video_data = {'video_id': media['id'], 'adlabels': [{'name': label}]}
+-                # Proatividade: Tentar fornecer thumbnail se a m├¡dia oposta for imagem
+-                other_media = stories_media if label == FEED_LABEL else feed_media
+-                if other_media and other_media['type'] == 'image':
+-                    video_data['image_hash'] = other_media['hash']
+-                    self._log(f"­ƒû╝´©Å Thumbnail para v├¡deo {label} linkada ├á imagem do par.")
+-                # Se n├úo tem imagem do par, usar thumb_hash extra├¡da durante upload
+-                elif media.get('thumb_hash'):
+-                    video_data['image_hash'] = media['thumb_hash']
+-                    self._log(f"Ô£à Thumbnail auto-gerada usada para v├¡deo {label}.")
+-                
+                 videos.append(video_data)
+ 
+         add_media(feed_media, FEED_LABEL)
+@@ -1408,20 +1391,24 @@ class MetaUploader:
+             result = source.create_copy(params=params)
+             copied_id = result.get('copied_adset_id') or result.get('id')
+ 
+-            # Renomear se new_name foi fornecido
+-            if new_name and copied_id:
++            # For├ºar status PAUSED + renomear (create_copy nem sempre respeita status_option)
++            if copied_id:
+                 try:
+-                    url = f"https://graph.facebook.com/v22.0/{copied_id}"
+-                    resp = requests.post(url, data={
+-                        'name': new_name,
++                    update_data = {
++                        'status': 'PAUSED',
+                         'access_token': self.access_token
+-                    }).json()
++                    }
++                    if new_name:
++                        update_data['name'] = new_name
++
++                    url = f"https://graph.facebook.com/v22.0/{copied_id}"
++                    resp = requests.post(url, data=update_data).json()
+                     if 'error' in resp:
+-                        self._log(f"ÔÜá´©Å Falha ao renomear Ad Set: {resp['error'].get('message')}")
++                        self._log(f"ÔÜá´©Å Falha ao atualizar Ad Set: {resp['error'].get('message')}")
+                     else:
+-                        self._log(f"Ô£Å´©Å Ad Set renomeado para: {new_name}")
++                        self._log(f"Ô£à Ad Set configurado: PAUSED{' / ' + new_name if new_name else ''}")
+                 except Exception as e:
+-                    self._log(f"ÔÜá´©Å Erro ao renomear: {e}")
++                    self._log(f"ÔÜá´©Å Erro ao atualizar Ad Set: {e}")
+ 
+             return copied_id
+ 

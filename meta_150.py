@@ -1,11 +1,11 @@
-"""
-MetaUploader — Classe utilitária para upload seguro de anúncios na Meta API.
+﻿"""
+MetaUploader ÔÇö Classe utilit├íria para upload seguro de an├║ncios na Meta API.
 
 Features:
   - Delay inteligente (1.5-3s) entre uploads
   - Rate limit monitor via header x-business-use-case-usage
-  - Retry automático (até 3x) com backoff
-  - Status PAUSED por padrão em todos os Ads criados
+  - Retry autom├ítico (at├® 3x) com backoff
+  - Status PAUSED por padr├úo em todos os Ads criados
   - Asset Customization Rules para Feed vs Stories
 """
 
@@ -31,8 +31,8 @@ from facebook_business.adobjects.adspixel import AdsPixel
 
 def list_drive_folder(folder_url):
     """
-    Tenta listar arquivos de uma pasta pública do Google Drive sem usar API Key.
-    Retorna uma lista de dicionários {'id': ..., 'name': ...}
+    Tenta listar arquivos de uma pasta p├║blica do Google Drive sem usar API Key.
+    Retorna uma lista de dicion├írios {'id': ..., 'name': ...}
     """
     try:
         # Extrair Folder ID
@@ -43,14 +43,14 @@ def list_drive_folder(folder_url):
             folder_id = folder_url.split('id=')[1].split('&')[0]
         
         if not folder_id:
-            return {'error': 'ID da pasta não encontrado na URL.'}
+            return {'error': 'ID da pasta n├úo encontrado na URL.'}
 
-        # URL para pegar o JSON da pasta (hack público)
-        # Nota: Este método pode ser instável se o Google mudar a estrutura.
+        # URL para pegar o JSON da pasta (hack p├║blico)
+        # Nota: Este m├®todo pode ser inst├ível se o Google mudar a estrutura.
         resp = requests.get(folder_url, headers={'User-Agent': 'Mozilla/5.0'}).text
         
-        # Regex para encontrar o JSON que contém os nomes e IDs dos arquivos
-        # O Google Drive injeta os dados na variável 'AF_initDataCallback' ou similar
+        # Regex para encontrar o JSON que cont├®m os nomes e IDs dos arquivos
+        # O Google Drive injeta os dados na vari├ível 'AF_initDataCallback' ou similar
         pattern = r'\["(?P<id>[a-zA-Z0-9_-]{20,})",\["(?P<name>[^"]+)"'
         matches = re.finditer(pattern, resp)
         
@@ -59,7 +59,7 @@ def list_drive_folder(folder_url):
         for m in matches:
             v_id = m.group('id')
             v_name = m.group('name')
-            if v_id not in seen_ids and '.' in v_name: # Filtra para buscar arquivos com extensão
+            if v_id not in seen_ids and '.' in v_name: # Filtra para buscar arquivos com extens├úo
                 files.append({'id': v_id, 'name': v_name})
                 seen_ids.add(v_id)
         
@@ -93,7 +93,7 @@ class MetaUploader:
 
     def get_campaign_insights(self, date_preset='today'):
         """
-        Busca métricas de performance das campanhas (Gasto, CAC, etc).
+        Busca m├®tricas de performance das campanhas (Gasto, CAC, etc).
         Filtra por campanhas ACTIVE ou PAUSED.
         """
         try:
@@ -119,41 +119,50 @@ class MetaUploader:
             
             results = []
             for ins in insights:
+                # Extrair resultados (compras ou leads conforme o objetivo)
+                # Heur├¡stica: se o objetivo for LEAD_GENERATION, busca 'lead'
+                # se for OUTCOMES/CONVERSIONS, busca 'purchase' ou 'offsite_conversion.fb_pixel_purchase'
+                
                 actions = ins.get('actions', [])
+                objective = ins.get('objective', '')
+                
+                res_count = 0
+                cac = 0
                 spend = float(ins.get('spend', 0))
                 
-                # Métricas específicas para o Optimizer
-                compras = 0
-                checkouts = 0
+                # Mapeamento din├ómico de resultados
                 for action in actions:
                     a_type = action.get('action_type', '')
-                    val = int(action.get('value', 0))
-                    if a_type in ['purchase', 'offsite_conversion.fb_pixel_purchase', 'onsite_conversion.purchase']:
-                        compras += val
-                    if a_type in ['initiate_checkout', 'offsite_conversion.fb_pixel_initiate_checkout']:
-                        checkouts += val
+                    if objective == 'LEAD_GENERATION' and a_type == 'lead':
+                        res_count += int(action.get('value', 0))
+                    elif 'purchase' in a_type:
+                        res_count += int(action.get('value', 0))
+                    elif a_type == 'onsite_conversion.messaging_conversation_started_7d':
+                        res_count += int(action.get('value', 0))
 
+                if res_count > 0:
+                    cac = spend / res_count
+                
                 results.append({
                     'id': ins.get('campaign_id'),
                     'name': ins.get('campaign_name'),
                     'spend': spend,
-                    'compras': compras,
-                    'checkouts': checkouts,
-                    'cpa_compra': spend / compras if compras > 0 else 0,
-                    'cpa_checkout': spend / checkouts if checkouts > 0 else 0,
-                    'currency': ins.get('account_currency', 'BRL')
+                    'results': res_count,
+                    'cac': cac,
+                    'currency': ins.get('account_currency', 'BRL'),
+                    'status': 'ACTIVE'
                 })
             
-            print(f"📈 [get_campaign_insights] {len(results)} campanhas auditadas.")
+            print(f"­ƒôê [get_campaign_insights] {len(results)} campanhas auditadas.")
             return results
         except Exception as e:
-            print(f"❌ [get_campaign_insights] Erro: {e}")
+            print(f"ÔØî [get_campaign_insights] Erro: {e}")
             return []
 
     # ======================== IDENTITY & TRACKING FETCHERS ========================
 
     def get_pages(self):
-        """Busca páginas: Ad Account primeiro (topo), depois diretas e via BM."""
+        """Busca p├íginas: Ad Account primeiro (topo), depois diretas e via BM."""
         seen_ids = set()
         result = []
 
@@ -167,7 +176,7 @@ class MetaUploader:
                 'instagram_id': ig_id
             }
 
-        # ── Fonte 1: Ad Account promote_pages (TOPO — páginas da conta de anúncios) ──
+        # ÔöÇÔöÇ Fonte 1: Ad Account promote_pages (TOPO ÔÇö p├íginas da conta de an├║ncios) ÔöÇÔöÇ
         try:
             fields = 'id,name,instagram_business_account'
             resp = requests.get(
@@ -179,11 +188,11 @@ class MetaUploader:
                 if pid and pid not in seen_ids:
                     seen_ids.add(pid)
                     result.append(_parse_page(p))
-            print(f"📄 [get_pages] Fonte 1 (promote_pages): {len(result)} páginas")
+            print(f"­ƒôä [get_pages] Fonte 1 (promote_pages): {len(result)} p├íginas")
         except Exception as e:
-            print(f"⚠️ [get_pages] Fonte 1 (promote_pages) falhou: {e}")
+            print(f"ÔÜá´©Å [get_pages] Fonte 1 (promote_pages) falhou: {e}")
 
-        # ── Fonte 2: /me/accounts (páginas diretas — complemento) ──
+        # ÔöÇÔöÇ Fonte 2: /me/accounts (p├íginas diretas ÔÇö complemento) ÔöÇÔöÇ
         try:
             me = User(fbid='me')
             pages = me.get_accounts(fields=['name', 'access_token', 'instagram_business_account'])
@@ -193,11 +202,11 @@ class MetaUploader:
                 if pid and pid not in seen_ids:
                     seen_ids.add(pid)
                     result.append(_parse_page(p))
-            print(f"📄 [get_pages] Fonte 2 (/me/accounts): +{len(result) - before} páginas novas")
+            print(f"­ƒôä [get_pages] Fonte 2 (/me/accounts): +{len(result) - before} p├íginas novas")
         except Exception as e:
-            print(f"⚠️ [get_pages] Fonte 2 falhou: {e}")
+            print(f"ÔÜá´©Å [get_pages] Fonte 2 falhou: {e}")
 
-        # ── Fonte 3: Business Manager owned_pages + client_pages (complemento) ──
+        # ÔöÇÔöÇ Fonte 3: Business Manager owned_pages + client_pages (complemento) ÔöÇÔöÇ
         try:
             bm_resp = requests.get(
                 f"https://graph.facebook.com/v22.0/me/businesses",
@@ -219,11 +228,11 @@ class MetaUploader:
                                 seen_ids.add(pid)
                                 result.append(_parse_page(p))
                     except Exception as e:
-                        print(f"⚠️ [get_pages] BM {bm_id}/{endpoint} falhou: {e}")
+                        print(f"ÔÜá´©Å [get_pages] BM {bm_id}/{endpoint} falhou: {e}")
         except Exception as e:
-            print(f"⚠️ [get_pages] Fonte 3 (Business Manager) falhou: {e}")
+            print(f"ÔÜá´©Å [get_pages] Fonte 3 (Business Manager) falhou: {e}")
 
-        print(f"📄 [get_pages] Total: {len(result)} páginas únicas")
+        print(f"­ƒôä [get_pages] Total: {len(result)} p├íginas ├║nicas")
         return result
 
 
@@ -233,15 +242,15 @@ class MetaUploader:
             pixels = self.account.get_ads_pixels(fields=['name', 'id'])
             return [{'id': p['id'], 'name': p['name']} for p in pixels]
         except Exception as e:
-            self._log(f"⚠️ Erro ao buscar pixels: {e}")
+            self._log(f"ÔÜá´©Å Erro ao buscar pixels: {e}")
             return []
 
     def get_leadgen_forms(self, page_id, page_access_token=None):
-        """Busca formulários de lead de uma página do Facebook."""
+        """Busca formul├írios de lead de uma p├ígina do Facebook."""
         try:
             token = page_access_token or self.access_token
 
-            # Camada de Segurança: Tentar obter o Page Access Token se não foi fornecido
+            # Camada de Seguran├ºa: Tentar obter o Page Access Token se n├úo foi fornecido
             if not page_access_token:
                 try:
                     p_resp = requests.get(
@@ -250,9 +259,9 @@ class MetaUploader:
                     ).json()
                     if 'access_token' in p_resp:
                         token = p_resp['access_token']
-                        print(f"🔑 [get_leadgen_forms] Usando Page Access Token para a página {page_id}")
+                        print(f"­ƒöæ [get_leadgen_forms] Usando Page Access Token para a p├ígina {page_id}")
                 except Exception as e:
-                    print(f"⚠️ [get_leadgen_forms] Falha ao obter Page Access Token (usando User Token): {e}")
+                    print(f"ÔÜá´©Å [get_leadgen_forms] Falha ao obter Page Access Token (usando User Token): {e}")
 
             resp = requests.get(
                 f"https://graph.facebook.com/v22.0/{page_id}/leadgen_forms",
@@ -261,8 +270,8 @@ class MetaUploader:
 
             if 'error' in resp:
                 error_msg = resp['error'].get('message', '?')
-                print(f"⚠️ [get_leadgen_forms] API error: {error_msg}")
-                self._log(f"⚠️ Erro ao buscar formulários: {error_msg}")
+                print(f"ÔÜá´©Å [get_leadgen_forms] API error: {error_msg}")
+                self._log(f"ÔÜá´©Å Erro ao buscar formul├írios: {error_msg}")
                 return []
 
             forms = []
@@ -272,18 +281,18 @@ class MetaUploader:
                     'name': f.get('name', f"Form {f.get('id')}"),
                     'status': f.get('status', 'ACTIVE')
                 })
-            print(f"📋 [get_leadgen_forms] {len(forms)} formulários encontrados para página {page_id}")
+            print(f"­ƒôï [get_leadgen_forms] {len(forms)} formul├írios encontrados para p├ígina {page_id}")
             return forms
         except Exception as e:
-            print(f"❌ [get_leadgen_forms] Exception: {e}")
+            print(f"ÔØî [get_leadgen_forms] Exception: {e}")
             return []
 
     def get_instagram_accounts(self, pages_data=None):
         """
-        Busca IGs acessíveis para anúncios.
+        Busca IGs acess├¡veis para an├║ncios.
         Camada 1: act_{id}/instagram_accounts
         Camada 2: act_{id}/connected_instagram_accounts
-        Camada 3: IGs já retornados pelas páginas (sem chamadas extras)
+        Camada 3: IGs j├í retornados pelas p├íginas (sem chamadas extras)
         """
         seen_ids = set()
         result = []
@@ -305,17 +314,17 @@ class MetaUploader:
                     params={'fields': 'id,username', 'access_token': self.access_token, 'limit': 100}
                 ).json()
                 if 'error' in resp:
-                    print(f"⚠️ [get_ig/{edge}] API error: {resp['error'].get('message', '?')}")
+                    print(f"ÔÜá´©Å [get_ig/{edge}] API error: {resp['error'].get('message', '?')}")
                 else:
                     count = 0
                     for ig in resp.get('data', []):
                         add_ig(ig.get('id'), ig.get('username', f"IG {ig.get('id')}"), source)
                         count += 1
-                    print(f"✅ [get_ig/{edge}] {count} IGs encontrados")
+                    print(f"Ô£à [get_ig/{edge}] {count} IGs encontrados")
             except Exception as e:
-                print(f"❌ [get_ig/{edge}] Exception: {e}")
+                print(f"ÔØî [get_ig/{edge}] Exception: {e}")
 
-        # ---- Camada 3: IGs das páginas (sem chamadas extras) ----
+        # ---- Camada 3: IGs das p├íginas (sem chamadas extras) ----
         if not result and pages_data:
             for page in pages_data:
                 ig_id = page.get('instagram_id')
@@ -332,15 +341,15 @@ class MetaUploader:
                         pass
                     add_ig(ig_id, ig_username or page.get('name', f'IG {ig_id}'), 'page_linked')
 
-        print(f"📸 [get_instagram_accounts] {len(result)} IGs ({len(seen_ids)} únicos)")
+        print(f"­ƒô© [get_instagram_accounts] {len(result)} IGs ({len(seen_ids)} ├║nicos)")
         if result:
             for ig in result:
-                print(f"   → {ig['username']} (ID: {ig['id']}, fonte: {ig['source']})")
+                print(f"   ÔåÆ {ig['username']} (ID: {ig['id']}, fonte: {ig['source']})")
         return result
 
     def get_identity_data(self):
         """
-        Busca páginas, instagrams e pixels em paralelo.
+        Busca p├íginas, instagrams e pixels em paralelo.
         Retorna dict com {pages, instagrams, pixels}.
         """
         from concurrent.futures import ThreadPoolExecutor
@@ -363,11 +372,11 @@ class MetaUploader:
             executor.submit(fetch_pages)
             executor.submit(fetch_pixels)
 
-        # IGs dependem dos dados das páginas (para fallback), então roda depois
+        # IGs dependem dos dados das p├íginas (para fallback), ent├úo roda depois
         instagrams_result = self.get_instagram_accounts(pages_data=pages_result)
 
         elapsed = time.time() - start
-        print(f"⚡ [get_identity_data] Completo em {elapsed:.1f}s — {len(pages_result)} páginas, {len(instagrams_result)} IGs, {len(pixels_result)} pixels")
+        print(f"ÔÜí [get_identity_data] Completo em {elapsed:.1f}s ÔÇö {len(pages_result)} p├íginas, {len(instagrams_result)} IGs, {len(pixels_result)} pixels")
 
         return {
             'pages': pages_result,
@@ -376,7 +385,7 @@ class MetaUploader:
         }
 
     def set_callback(self, callback):
-        """Define uma função callback para logs em tempo real: callback(msg)"""
+        """Define uma fun├º├úo callback para logs em tempo real: callback(msg)"""
         self._callback = callback
 
     def _log(self, msg):
@@ -411,11 +420,11 @@ class MetaUploader:
 
                     if max_usage >= self.RATE_LIMIT_THRESHOLD:
                         self._log(
-                            f"⏸️ Rate limit alto ({max_usage}%). "
+                            f"ÔÅ©´©Å Rate limit alto ({max_usage}%). "
                             f"Pausando {self.RATE_LIMIT_PAUSE_SECONDS // 60} min..."
                         )
                         time.sleep(self.RATE_LIMIT_PAUSE_SECONDS)
-                        self._log("▶️ Retomando uploads após pausa de rate limit.")
+                        self._log("ÔûÂ´©Å Retomando uploads ap├│s pausa de rate limit.")
                         return True
         except (json.JSONDecodeError, TypeError):
             pass
@@ -425,15 +434,15 @@ class MetaUploader:
     # ======================== DELAY ========================
 
     def smart_delay(self):
-        """Aplica delay aleatório entre uploads (1.5-3s)."""
+        """Aplica delay aleat├│rio entre uploads (1.5-3s)."""
         delay = random.uniform(self.DELAY_MIN, self.DELAY_MAX)
-        self._log(f"⏳ Aguardando delay de segurança ({delay:.1f}s)...")
+        self._log(f"ÔÅ│ Aguardando delay de seguran├ºa ({delay:.1f}s)...")
         time.sleep(delay)
 
     # ======================== RETRY ========================
 
     def _with_retry(self, operation_name, func):
-        """Executa uma função com até MAX_RETRIES tentativas."""
+        """Executa uma fun├º├úo com at├® MAX_RETRIES tentativas."""
         last_error = None
         for attempt in range(1, self.MAX_RETRIES + 1):
             try:
@@ -443,32 +452,32 @@ class MetaUploader:
                 last_error = e
                 if attempt < self.MAX_RETRIES:
                     self._log(
-                        f"⚠️ {operation_name} falhou (tentativa {attempt}/{self.MAX_RETRIES}): "
+                        f"ÔÜá´©Å {operation_name} falhou (tentativa {attempt}/{self.MAX_RETRIES}): "
                         f"{str(e)[:100]}. Retentando em {self.RETRY_BACKOFF}s..."
                     )
                     time.sleep(self.RETRY_BACKOFF)
                 else:
                     self._log(
-                        f"❌ {operation_name} falhou após {self.MAX_RETRIES} tentativas: "
+                        f"ÔØî {operation_name} falhou ap├│s {self.MAX_RETRIES} tentativas: "
                         f"{str(e)[:150]}"
                     )
         raise last_error
 
-    # ======================== UPLOAD DE MÍDIA ========================
+    # ======================== UPLOAD DE M├ìDIA ========================
 
     def _normalize_drive_link(self, link):
         """
-        Converte links do Google Drive (visualização, compartilhamento, abreviações)
+        Converte links do Google Drive (visualiza├º├úo, compartilhamento, abrevia├º├Áes)
         em links de download direto robustos.
         """
         if not link or 'drive.google.com' not in link:
             return link
         
         file_id = None
-        # Padrão 1: /file/d/ID/view
+        # Padr├úo 1: /file/d/ID/view
         if '/file/d/' in link:
             file_id = link.split('/file/d/')[1].split('/')[0]
-        # Padrão 2: ?id=ID
+        # Padr├úo 2: ?id=ID
         elif 'id=' in link:
             parsed = urllib.parse.urlparse(link)
             file_id = urllib.parse.parse_qs(parsed.query).get('id', [None])[0]
@@ -479,20 +488,20 @@ class MetaUploader:
         return link
 
     def _download_file(self, url, dest_path):
-        """Baixa um arquivo de uma URL, tratando confirmação de vírus do Google Drive (5 estratégias)."""
+        """Baixa um arquivo de uma URL, tratando confirma├º├úo de v├¡rus do Google Drive (5 estrat├®gias)."""
         try:
             session = requests.Session()
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
             }
 
-            # Extrair file_id do Google Drive (usado nas estratégias 3-5)
+            # Extrair file_id do Google Drive (usado nas estrat├®gias 3-5)
             file_id = None
             if 'drive.google.com' in url or 'docs.google.com' in url:
                 id_match = re.search(r'(?:id=|/d/)([a-zA-Z0-9_-]+)', url)
                 if id_match:
                     file_id = id_match.group(1)
-                    self._log(f"🔑 File ID do Drive extraído: {file_id[:6]}...")
+                    self._log(f"­ƒöæ File ID do Drive extra├¡do: {file_id[:6]}...")
 
             def _save_stream(response):
                 with open(dest_path, 'wb') as f:
@@ -504,8 +513,8 @@ class MetaUploader:
                 try:
                     sz = os.path.getsize(dest_path)
                     if sz == 0:
-                        self._log("⚠️ Arquivo baixado tem 0 bytes — tratando como falha.")
-                        return True  # Tratar 0KB como "não é o arquivo real"
+                        self._log("ÔÜá´©Å Arquivo baixado tem 0 bytes ÔÇö tratando como falha.")
+                        return True  # Tratar 0KB como "n├úo ├® o arquivo real"
                     with open(dest_path, 'rb') as f:
                         head = f.read(500)
                     if b'<html' in head.lower() or b'<!doctype' in head.lower():
@@ -514,8 +523,8 @@ class MetaUploader:
                     pass
                 return False
 
-            # ─── ESTRATÉGIA 1: Download direto com cookie ───
-            self._log("📥 [E1] Download direto...")
+            # ÔöÇÔöÇÔöÇ ESTRAT├ëGIA 1: Download direto com cookie ÔöÇÔöÇÔöÇ
+            self._log("­ƒôÑ [E1] Download direto...")
             response = session.get(url, stream=True, timeout=60, headers=headers)
             token = None
             for key, value in response.cookies.items():
@@ -523,31 +532,31 @@ class MetaUploader:
                     token = value
                     break
             if token:
-                self._log(f"🛡️ Token via cookie detectado: {token[:8]}...")
+                self._log(f"­ƒøí´©Å Token via cookie detectado: {token[:8]}...")
                 response = session.get(url, params={'confirm': token}, stream=True, timeout=120, headers=headers)
             _save_stream(response)
 
             if not _is_html():
                 file_size = os.path.getsize(dest_path)
-                self._log(f"✅ Download concluído (E1): {os.path.basename(dest_path)} ({file_size / 1024:.0f} KB)")
+                self._log(f"Ô£à Download conclu├¡do (E1): {os.path.basename(dest_path)} ({file_size / 1024:.0f} KB)")
                 return True
 
-            self._log("⚠️ [E1] Drive retornou HTML.")
+            self._log("ÔÜá´©Å [E1] Drive retornou HTML.")
 
-            # ─── ESTRATÉGIA 2: GET confirm=t (legacy) ───
+            # ÔöÇÔöÇÔöÇ ESTRAT├ëGIA 2: GET confirm=t (legacy) ÔöÇÔöÇÔöÇ
             if file_id:
-                self._log("📥 [E2] Tentando confirm=t...")
+                self._log("­ƒôÑ [E2] Tentando confirm=t...")
                 dl_url = f"https://drive.google.com/uc?export=download&id={file_id}&confirm=t"
                 response = session.get(dl_url, stream=True, timeout=120, headers=headers)
                 _save_stream(response)
                 if not _is_html():
                     file_size = os.path.getsize(dest_path)
-                    self._log(f"✅ Download concluído (E2): ({file_size / 1024:.0f} KB)")
+                    self._log(f"Ô£à Download conclu├¡do (E2): ({file_size / 1024:.0f} KB)")
                     return True
-                self._log("⚠️ [E2] Falhou.")
+                self._log("ÔÜá´©Å [E2] Falhou.")
 
-            # ─── ESTRATÉGIA 3: POST do formulário de confirmação ───
-            self._log("📥 [E3] Extraindo formulário POST do HTML...")
+            # ÔöÇÔöÇÔöÇ ESTRAT├ëGIA 3: POST do formul├írio de confirma├º├úo ÔöÇÔöÇÔöÇ
+            self._log("­ƒôÑ [E3] Extraindo formul├írio POST do HTML...")
             try:
                 with open(dest_path, 'rb') as f:
                     html_content = f.read().decode('utf-8', errors='replace')
@@ -566,56 +575,56 @@ class MetaUploader:
                         post_data['uuid'] = uuid_match.group(1)
                     post_data['confirm'] = 't'
 
-                    self._log(f"🔑 [E3] POST para: {action_url[:50]}...")
+                    self._log(f"­ƒöæ [E3] POST para: {action_url[:50]}...")
                     response = session.post(action_url, data=post_data, stream=True, timeout=120, headers=headers)
                     _save_stream(response)
                     if not _is_html():
                         file_size = os.path.getsize(dest_path)
-                        self._log(f"✅ Download concluído (E3): ({file_size / 1024:.0f} KB)")
+                        self._log(f"Ô£à Download conclu├¡do (E3): ({file_size / 1024:.0f} KB)")
                         return True
-                    self._log("⚠️ [E3] POST retornou HTML.")
+                    self._log("ÔÜá´©Å [E3] POST retornou HTML.")
                 else:
-                    self._log("⚠️ [E3] action URL não encontrada no HTML.")
+                    self._log("ÔÜá´©Å [E3] action URL n├úo encontrada no HTML.")
             except Exception as e3:
-                self._log(f"⚠️ [E3] Erro: {e3}")
+                self._log(f"ÔÜá´©Å [E3] Erro: {e3}")
 
-            # ─── ESTRATÉGIA 4: gdown (biblioteca especializada) ───
+            # ÔöÇÔöÇÔöÇ ESTRAT├ëGIA 4: gdown (biblioteca especializada) ÔöÇÔöÇÔöÇ
             if file_id:
                 try:
                     import gdown
-                    self._log("📥 [E4] Usando gdown...")
+                    self._log("­ƒôÑ [E4] Usando gdown...")
                     gdown_url = f"https://drive.google.com/uc?id={file_id}"
                     output = gdown.download(gdown_url, dest_path, quiet=True, fuzzy=True)
                     if output and os.path.exists(dest_path) and not _is_html():
                         file_size = os.path.getsize(dest_path)
-                        self._log(f"✅ Download concluído (E4/gdown): ({file_size / 1024:.0f} KB)")
+                        self._log(f"Ô£à Download conclu├¡do (E4/gdown): ({file_size / 1024:.0f} KB)")
                         return True
-                    self._log("⚠️ [E4] gdown falhou ou retornou HTML.")
+                    self._log("ÔÜá´©Å [E4] gdown falhou ou retornou HTML.")
                 except ImportError:
-                    self._log("⚠️ [E4] gdown não instalado. Pulando...")
+                    self._log("ÔÜá´©Å [E4] gdown n├úo instalado. Pulando...")
                 except Exception as e4:
-                    self._log(f"⚠️ [E4] gdown erro: {e4}")
+                    self._log(f"ÔÜá´©Å [E4] gdown erro: {e4}")
 
-            # ─── ESTRATÉGIA 5: Novo domínio drive.usercontent.google.com ───
+            # ÔöÇÔöÇÔöÇ ESTRAT├ëGIA 5: Novo dom├¡nio drive.usercontent.google.com ÔöÇÔöÇÔöÇ
             if file_id:
-                self._log("📥 [E5] Tentando novo domínio (drive.usercontent.google.com)...")
+                self._log("­ƒôÑ [E5] Tentando novo dom├¡nio (drive.usercontent.google.com)...")
                 new_url = f"https://drive.usercontent.google.com/download?id={file_id}&export=download&confirm=t"
                 response = session.get(new_url, stream=True, timeout=120, headers=headers)
                 _save_stream(response)
                 if not _is_html():
                     file_size = os.path.getsize(dest_path)
-                    self._log(f"✅ Download concluído (E5): ({file_size / 1024:.0f} KB)")
+                    self._log(f"Ô£à Download conclu├¡do (E5): ({file_size / 1024:.0f} KB)")
                     return True
-                self._log("⚠️ [E5] Novo domínio também retornou HTML.")
+                self._log("ÔÜá´©Å [E5] Novo dom├¡nio tamb├®m retornou HTML.")
 
-            # ─── FALHA TOTAL: salvar HTML para debug ───
-            self._log(f"❌ Download falhou em TODAS as 5 estratégias.")
-            self._log(f"   → Verifique se o arquivo tem permissão 'Qualquer pessoa com o link pode visualizar'.")
+            # ÔöÇÔöÇÔöÇ FALHA TOTAL: salvar HTML para debug ÔöÇÔöÇÔöÇ
+            self._log(f"ÔØî Download falhou em TODAS as 5 estrat├®gias.")
+            self._log(f"   ÔåÆ Verifique se o arquivo tem permiss├úo 'Qualquer pessoa com o link pode visualizar'.")
             try:
                 debug_path = os.path.join(tempfile.gettempdir(), f"drive_debug_{int(time.time())}.html")
                 if os.path.exists(dest_path):
                     shutil.copy2(dest_path, debug_path)
-                    self._log(f"   → HTML de debug salvo em: {debug_path}")
+                    self._log(f"   ÔåÆ HTML de debug salvo em: {debug_path}")
             except Exception:
                 pass
 
@@ -624,16 +633,16 @@ class MetaUploader:
             return False
 
         except Exception as e:
-            self._log(f"❌ Erro crítico no download: {str(e)}")
+            self._log(f"ÔØî Erro cr├¡tico no download: {str(e)}")
             if os.path.exists(dest_path):
                 os.unlink(dest_path)
             return False
 
 
     def upload_image_url(self, url):
-        """Upload de imagem via URL (parâmetro url da Meta) com fallback em memória (BytesIO)."""
+        """Upload de imagem via URL (par├ómetro url da Meta) com fallback em mem├│ria (BytesIO)."""
         url = self._normalize_drive_link(url)
-        self._log(f"🔗 Enviando URL de imagem para a Meta: {url[:60]}...")
+        self._log(f"­ƒöù Enviando URL de imagem para a Meta: {url[:60]}...")
         
         api_url = f"https://graph.facebook.com/v22.0/{self.account_id}/adimages"
         
@@ -642,14 +651,14 @@ class MetaUploader:
             result = resp.json()
             if 'error' in result:
                 msg = result['error'].get('message', '')
-                # Fallback via bytes em memória (BytesIO) se a Meta falhar no download direto
-                # Inclusão de 'capability' pois alguns Apps não podem enviar via URL direta
+                # Fallback via bytes em mem├│ria (BytesIO) se a Meta falhar no download direto
+                # Inclus├úo de 'capability' pois alguns Apps n├úo podem enviar via URL direta
                 if any(k in msg.lower() for k in ['problem', 'download', 'failed', 'could not', 'capability']):
-                    self._log("⚠️ Meta falhou ao baixar URL. Tentando fallback via download local (5 estratégias)...")
+                    self._log("ÔÜá´©Å Meta falhou ao baixar URL. Tentando fallback via download local (5 estrat├®gias)...")
                     tmp_path = os.path.join(tempfile.gettempdir(), f"img_fallback_{int(time.time())}.jpg")
                     try:
                         if self._download_file(url, tmp_path):
-                            self._log(f"📤 Fazendo upload de imagem: {os.path.basename(tmp_path)}...")
+                            self._log(f"­ƒôñ Fazendo upload de imagem: {os.path.basename(tmp_path)}...")
                             try:
                                 image_hash = self.upload_image(tmp_path)
                                 return image_hash
@@ -657,26 +666,26 @@ class MetaUploader:
                                 if os.path.exists(tmp_path):
                                     os.unlink(tmp_path)
                         else:
-                            raise Exception("Download da imagem falhou em todas as 5 estratégias do Drive")
+                            raise Exception("Download da imagem falhou em todas as 5 estrat├®gias do Drive")
                     except Exception as ex:
-                        self._log(f"❌ Falha no fallback de download local: {str(ex)}")
+                        self._log(f"ÔØî Falha no fallback de download local: {str(ex)}")
                         if os.path.exists(tmp_path):
                             os.unlink(tmp_path)
                         raise ex
                 raise Exception(msg)
             
             images = result.get('images', {})
-            if not images: raise Exception("Meta não retornou hash da imagem")
+            if not images: raise Exception("Meta n├úo retornou hash da imagem")
             return list(images.values())[0].get('hash')
 
         image_hash = self._with_retry(f"Upload imagem via URL", _do)
-        self._log(f"✅ Imagem via URL vinculada (hash: {image_hash[:12]}...)")
+        self._log(f"Ô£à Imagem via URL vinculada (hash: {image_hash[:12]}...)")
         return image_hash
 
     def upload_video_url(self, url):
-        """Upload de vídeo via URL (parâmetro file_url da Meta) com fallback local robusto."""
+        """Upload de v├¡deo via URL (par├ómetro file_url da Meta) com fallback local robusto."""
         url = self._normalize_drive_link(url)
-        self._log(f"🔗 Enviando URL de vídeo para a Meta: {url[:60]}...")
+        self._log(f"­ƒöù Enviando URL de v├¡deo para a Meta: {url[:60]}...")
         
         api_url = f"https://graph.facebook.com/v22.0/{self.account_id}/advideos"
         
@@ -685,51 +694,51 @@ class MetaUploader:
             result = resp.json()
             if 'error' in result:
                 msg = result['error'].get('message', '')
-                # Fallback se a Meta não conseguir baixar o arquivo
+                # Fallback se a Meta n├úo conseguir baixar o arquivo
                 if any(k in msg.lower() for k in ['problem', 'download', 'failed', 'could not', 'capability']):
-                    self._log("⚠️ Meta falhou ao baixar vídeo. Baixando localmente para fallback...")
+                    self._log("ÔÜá´©Å Meta falhou ao baixar v├¡deo. Baixando localmente para fallback...")
                     tmp_path = os.path.join(tempfile.gettempdir(), f"vid_{int(time.time())}.mp4")
                     if self._download_file(url, tmp_path):
-                        # Validar que o arquivo tem conteúdo real (evita crash do SDK com 0KB)
+                        # Validar que o arquivo tem conte├║do real (evita crash do SDK com 0KB)
                         file_size = os.path.getsize(tmp_path)
-                        if file_size < 1024:  # < 1KB = arquivo inválido
-                            self._log(f"❌ Arquivo de vídeo baixado tem apenas {file_size} bytes — inválido.")
+                        if file_size < 1024:  # < 1KB = arquivo inv├ílido
+                            self._log(f"ÔØî Arquivo de v├¡deo baixado tem apenas {file_size} bytes ÔÇö inv├ílido.")
                             if os.path.exists(tmp_path):
                                 os.unlink(tmp_path)
-                            raise Exception(f"Download do vídeo retornou arquivo inválido ({file_size} bytes)")
+                            raise Exception(f"Download do v├¡deo retornou arquivo inv├ílido ({file_size} bytes)")
                         try:
                             # Extrair thumbnail AGORA, enquanto temos o arquivo local
                             thumb_hash = self.extract_video_thumbnail(tmp_path)
                             if thumb_hash:
-                                self._log("✅ Thumbnail extraída do arquivo local do vídeo.")
+                                self._log("Ô£à Thumbnail extra├¡da do arquivo local do v├¡deo.")
                                 self._pending_thumb_hash = thumb_hash
                             
                             res = self.upload_video(tmp_path)
                             return res
                         finally:
-                            # Deletar arquivo temporário do vídeo após upload
+                            # Deletar arquivo tempor├írio do v├¡deo ap├│s upload
                             if os.path.exists(tmp_path):
                                 os.unlink(tmp_path)
-                                self._log(f"🗑️ Arquivo temporário de vídeo deletado.")
+                                self._log(f"­ƒùæ´©Å Arquivo tempor├írio de v├¡deo deletado.")
                 raise Exception(msg)
             return result.get('id')
 
         self._pending_thumb_hash = None  # Resetar antes de cada upload
-        video_id = self._with_retry(f"Upload vídeo via URL", _do)
-        self._log(f"✅ Vídeo via URL vinculado (ID: {video_id})")
+        video_id = self._with_retry(f"Upload v├¡deo via URL", _do)
+        self._log(f"Ô£à V├¡deo via URL vinculado (ID: {video_id})")
         return video_id
 
     def extract_video_thumbnail(self, video_path):
         """
-        Extrai um frame do vídeo como thumbnail usando ffmpeg.
+        Extrai um frame do v├¡deo como thumbnail usando ffmpeg.
         Retorna o image_hash da thumbnail ou None se falhar.
         """
         try:
             import subprocess
             thumb_path = os.path.join(tempfile.gettempdir(), f"thumb_{int(time.time())}.jpg")
             
-            # Extrair frame no segundo 1 do vídeo
-            # -ss APÓS -i para garantir compatibilidade com todos os formatos
+            # Extrair frame no segundo 1 do v├¡deo
+            # -ss AP├ôS -i para garantir compatibilidade com todos os formatos
             cmd = [
                 'ffmpeg', '-y',
                 '-i', video_path,
@@ -742,7 +751,7 @@ class MetaUploader:
             result = subprocess.run(cmd, capture_output=True, timeout=60)
             
             if result.returncode == 0 and os.path.exists(thumb_path) and os.path.getsize(thumb_path) > 0:
-                self._log("🖼️ Thumbnail extraída do vídeo via ffmpeg.")
+                self._log("­ƒû╝´©Å Thumbnail extra├¡da do v├¡deo via ffmpeg.")
                 try:
                     image_hash = self.upload_image(thumb_path)
                     return image_hash
@@ -751,31 +760,31 @@ class MetaUploader:
                         os.unlink(thumb_path)
             else:
                 stderr = result.stderr.decode('utf-8', errors='replace') if result.stderr else 'sem output'
-                # Mostrar as últimas linhas relevantes do stderr para debug
+                # Mostrar as ├║ltimas linhas relevantes do stderr para debug
                 error_lines = [l for l in stderr.split('\n') if l.strip() and not l.strip().startswith('ffmpeg version')]
                 error_msg = '\n'.join(error_lines[-3:]) if error_lines else stderr[:200]
-                self._log(f"⚠️ ffmpeg falhou ao extrair thumbnail: {error_msg[:200]}")
+                self._log(f"ÔÜá´©Å ffmpeg falhou ao extrair thumbnail: {error_msg[:200]}")
                 return None
         except FileNotFoundError:
-            self._log("⚠️ ffmpeg não encontrado no sistema. Thumbnail automática não disponível.")
+            self._log("ÔÜá´©Å ffmpeg n├úo encontrado no sistema. Thumbnail autom├ítica n├úo dispon├¡vel.")
             return None
         except subprocess.TimeoutExpired:
-            self._log("⚠️ ffmpeg timeout ao extrair thumbnail (>60s).")
+            self._log("ÔÜá´©Å ffmpeg timeout ao extrair thumbnail (>60s).")
             return None
         except Exception as e:
-            self._log(f"⚠️ Erro ao extrair thumbnail: {e}")
+            self._log(f"ÔÜá´©Å Erro ao extrair thumbnail: {e}")
             return None
 
     def extract_video_thumbnail_from_id(self, video_id):
         """
-        Consulta a Meta API para obter a URL de download do vídeo,
+        Consulta a Meta API para obter a URL de download do v├¡deo,
         baixa localmente e extrai um frame como thumbnail.
         Retorna image_hash ou None se falhar.
         """
         try:
-            self._log(f"🎬 Buscando URL do vídeo {video_id} para extrair thumbnail...")
+            self._log(f"­ƒÄ¼ Buscando URL do v├¡deo {video_id} para extrair thumbnail...")
             
-            # Consultar a Meta API para obter a URL de download do vídeo
+            # Consultar a Meta API para obter a URL de download do v├¡deo
             url = f"https://graph.facebook.com/v22.0/{video_id}"
             params = {
                 'fields': 'source',
@@ -784,11 +793,11 @@ class MetaUploader:
             resp = requests.get(url, params=params).json()
             
             if 'error' in resp or 'source' not in resp:
-                self._log(f"⚠️ Não foi possível obter URL do vídeo: {resp.get('error', {}).get('message', 'sem source')}")
+                self._log(f"ÔÜá´©Å N├úo foi poss├¡vel obter URL do v├¡deo: {resp.get('error', {}).get('message', 'sem source')}")
                 return None
             
             video_url = resp['source']
-            self._log(f"⬇️ Baixando vídeo para extração de thumbnail...")
+            self._log(f"Ô¼ç´©Å Baixando v├¡deo para extra├º├úo de thumbnail...")
             
             tmp_vid = os.path.join(tempfile.gettempdir(), f"vid_thumb_{int(time.time())}.mp4")
             if self._download_file(video_url, tmp_vid):
@@ -798,16 +807,16 @@ class MetaUploader:
                     if os.path.exists(tmp_vid):
                         os.unlink(tmp_vid)
             else:
-                self._log("⚠️ Falha ao baixar vídeo para extração de thumbnail.")
+                self._log("ÔÜá´©Å Falha ao baixar v├¡deo para extra├º├úo de thumbnail.")
                 return None
         except Exception as e:
-            self._log(f"⚠️ Erro em extract_video_thumbnail_from_id: {e}")
+            self._log(f"ÔÜá´©Å Erro em extract_video_thumbnail_from_id: {e}")
             return None
 
     def upload_image(self, file_path):
         """Upload de imagem para a conta. Retorna image_hash."""
         filename = os.path.basename(file_path)
-        self._log(f"📤 Fazendo upload de imagem: {filename}...")
+        self._log(f"­ƒôñ Fazendo upload de imagem: {filename}...")
 
         def _do():
             image = AdImage(parent_id=self.account_id)
@@ -816,112 +825,34 @@ class MetaUploader:
             return image[AdImage.Field.hash]
 
         image_hash = self._with_retry(f"Upload imagem '{filename}'", _do)
-        self._log(f"✅ Imagem '{filename}' enviada (hash: {image_hash[:12]}...)")
+        self._log(f"Ô£à Imagem '{filename}' enviada (hash: {image_hash[:12]}...)")
         return image_hash
 
     def upload_video(self, file_path):
-        """
-        Upload de vídeo para a conta de forma resiliente, usando Resumable Chunked Uploads
-        (Start -> Transfer -> Finish). Evita timeouts da VPS em vídeos grandes.
-        Retorna video_id.
-        """
+        """Upload de v├¡deo para a conta. Retorna video_id."""
         filename = os.path.basename(file_path)
-        file_size = os.path.getsize(file_path)
-        self._log(f"📤 Iniciando upload de vídeo (Chunked): {filename} ({file_size / 1024 / 1024:.1f} MB)...")
+        self._log(f"­ƒôñ Fazendo upload de v├¡deo: {filename}...")
 
         def _do():
-            # 1. START PHASE
-            self._log(f"   → Fase 1/3: START")
-            start_url = f"https://graph.facebook.com/v22.0/{self.account_id}/advideos"
-            start_data = {
-                'upload_phase': 'start',
-                'file_size': file_size,
-                'access_token': self.access_token
-            }
-            start_resp = requests.post(start_url, data=start_data, timeout=30).json()
-            if 'error' in start_resp:
-                raise Exception(f"Erro no START: {start_resp['error'].get('message')}")
-            
-            upload_session_id = start_resp.get('upload_session_id')
-            video_id = start_resp.get('video_id')
-            start_offset = int(start_resp.get('start_offset', 0))
-            end_offset = int(start_resp.get('end_offset', 0))
+            video = AdVideo(parent_id=self.account_id)
+            video[AdVideo.Field.filepath] = file_path
+            video.remote_create()
+            return video.get_id()
 
-            if not upload_session_id:
-                raise Exception("API não retornou upload_session_id no START.")
-
-            # 2. TRANSFER PHASE
-            self._log(f"   → Fase 2/3: TRANSFER (Sessão: {upload_session_id})")
-            
-            with open(file_path, 'rb') as f:
-                while start_offset < file_size:
-                    chunk_size = end_offset - start_offset
-                    f.seek(start_offset)
-                    chunk_data = f.read(chunk_size)
-
-                    pct = (start_offset / file_size) * 100
-                    self._log(f"      - Enviando offset {start_offset} até {end_offset} ({pct:.1f}%)...")
-
-                    transfer_data = {
-                        'upload_phase': 'transfer',
-                        'upload_session_id': upload_session_id,
-                        'start_offset': start_offset,
-                        'access_token': self.access_token
-                    }
-                    files = {'video_file_chunk': chunk_data}
-
-                    # Retry local para o chunk
-                    chunk_attempts = 3
-                    for attempt in range(1, chunk_attempts + 1):
-                        try:
-                            # Timeout maior (60s) só para esse pedaço
-                            t_resp = requests.post(start_url, data=transfer_data, files=files, timeout=60).json()
-                            if 'error' in t_resp:
-                                raise Exception(t_resp['error'].get('message', 'Erro no chunk'))
-                            
-                            start_offset = int(t_resp.get('start_offset'))
-                            end_offset = int(t_resp.get('end_offset'))
-                            break # Chunk enviado com sucesso
-                        except Exception as e_chunk:
-                            if attempt == chunk_attempts:
-                                raise Exception(f"Falha ao enviar chunk após {chunk_attempts} tentativas: {e_chunk}")
-                            self._log(f"      ⚠️ Falha no chunk. Retentando ({attempt}/{chunk_attempts})...")
-                            time.sleep(2)
-
-            # 3. FINISH PHASE
-            self._log(f"   → Fase 3/3: FINISH")
-            finish_data = {
-                'upload_phase': 'finish',
-                'upload_session_id': upload_session_id,
-                'access_token': self.access_token
-            }
-            # Se a Meta preferir o título do arquivo
-            finish_data['title'] = filename
-
-            f_resp = requests.post(start_url, data=finish_data, timeout=60).json()
-            if 'error' in f_resp:
-                raise Exception(f"Erro no FINISH: {f_resp['error'].get('message')}")
-
-            if f_resp.get('success'):
-                # O video_id já foi obtido no start
-                return video_id
-            else:
-                raise Exception("API não confirmou sucesso no FINISH.")
-
-        video_id = self._with_retry(f"Upload vídeo Chunked '{filename}'", _do)
-        self._log(f"✅ Vídeo '{filename}' enviado com sucesso (ID: {video_id})")
+        video_id = self._with_retry(f"Upload v├¡deo '{filename}'", _do)
+        self._log(f"Ô£à V├¡deo '{filename}' enviado (ID: {video_id})")
         return video_id
 
     def upload_media(self, file_path=None, url=None):
         """
-        Upload de mídia (imagem ou vídeo), seja via arquivo local ou URL.
-        Detecta tipo proativamente via extensão ou cabeçalhos HTTP.
+        Upload de m├¡dia (imagem ou v├¡deo), seja via arquivo local ou URL.
+        Detecta tipo proativamente via extens├úo ou cabe├ºalhos HTTP.
         """
         # Se for URL
         if url:
             norm_url = self._normalize_drive_link(url)
             
-            # Tentar detectar tipo via extensão primeiro
+            # Tentar detectar tipo via extens├úo primeiro
             ext = os.path.splitext(norm_url.split('?')[0])[1].lower()
             video_exts = {'.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v', '.gif'}
             image_exts = {'.jpg', '.jpeg', '.png', '.webp', '.heic'}
@@ -930,7 +861,7 @@ class MetaUploader:
             if ext in video_exts: media_type = 'video'
             elif ext in image_exts: media_type = 'image'
 
-            # Se não detectou (ex: Drive link), fazer uma requisição HEAD para ver o Content-Type
+            # Se n├úo detectou (ex: Drive link), fazer uma requisi├º├úo HEAD para ver o Content-Type
             if not media_type or 'drive.google.com' in norm_url:
                 try:
                     head = requests.head(norm_url, allow_redirects=True, timeout=5)
@@ -940,7 +871,7 @@ class MetaUploader:
                 except Exception:
                     pass
             
-            # Fallback final: se ainda não sabe, tenta vídeo primeiro (comportamento atual, mas mais seguro)
+            # Fallback final: se ainda n├úo sabe, tenta v├¡deo primeiro (comportamento atual, mas mais seguro)
             if media_type == 'video' or (not media_type and 'drive.google.com' in norm_url):
                 try:
                     video_id = self.upload_video_url(url)
@@ -948,7 +879,7 @@ class MetaUploader:
                     thumb_hash = getattr(self, '_pending_thumb_hash', None)
                     return {'type': 'video', 'id': video_id, 'hash': None, 'thumb_hash': thumb_hash, 'source_url': url}
                 except Exception as e:
-                    # Se falhar como vídeo e o erro sugerir que é imagem, tenta imagem
+                    # Se falhar como v├¡deo e o erro sugerir que ├® imagem, tenta imagem
                     if 'image' in str(e).lower() or 'not a video' in str(e).lower():
                          image_hash = self.upload_image_url(url)
                          return {'type': 'image', 'hash': image_hash, 'id': None, 'source_url': url}
@@ -963,10 +894,10 @@ class MetaUploader:
             video_exts = {'.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v', '.gif'}
 
             if ext in video_exts:
-                # Extrair thumbnail ANTES de subir o vídeo (temos o arquivo local)
+                # Extrair thumbnail ANTES de subir o v├¡deo (temos o arquivo local)
                 thumb_hash = self.extract_video_thumbnail(file_path)
                 if thumb_hash:
-                    self._log("✅ Thumbnail extraída do arquivo local de vídeo.")
+                    self._log("Ô£à Thumbnail extra├¡da do arquivo local de v├¡deo.")
                 video_id = self.upload_video(file_path)
                 return {'type': 'video', 'id': video_id, 'hash': None, 'thumb_hash': thumb_hash}
             else:
@@ -977,10 +908,10 @@ class MetaUploader:
 
     def wait_for_video_ready(self, video_id, timeout=120, interval=10):
         """
-        Consulta o status do vídeo na Meta API até que esteja 'ready' ou atinja o timeout.
-        Evita erro de 'arquivo inválido' ao criar criativos imediatamente após upload.
+        Consulta o status do v├¡deo na Meta API at├® que esteja 'ready' ou atinja o timeout.
+        Evita erro de 'arquivo inv├ílido' ao criar criativos imediatamente ap├│s upload.
         """
-        self._log(f"⏳ Consultando processamento do vídeo {video_id}...")
+        self._log(f"ÔÅ│ Consultando processamento do v├¡deo {video_id}...")
         start_time = time.time()
         
         while time.time() - start_time < timeout:
@@ -994,7 +925,7 @@ class MetaUploader:
                 resp = requests.get(url, params=params).json()
                 
                 if 'error' in resp:
-                    self._log(f"⚠️ Erro ao consultar status: {resp['error'].get('message')}")
+                    self._log(f"ÔÜá´©Å Erro ao consultar status: {resp['error'].get('message')}")
                     time.sleep(interval)
                     continue
 
@@ -1002,29 +933,29 @@ class MetaUploader:
                 video_status = status_data.get('video_status')
 
                 if video_status == 'ready':
-                    self._log(f"✅ Vídeo {video_id} processado e pronto para uso.")
+                    self._log(f"Ô£à V├¡deo {video_id} processado e pronto para uso.")
                     return True
                 elif video_status == 'error':
                     err_msg = status_data.get('error_description', 'Erro de processamento na Meta')
-                    self._log(f"❌ Erro no processamento do vídeo: {err_msg}")
+                    self._log(f"ÔØî Erro no processamento do v├¡deo: {err_msg}")
                     return False
                 
-                self._log(f"   → Status: {video_status}. Aguardando {interval}s...")
+                self._log(f"   ÔåÆ Status: {video_status}. Aguardando {interval}s...")
                 time.sleep(interval)
                 
             except Exception as e:
-                self._log(f"⚠️ Falha na chamada de polling: {e}")
+                self._log(f"ÔÜá´©Å Falha na chamada de polling: {e}")
                 time.sleep(interval)
 
-        self._log(f"⚠️ Timeout de {timeout}s atingido. Prosseguindo com cautela...")
+        self._log(f"ÔÜá´©Å Timeout de {timeout}s atingido. Prosseguindo com cautela...")
         return False
 
     def wait_for_image_ready(self, image_hash, timeout=60, interval=5):
         """
-        Consulta o status da imagem na Meta API até que esteja 'ACTIVE'.
-        Embora imagens sejam processadas rápido, garante proatividade em URLs lentas.
+        Consulta o status da imagem na Meta API at├® que esteja 'ACTIVE'.
+        Embora imagens sejam processadas r├ípido, garante proatividade em URLs lentas.
         """
-        self._log(f"⏳ Verificando disponibilidade da imagem {image_hash[:12]}...")
+        self._log(f"ÔÅ│ Verificando disponibilidade da imagem {image_hash[:12]}...")
         start_time = time.time()
         
         while time.time() - start_time < timeout:
@@ -1039,7 +970,7 @@ class MetaUploader:
                 resp = requests.get(url, params=params).json()
                 
                 if 'error' in resp:
-                    self._log(f"⚠️ Erro ao consultar imagem: {resp['error'].get('message')}")
+                    self._log(f"ÔÜá´©Å Erro ao consultar imagem: {resp['error'].get('message')}")
                     time.sleep(interval)
                     continue
 
@@ -1047,19 +978,19 @@ class MetaUploader:
                 if images:
                     img_status = images[0].get('status')
                     if img_status == 'ACTIVE':
-                        self._log(f"✅ Imagem {image_hash[:12]} está ativa e pronta.")
+                        self._log(f"Ô£à Imagem {image_hash[:12]} est├í ativa e pronta.")
                         return True
-                    self._log(f"   → Status: {img_status}. Aguardando {interval}s...")
+                    self._log(f"   ÔåÆ Status: {img_status}. Aguardando {interval}s...")
                 else:
-                    self._log(f"   → Imagem ainda não indexada. Aguardando {interval}s...")
+                    self._log(f"   ÔåÆ Imagem ainda n├úo indexada. Aguardando {interval}s...")
 
                 time.sleep(interval)
                 
             except Exception as e:
-                self._log(f"⚠️ Falha na chamada de polling de imagem: {e}")
+                self._log(f"ÔÜá´©Å Falha na chamada de polling de imagem: {e}")
                 time.sleep(interval)
 
-        self._log(f"⚠️ Timeout atingido para imagem. Prosseguindo...")
+        self._log(f"ÔÜá´©Å Timeout atingido para imagem. Prosseguindo...")
         return False
 
     # ======================== CREATIVE COM ASSET CUSTOMIZATION ========================
@@ -1072,17 +1003,17 @@ class MetaUploader:
                                          lead_gen_form_id=None):
         """
         Cria AdCreative via REST API direta.
-        Estratégia 1: asset_feed_spec com asset_customization_rules (feed+stories)
-        Estratégia 2 (fallback): link_data simples (1 imagem para todos os placements)
-        Retorna o ID numérico do creative criado.
+        Estrat├®gia 1: asset_feed_spec com asset_customization_rules (feed+stories)
+        Estrat├®gia 2 (fallback): link_data simples (1 imagem para todos os placements)
+        Retorna o ID num├®rico do creative criado.
         """
         import json
 
-        self._log("🎨 Criando AdCreative...")
+        self._log("­ƒÄ¿ Criando AdCreative...")
 
         # Fallback Logic
         if not feed_media and not stories_media:
-             raise ValueError("Nenhuma mídia fornecida para criar o criativo.")
+             raise ValueError("Nenhuma m├¡dia fornecida para criar o criativo.")
         if not feed_media:
             feed_media = stories_media
         if not stories_media:
@@ -1104,14 +1035,14 @@ class MetaUploader:
             for k, v in payload_dict.items():
                 post_data[k] = json.dumps(v) if isinstance(v, (dict, list)) else v
 
-            # Polling de segurança para mídias: Garante que a Meta processou tudo
+            # Polling de seguran├ºa para m├¡dias: Garante que a Meta processou tudo
             video_ids = []
             image_hashes = []
 
-            # Detectar vídeos e imagens no payload
+            # Detectar v├¡deos e imagens no payload
             id_str = str(payload_dict)
             
-            # Polling de Vídeos
+            # Polling de V├¡deos
             if 'videos' in payload_dict:
                 video_ids = [v.get('video_id') for v in payload_dict['videos'] if v.get('video_id')]
             elif 'object_story_spec' in payload_dict:
@@ -1130,7 +1061,7 @@ class MetaUploader:
                 if vd.get('image_hash'):
                     image_hashes.append(vd['image_hash'])
 
-            # Aguardar mídias
+            # Aguardar m├¡dias
             for vid in video_ids:
                 self.wait_for_video_ready(vid)
             
@@ -1150,18 +1081,18 @@ class MetaUploader:
                     f"Title: {error.get('error_user_title', 'N/A')}, "
                     f"UserMsg: {error.get('error_user_msg', 'N/A')}"
                 )
-                print(f"❌ [{label}] API Error Detail: {json.dumps(result, indent=2, ensure_ascii=False)}")
-                self._log(f"❌ [{label}] Falha: {error.get('message', '?')} ({error.get('error_user_msg', 'N/A')})")
+                print(f"ÔØî [{label}] API Error Detail: {json.dumps(result, indent=2, ensure_ascii=False)}")
+                self._log(f"ÔØî [{label}] Falha: {error.get('message', '?')} ({error.get('error_user_msg', 'N/A')})")
                 return None, error.get('message', 'Unknown error')
 
             creative_id = result.get('id')
             if creative_id:
-                print(f"✅ [{label}] Creative criado: {creative_id}")
+                print(f"Ô£à [{label}] Creative criado: {creative_id}")
             return creative_id, None
 
-        # ===== ESTRATÉGIA 1: asset_feed_spec (Completa com Customização) =====
+        # ===== ESTRAT├ëGIA 1: asset_feed_spec (Completa com Customiza├º├úo) =====
         def try_complex_creative():
-            self._log("📋 Tentando criativo completo (asset_feed_spec)...")
+            self._log("­ƒôï Tentando criativo completo (asset_feed_spec)...")
             payload = self._build_creative_payload(
                 page_id=page_id,
                 feed_media=feed_media,
@@ -1177,9 +1108,9 @@ class MetaUploader:
             creative_id, error = _post_creative(payload, "complex")
             return creative_id, error
 
-        # ===== ESTRATÉGIA 2: link_data ou video_data (Fallback) =====
+        # ===== ESTRAT├ëGIA 2: link_data ou video_data (Fallback) =====
         def try_simple_creative():
-            self._log("📋 Tentando criativo simples (link_data/video_data) como fallback...")
+            self._log("­ƒôï Tentando criativo simples (link_data/video_data) como fallback...")
             
             cta_payload = {
                 'type': cta_type,
@@ -1193,7 +1124,7 @@ class MetaUploader:
             object_story_spec = {'page_id': page_id}
             
             if feed_media['type'] == 'video':
-                # Para vídeo, usamos video_data
+                # Para v├¡deo, usamos video_data
                 video_payload = {
                     'video_id': feed_media['id'],
                     'message': body_text,
@@ -1205,16 +1136,16 @@ class MetaUploader:
                 # Prioridade 1: usar imagem do par (stories_media)
                 if stories_media and stories_media['type'] == 'image':
                     video_payload['image_hash'] = stories_media['hash']
-                    self._log("🖼️ Usando imagem do Stories como thumbnail para o vídeo de Feed.")
+                    self._log("­ƒû╝´©Å Usando imagem do Stories como thumbnail para o v├¡deo de Feed.")
                 
-                # Prioridade 2: usar thumbnail já extraída durante o upload (do arquivo local do Drive)
+                # Prioridade 2: usar thumbnail j├í extra├¡da durante o upload (do arquivo local do Drive)
                 elif feed_media.get('thumb_hash'):
                     video_payload['image_hash'] = feed_media['thumb_hash']
-                    self._log("✅ Usando thumbnail extraída durante o upload do vídeo.")
+                    self._log("Ô£à Usando thumbnail extra├¡da durante o upload do v├¡deo.")
                 
                 # Prioridade 3: baixar do Drive novamente para extrair thumbnail (evita baixar do Facebook)
                 elif feed_media.get('source_url'):
-                    self._log("🔍 Extraindo thumbnail do vídeo via link original do Drive...")
+                    self._log("­ƒöì Extraindo thumbnail do v├¡deo via link original do Drive...")
                     try:
                         tmp_vid = os.path.join(tempfile.gettempdir(), f"vid_thumb_{int(time.time())}.mp4")
                         if self._download_file(feed_media['source_url'], tmp_vid):
@@ -1222,18 +1153,18 @@ class MetaUploader:
                                 thumb_hash = self.extract_video_thumbnail(tmp_vid)
                                 if thumb_hash:
                                     video_payload['image_hash'] = thumb_hash
-                                    self._log("✅ Thumbnail gerada do link original do Drive.")
+                                    self._log("Ô£à Thumbnail gerada do link original do Drive.")
                                 else:
-                                    self._log("⚠️ ffmpeg não conseguiu extrair thumbnail do vídeo.")
+                                    self._log("ÔÜá´©Å ffmpeg n├úo conseguiu extrair thumbnail do v├¡deo.")
                             finally:
                                 if os.path.exists(tmp_vid):
                                     os.unlink(tmp_vid)
-                                    self._log("🗑️ Arquivo temporário de thumbnail deletado.")
+                                    self._log("­ƒùæ´©Å Arquivo tempor├írio de thumbnail deletado.")
                     except Exception as te:
-                        self._log(f"⚠️ Erro ao extrair thumbnail via Drive: {te}")
+                        self._log(f"ÔÜá´©Å Erro ao extrair thumbnail via Drive: {te}")
                 
                 else:
-                    self._log("⚠️ Sem thumbnail disponível. Criativo pode ser rejeitado pelo Instagram.")
+                    self._log("ÔÜá´©Å Sem thumbnail dispon├¡vel. Criativo pode ser rejeitado pelo Instagram.")
                 
                 object_story_spec['video_data'] = video_payload
             else:
@@ -1258,7 +1189,7 @@ class MetaUploader:
             
             # Se IG falhou, tenta sem
             if not creative_id and instagram_user_id and 'instagram' in (error or '').lower():
-                self._log("⚠️ Removendo instagram_user_id e tentando novamente...")
+                self._log("ÔÜá´©Å Removendo instagram_user_id e tentando novamente...")
                 del object_story_spec['instagram_user_id']
                 creative_id, error = _post_creative(payload, "simple-ig")
 
@@ -1273,10 +1204,10 @@ class MetaUploader:
             cid, err = try_simple_creative()
             if cid: return cid
             
-            raise Exception(f"Criação de criativo falhou em todas as estratégias. Último erro: {err}")
+            raise Exception(f"Cria├º├úo de criativo falhou em todas as estrat├®gias. ├Ültimo erro: {err}")
 
         creative_id = self._with_retry("Criar AdCreative", _do)
-        self._log(f"✅ AdCreative criado (ID: {creative_id})")
+        self._log(f"Ô£à AdCreative criado (ID: {creative_id})")
         return creative_id
 
     def _build_creative_payload(self, page_id, feed_media, stories_media,
@@ -1301,9 +1232,17 @@ class MetaUploader:
             if media['type'] == 'image':
                 images.append({'hash': media['hash'], 'adlabels': [{'name': label}]})
             elif media['type'] == 'video':
-                # NOTA: asset_feed_spec NÃO aceita image_hash dentro de videos[]
-                # A Meta gera thumbnails automaticamente para vídeos nesse formato
                 video_data = {'video_id': media['id'], 'adlabels': [{'name': label}]}
+                # Proatividade: Tentar fornecer thumbnail se a m├¡dia oposta for imagem
+                other_media = stories_media if label == FEED_LABEL else feed_media
+                if other_media and other_media['type'] == 'image':
+                    video_data['image_hash'] = other_media['hash']
+                    self._log(f"­ƒû╝´©Å Thumbnail para v├¡deo {label} linkada ├á imagem do par.")
+                # Se n├úo tem imagem do par, usar thumb_hash extra├¡da durante upload
+                elif media.get('thumb_hash'):
+                    video_data['image_hash'] = media['thumb_hash']
+                    self._log(f"Ô£à Thumbnail auto-gerada usada para v├¡deo {label}.")
+                
                 videos.append(video_data)
 
         add_media(feed_media, FEED_LABEL)
@@ -1339,8 +1278,8 @@ class MetaUploader:
         link_url_payload = {'website_url': link_url}
         if lead_gen_form_id:
             link_url_payload['lead_gen_form_id'] = lead_gen_form_id
-            # Para Lead Ads, website_url deve ser a URL da página ou omitido em alguns contextos
-            # Mas na Graph API v18+, website_url é aceito como destino opcional
+            # Para Lead Ads, website_url deve ser a URL da p├ígina ou omitido em alguns contextos
+            # Mas na Graph API v18+, website_url ├® aceito como destino opcional
             if '//' in link_url:
                 link_url_payload['display_url'] = link_url.split('//')[1].split('/')[0]
 
@@ -1352,10 +1291,10 @@ class MetaUploader:
             'asset_customization_rules': [feed_rule, stories_rule],
         }
         
-        # Adicionar descrições apenas se houver algo para não poluir
+        # Adicionar descri├º├Áes apenas se houver algo para n├úo poluir
         asset_feed_spec['descriptions'] = [{'text': ' '}]
 
-        # Definir formatos e mídias
+        # Definir formatos e m├¡dias
         formats = []
         if images: 
             formats.append('SINGLE_IMAGE')
@@ -1376,13 +1315,13 @@ class MetaUploader:
             'object_story_spec': object_story_spec,
             'degrees_of_freedom_spec': {
                 'creative_features_spec': {
-                    # Desativados por solicitação (2026-02-18):
+                    # Desativados por solicita├º├úo (2026-02-18):
                     # "Melhorias no texto" = text_optimizations
                     # "Aprimorar CTA"      = enhance_cta
                     'text_optimizations': {'enroll_status': 'OPT_OUT'},
                     'enhance_cta': {'enroll_status': 'OPT_OUT'},
                     # Os demais (image_template, image_touchups, video_auto_crop, inline_comment)
-                    # ficam sem especificação = comportamento padrão da Meta
+                    # ficam sem especifica├º├úo = comportamento padr├úo da Meta
                 },
             },
         }
@@ -1395,13 +1334,13 @@ class MetaUploader:
 
     def create_ad(self, adset_id, creative_id, ad_name, pixel_id=None):
         """Cria um Ad via REST API direta. Status PAUSED."""
-        self._log(f"📌 Criando Ad '{ad_name}' (status: PAUSED)...")
+        self._log(f"­ƒôî Criando Ad '{ad_name}' (status: PAUSED)...")
 
         def _do():
             import json
             url = f"https://graph.facebook.com/v22.0/{self.account_id}/ads"
             
-            # creative_id DEVE ser número (int), não string
+            # creative_id DEVE ser n├║mero (int), n├úo string
             try:
                 cid = int(creative_id)
             except (ValueError, TypeError):
@@ -1420,14 +1359,14 @@ class MetaUploader:
                     {'action.type': 'offsite_conversion', 'fb_pixel': [pixel_id]}
                 ])
 
-            self._log(f"   → adset_id={adset_id}, creative_id={cid}, pixel_id={pixel_id}")
+            self._log(f"   ÔåÆ adset_id={adset_id}, creative_id={cid}, pixel_id={pixel_id}")
             
             # Log completo dos params (sem access_token)
             debug_data = {k: v for k, v in post_data.items() if k != 'access_token'}
-            print(f"🔍 [create_ad] Params enviados: {json.dumps(debug_data, indent=2)}")
+            print(f"­ƒöì [create_ad] Params enviados: {json.dumps(debug_data, indent=2)}")
             
             resp = requests.post(url, data=post_data).json()
-            print(f"🔍 [create_ad] Resposta completa: {json.dumps(resp, indent=2, ensure_ascii=False)}")
+            print(f"­ƒöì [create_ad] Resposta completa: {json.dumps(resp, indent=2, ensure_ascii=False)}")
 
             if 'error' in resp:
                 error = resp['error']
@@ -1438,7 +1377,7 @@ class MetaUploader:
                     f"Type: {error.get('type', '?')}, "
                     f"UserMsg: {error.get('error_user_msg', 'N/A')}"
                 )
-                self._log(f"❌ [create_ad] {error_detail}")
+                self._log(f"ÔØî [create_ad] {error_detail}")
                 raise Exception(f"Ad falhou: {error.get('message', 'Unknown')}")
 
             ad_id = resp.get('id')
@@ -1447,14 +1386,14 @@ class MetaUploader:
             return ad_id
 
         ad_id = self._with_retry(f"Criar Ad '{ad_name}'", _do)
-        self._log(f"✅ Ad '{ad_name}' criado com sucesso (ID: {ad_id}) — PAUSADO")
+        self._log(f"Ô£à Ad '{ad_name}' criado com sucesso (ID: {ad_id}) ÔÇö PAUSADO")
         return ad_id
 
     # ======================== DUPLICAR AD SET ========================
 
     def duplicate_adset(self, source_adset_id, new_name=None):
         """Duplica um Ad Set existente. Retorna o ID do novo Ad Set."""
-        self._log(f"📋 Duplicando Ad Set {source_adset_id}...")
+        self._log(f"­ƒôï Duplicando Ad Set {source_adset_id}...")
 
         def _do():
             source = AdSet(source_adset_id)
@@ -1464,34 +1403,30 @@ class MetaUploader:
             }
             if not new_name:
                 params['rename_options'] = {
-                    'rename_suffix': f' - Cópia {int(time.time())}',
+                    'rename_suffix': f' - C├│pia {int(time.time())}',
                 }
             result = source.create_copy(params=params)
             copied_id = result.get('copied_adset_id') or result.get('id')
 
-            # Forçar status PAUSED + renomear (create_copy nem sempre respeita status_option)
-            if copied_id:
+            # Renomear se new_name foi fornecido
+            if new_name and copied_id:
                 try:
-                    update_data = {
-                        'status': 'PAUSED',
-                        'access_token': self.access_token
-                    }
-                    if new_name:
-                        update_data['name'] = new_name
-
                     url = f"https://graph.facebook.com/v22.0/{copied_id}"
-                    resp = requests.post(url, data=update_data).json()
+                    resp = requests.post(url, data={
+                        'name': new_name,
+                        'access_token': self.access_token
+                    }).json()
                     if 'error' in resp:
-                        self._log(f"⚠️ Falha ao atualizar Ad Set: {resp['error'].get('message')}")
+                        self._log(f"ÔÜá´©Å Falha ao renomear Ad Set: {resp['error'].get('message')}")
                     else:
-                        self._log(f"✅ Ad Set configurado: PAUSED{' / ' + new_name if new_name else ''}")
+                        self._log(f"Ô£Å´©Å Ad Set renomeado para: {new_name}")
                 except Exception as e:
-                    self._log(f"⚠️ Erro ao atualizar Ad Set: {e}")
+                    self._log(f"ÔÜá´©Å Erro ao renomear: {e}")
 
             return copied_id
 
         adset_id = self._with_retry(f"Duplicar Ad Set", _do)
-        self._log(f"✅ Ad Set duplicado (novo ID: {adset_id})")
+        self._log(f"Ô£à Ad Set duplicado (novo ID: {adset_id})")
         return adset_id
 
     # ======================== PROCESSAR FILA ========================
@@ -1502,18 +1437,18 @@ class MetaUploader:
 
         queue_items: lista de dicts com {ad_name, feed_file_path, stories_file_path}
         global_config: dict com {url, utms, cta, textos, titulos, page_id}
-        adset_id: ID do conjunto de anúncios destino
+        adset_id: ID do conjunto de an├║ncios destino
 
         Retorna lista de resultados: [{ad_name, success, ad_id, error}]
         """
         results = []
         total = len(queue_items)
-        self._log(f"🚀 Lote iniciado — {total} anúncio(s) na fila")
+        self._log(f"­ƒÜÇ Lote iniciado ÔÇö {total} an├║ncio(s) na fila")
 
         for i, item in enumerate(queue_items, 1):
             ad_name = item.get('ad_name', f'Ad {i}')
             self._log(f"\n{'='*40}")
-            self._log(f"📦 Processando {i}/{total}: \"{ad_name}\"")
+            self._log(f"­ƒôª Processando {i}/{total}: \"{ad_name}\"")
 
             try:
                 # Upload feed media
@@ -1554,7 +1489,7 @@ class MetaUploader:
                 })
 
             except Exception as e:
-                self._log(f"❌ Erro fatal ao processar '{ad_name}': {str(e)[:200]}")
+                self._log(f"ÔØî Erro fatal ao processar '{ad_name}': {str(e)[:200]}")
                 results.append({
                     'ad_name': ad_name,
                     'success': False,
@@ -1570,6 +1505,6 @@ class MetaUploader:
         ok = sum(1 for r in results if r['success'])
         fail = sum(1 for r in results if not r['success'])
         self._log(f"\n{'='*40}")
-        self._log(f"🏁 Lote concluído: {ok} ✅ sucesso, {fail} ❌ erro(s)")
+        self._log(f"­ƒÅü Lote conclu├¡do: {ok} Ô£à sucesso, {fail} ÔØî erro(s)")
 
         return results

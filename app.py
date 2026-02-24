@@ -27,6 +27,9 @@ TOKEN_FILE = 'token.json'
 app = Flask(__name__, static_folder='static')
 app.secret_key = 'chave-secreta-optimizer-2024'
 
+from modules.optimization import optimization_bp
+app.register_blueprint(optimization_bp)
+
 VERSION = "v1.7.0"
 
 @app.context_processor
@@ -641,35 +644,6 @@ def duplicate_adset_route(campaign_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-@app.route('/account/<account_id>/otimizar')
-def otimizar_campanhas(account_id):
-    """Página principal do módulo de Otimização."""
-    access_token = obter_token()
-    if not access_token:
-        return redirect(url_for('pagina_login'))
-    
-    session['account_id'] = account_id
-    return render_template('optimizer.html', account_id=account_id)
-
-
-@app.route('/api/account/<account_id>/insights')
-def api_insights(account_id):
-    """Retorna dados de performance das campanhas."""
-    access_token = obter_token()
-    if not access_token:
-        return jsonify({'success': False, 'error': 'Não autenticado'}), 401
-    
-    date_preset = request.args.get('date_preset', 'today')
-    
-    try:
-        uploader = MetaUploader(account_id, access_token, APP_ID, APP_SECRET)
-        data = uploader.get_campaign_insights(date_preset=date_preset)
-        return jsonify({
-            'success': True,
-            'data': data
-        })
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/ping')
 def ping_vps():

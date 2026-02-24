@@ -230,21 +230,29 @@ def upload_single(campaign_id):
             
         print(f"Feed preparado: Video={bool(extracted_feed and extracted_feed.get('is_video'))}, Image={bool(extracted_feed and not extracted_feed.get('is_video'))}")
 
-        # Cria o anúncio!
-        ad_id = uploader.create_ad(
-            adset_id=adset_id,
+        # 1. Cria o Criativo
+        creative_id, error = uploader.create_creative_with_placements(
             page_id=page_id,
-            name=name,
             feed_media=extracted_feed,
             stories_media=extracted_stories,
             link_url=parsed_url,
-            bodies=[text] if text else [],
-            titles=[title] if title else [],
+            primary_texts=[text] if text else [],
+            headlines=[title] if title else [],
             cta_type=cta_type,
+            instagram_user_id=ig_id,
             url_tags=url_tags,
-            ig_id=ig_id,
-            pixel_id=pixel_id,
-            leadgen_form_id=leadgen_form_id
+            lead_gen_form_id=leadgen_form_id
+        )
+
+        if error or not creative_id:
+            raise Exception(f"Falha ao criar o criativo: {error}")
+
+        # 2. Cria o Anúncio vinculando ao Ad Set e ao Criativo gerado
+        ad_id = uploader.create_ad(
+            adset_id=adset_id,
+            creative_id=creative_id,
+            ad_name=name,
+            pixel_id=pixel_id
         )
 
         uploader._log(f"✅ Anúncio Criado. ID: {ad_id}")
