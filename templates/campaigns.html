@@ -3,7 +3,7 @@
 {% block title %}Campanhas — {{ account_id }}{% endblock %}
 
 {% block breadcrumb %}
-<a href="/">Contas</a> → Campanhas
+<a href="{{ url_for('listar_contas', next='upload') }}">Trocar Conta</a> / <span>Campanhas</span>
 {% endblock %}
 
 {% block content %}
@@ -11,8 +11,9 @@
     <div class="card-title">
         🚀 Campanhas
         <span class="badge badge-purple" id="campaign-count">{{ campaigns|length }} Encontradas</span>
-        <a href="/" style="margin-left: auto; color: var(--text-muted); text-decoration: none; font-size: 12px;">←
-            Voltar</a>
+        <a href="{{ url_for('listar_contas', next='upload') }}"
+            style="margin-left: auto; color: var(--text-muted); text-decoration: none; font-size: 12px;">←
+            Trocar Conta</a>
     </div>
     <div class="card-desc">
         Conta: <span style="font-family: var(--font-mono); color: var(--accent);">{{ account_id }}</span>

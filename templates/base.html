@@ -18,22 +18,19 @@
                 <span class="lightning-icon">⚡</span>
             </div>
             <nav class="sidebar-nav">
-                <a href="{{ url_for('listar_contas') }}"
-                    class="nav-item {% if request.endpoint == 'listar_contas' %}active{% endif %}" title="Contas">
-                    <span class="nav-icon">👤</span>
-                </a>
-                {% if session.get('account_id') %}
-                <a href="{{ url_for('listar_campanhas', account_id=session.get('account_id')) }}"
-                    class="nav-item {% if request.endpoint in ['listar_campanhas', 'setup_campanha'] %}active{% endif %}"
+                <!-- Upload Flow -->
+                <a href="{{ url_for('listar_campanhas', account_id=session.get('account_id')) if session.get('account_id') else url_for('listar_contas') }}"
+                    class="nav-item {% if request.endpoint in ['listar_campanhas', 'setup_campanha'] or (request.endpoint == 'listar_contas' and request.args.get('next') != 'optimize') %}active{% endif %}"
                     title="Subir Criativos">
                     <span class="nav-icon">📤</span>
                 </a>
-                <a href="{{ url_for('otimizar_campanhas', account_id=session.get('account_id')) }}"
-                    class="nav-item {% if request.endpoint == 'otimizar_campanhas' %}active{% endif %}"
+
+                <!-- Optimize Flow -->
+                <a href="{{ url_for('otimizar_campanhas', account_id=session.get('account_id')) if session.get('account_id') else url_for('listar_contas') }}"
+                    class="nav-item {% if request.endpoint in ['otimizar_campanhas', 'api_insights'] or (request.endpoint == 'listar_contas' and request.args.get('next') == 'optimize') %}active{% endif %}"
                     title="Otimizar">
                     <span class="nav-icon">📊</span>
                 </a>
-                {% endif %}
             </nav>
             <div class="sidebar-footer">
                 <a href="{{ url_for('logout') }}" class="nav-item" title="Sair">
@@ -44,10 +41,25 @@
 
         <main class="main-content">
             <div class="topbar">
-                <h1>⚡ OPTIMIZER <span class="version-tag">{{ version }}</span></h1>
-                <div class="breadcrumb">
-                    {% block breadcrumb %}{% endblock %}
+                <div style="display: flex; align-items: center; gap: 20px;">
+                    <h1>⚡ OPTIMIZER <span class="version-tag">{{ version }}</span></h1>
+                    <div class="breadcrumb">
+                        {% block breadcrumb %}{% endblock %}
+                    </div>
                 </div>
+
+                {% if session.get('account_id') %}
+                <div class="topbar-account-selector"
+                    style="display: flex; align-items: center; background: var(--bg-deep); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 4px 12px; font-size: 13px;">
+                    <span
+                        style="background: #e27d75; color: white; padding: 2px 6px; border-radius: 4px; font-weight: bold; margin-right: 8px; font-size: 11px;">B</span>
+                    <span style="color: var(--text-primary); font-weight: 500; margin-right: 8px;">{{
+                        session.get('account_name', 'Conta Selecionada') }}</span>
+                    <span style="color: var(--text-muted); font-size: 11px;">({{ session.get('account_id') }})</span>
+                    <a href="{{ url_for('listar_contas') }}"
+                        style="margin-left: 12px; color: var(--accent); text-decoration: none; font-size: 18px; line-height: 1;">▾</a>
+                </div>
+                {% endif %}
             </div>
 
             <div class="container">

@@ -16,7 +16,7 @@ Contas
             Sair</a>
     </div>
     <div class="card-desc" style="display: flex; align-items: center; justify-content: space-between;">
-        Selecione a conta que deseja gerenciar abaixo.
+        Selecione a conta de anúncios que deseja acessar. Esta conta será usada para todas as operações do sistema.
         <button onclick="consultarPortfolios()" class="btn-secondary" style="padding: 6px 12px; font-size: 11px;">🏢
             Consultar IDs de Portfólio</button>
     </div>
@@ -45,8 +45,8 @@ Contas
 
     <div class="queue-list" id="account-list">
         {% for account in accounts %}
-        <a href="/conta/{{ account.account_id }}" style="text-decoration: none; color: inherit;" class="account-item"
-            data-name="{{ account.name|lower }}" data-id="{{ account.account_id }}">
+        <a href="/set_account/{{ account.account_id }}" style="text-decoration: none; color: inherit;"
+            class="account-item" data-name="{{ account.name|lower }}" data-id="{{ account.account_id }}">
             <div class="queue-list-item"
                 style="cursor: pointer; display: flex; align-items: center; padding: 12px; border-bottom: 1px solid var(--border); transition: background 0.2s;">
                 <div class="queue-item-number"

@@ -1,4 +1,4 @@
-import os
+﻿import os
 import json
 import time
 import tempfile
@@ -33,7 +33,7 @@ VERSION = "v1.7.0"
 def inject_version():
     return dict(version=VERSION)
 
-# --- Funções auxiliares para persistência do token ---
+# --- Fun├º├Áes auxiliares para persist├¬ncia do token ---
 
 def salvar_token(access_token):
     """Salva o access_token em um arquivo local."""
@@ -49,7 +49,7 @@ def carregar_token():
     return None
 
 def obter_token():
-    """Retorna o token da sessão ou do arquivo persistido."""
+    """Retorna o token da sess├úo ou do arquivo persistido."""
     token = session.get('access_token')
     if not token:
         token = carregar_token()
@@ -62,13 +62,12 @@ def inicializar_api(access_token):
     FacebookAdsApi.init(APP_ID, APP_SECRET, access_token)
 
 def limpar_token():
-    """Remove o token da sessão e do arquivo."""
+    """Remove o token da sess├úo e do arquivo."""
     session.pop('access_token', None)
     if os.path.exists(TOKEN_FILE):
         os.remove(TOKEN_FILE)
 
 # --- Rotas ---
-ACCOUNTS_CACHE = {} # Memory Cache { token: { 'time': 1234, 'accounts': [...] } }
 
 @app.route('/')
 def index():
@@ -76,14 +75,11 @@ def index():
     if token:
         try:
             inicializar_api(token)
-            if not session.get('account_id'):
-                return redirect(url_for('listar_contas'))
-            return redirect(url_for('listar_campanhas', account_id=session.get('account_id')))
+            return listar_contas()
         except Exception:
             limpar_token()
     return pagina_login()
 
-@app.route('/login')
 def pagina_login():
     # Scopes: Basic Hygiene Package
     scopes = 'public_profile,email,ads_read,ads_management,pages_show_list,pages_read_engagement,instagram_basic,read_insights,pages_manage_ads'
@@ -102,7 +98,7 @@ def callback():
     
     code = request.args.get('code')
     if not code:
-        return "Erro: Código de autorização não recebido."
+        return "Erro: C├│digo de autoriza├º├úo n├úo recebido."
 
     encoded_uri = quote(REDIRECT_URI)
     token_url = (
@@ -127,47 +123,10 @@ def callback():
 @app.route('/logout')
 def logout():
     limpar_token()
-    session.pop('account_id', None)
-    session.pop('account_name', None)
     return redirect(url_for('index'))
 
-@app.route('/set_account/<account_id>')
-def set_account(account_id):
-    """Define a conta globalmente na sessão e redireciona para a página principal."""
-    access_token = obter_token()
-    if not access_token:
-        return redirect(url_for('pagina_login'))
-
-    if not account_id.startswith('act_'):
-        account_id = f"act_{account_id}"
-
-    session['account_id'] = account_id
-
-    # Busca o nome da conta para exibir no Top Bar
-    try:
-        inicializar_api(access_token)
-        conta = AdAccount(account_id)
-        info = conta.api_get(fields=['name'])
-        session['account_name'] = info.get('name', 'Conta de Anúncios')
-    except Exception as e:
-        print(f"❌ Erro ao buscar nome da conta {account_id}: {e}")
-        session['account_name'] = account_id
-
-    return redirect(url_for('listar_campanhas', account_id=account_id))
-
-@app.route('/api/accounts')
 def listar_contas():
-    token = obter_token()
-    if not token:
-        return redirect(url_for('pagina_login'))
-        
-    # Check cache to prevent slow navigation (holds for 1 hour)
-    if token in ACCOUNTS_CACHE:
-        if time.time() - ACCOUNTS_CACHE[token]['time'] < 3600:
-            return render_template('accounts.html', accounts=ACCOUNTS_CACHE[token]['accounts'])
-
     try:
-        inicializar_api(token)
         me = User(fbid='me')
         # Fetch accounts directly from user context
         # Fields: name, id, currency, status, business info
@@ -194,25 +153,19 @@ def listar_contas():
                     'business_name': conta.get('business_name') or 'Conta Pessoal'
                 })
 
-        # Save to memory cache
-        ACCOUNTS_CACHE[token] = {
-            'time': time.time(),
-            'accounts': contas
-        }
-
         return render_template('accounts.html', accounts=contas)
 
     except Exception as e:
-        print(f"❌ Error listing accounts: {e}")
+        print(f"ÔØî Error listing accounts: {e}")
         limpar_token()
         return redirect(url_for('index'))
 
 @app.route('/api/businesses')
 def api_businesses():
-    """Retorna lista de Business Portfolios (BMs) que o usuário tem acesso."""
+    """Retorna lista de Business Portfolios (BMs) que o usu├írio tem acesso."""
     access_token = obter_token()
     if not access_token:
-        return jsonify({'error': 'Não autenticado'}), 401
+        return jsonify({'error': 'N├úo autenticado'}), 401
     
     try:
         inicializar_api(access_token)
@@ -296,7 +249,7 @@ def setup_campanha(campaign_id):
 
 @app.route('/api/conta/<account_id>/identity')
 def api_identity(account_id):
-    """Endpoint combinado: páginas + instagrams + pixels em 1 chamada."""
+    """Endpoint combinado: p├íginas + instagrams + pixels em 1 chamada."""
     access_token = obter_token()
     if not access_token: return jsonify({'error': 'Not authenticated'}), 401
     try:
@@ -307,17 +260,17 @@ def api_identity(account_id):
         data = uploader.get_identity_data()
         return jsonify(data)
     except Exception as e:
-        print(f"❌ Error fetching identity: {e}")
+        print(f"ÔØî Error fetching identity: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/drive/list_folder', methods=['POST'])
 def api_drive_list_folder():
-    """Lista arquivos de uma pasta do Drive e faz o pareamento automático."""
+    """Lista arquivos de uma pasta do Drive e faz o pareamento autom├ítico."""
     from meta_api import list_drive_folder
     data = request.json
     folder_url = data.get('url')
     if not folder_url:
-        return jsonify({'error': 'URL da pasta não fornecida'}), 400
+        return jsonify({'error': 'URL da pasta n├úo fornecida'}), 400
 
     res = list_drive_folder(folder_url)
     if 'error' in res:
@@ -325,7 +278,7 @@ def api_drive_list_folder():
 
     files = res.get('files', [])
     
-    # Lógica de Pareamento
+    # L├│gica de Pareamento
     # Arquivos: "Anuncio1_FEED.mp4", "Anuncio1_REELS.mp4"
     pares = {} # { prefixo: {feed_url, reels_url, nome} }
     
@@ -360,7 +313,7 @@ def api_drive_list_folder():
 
 @app.route('/api/pagina/<page_id>/leadgen_forms')
 def api_leadgen_forms(page_id):
-    """Busca formulários de lead de uma página."""
+    """Busca formul├írios de lead de uma p├ígina."""
     access_token = obter_token()
     if not access_token: return jsonify({'error': 'Not authenticated'}), 401
     try:
@@ -369,17 +322,17 @@ def api_leadgen_forms(page_id):
         forms = uploader.get_leadgen_forms(page_id)
         return jsonify({'forms': forms})
     except Exception as e:
-        print(f"❌ Error fetching lead forms: {e}")
+        print(f"ÔØî Error fetching lead forms: {e}")
         return jsonify({'error': str(e)}), 500
 
-# ======================== API: HISTÓRICO ========================
+# ======================== API: HIST├ôRICO ========================
 
 @app.route('/api/campanha/<campaign_id>/historico_textos')
 def historico_textos(campaign_id):
-    """Busca criativos recentes da campanha e retorna URLs, UTMs, textos e títulos únicos."""
+    """Busca criativos recentes da campanha e retorna URLs, UTMs, textos e t├¡tulos ├║nicos."""
     access_token = obter_token()
     if not access_token:
-        return jsonify({'error': 'Não autenticado'}), 401
+        return jsonify({'error': 'N├úo autenticado'}), 401
 
     try:
         inicializar_api(access_token)
@@ -473,10 +426,10 @@ def historico_textos(campaign_id):
 
 @app.route('/campanha/<campaign_id>/upload', methods=['POST'])
 def upload_single(campaign_id):
-    """Upload de um único anúncio. Chamado pelo frontend para cada item da fila."""
+    """Upload de um ├║nico an├║ncio. Chamado pelo frontend para cada item da fila."""
     access_token = obter_token()
     if not access_token:
-        return jsonify({'success': False, 'error': 'Não autenticado'}), 401
+        return jsonify({'success': False, 'error': 'N├úo autenticado'}), 401
 
     uploader = None
     try:
@@ -490,7 +443,7 @@ def upload_single(campaign_id):
         destino = request.form.get('destino_conjunto', '')
         adset_existente = request.form.get('adset_existente', '')
         adset_modelo = request.form.get('adset_modelo', '')
-        ad_name = request.form.get('ad_name', 'Anúncio sem nome')
+        ad_name = request.form.get('ad_name', 'An├║ncio sem nome')
         url_destino = request.form.get('url_destino', '')
         utm_pattern = request.form.get('utm_pattern', '')
         cta = request.form.get('cta', 'LEARN_MORE')
@@ -520,7 +473,7 @@ def upload_single(campaign_id):
                 f.save(stories_path)
 
         if not feed_path and not stories_path and not url_feed_remote and not url_stories_remote:
-            return jsonify({'success': False, 'error': 'Nenhuma mídia (arquivo ou link) enviada'}), 400
+            return jsonify({'success': False, 'error': 'Nenhuma m├¡dia (arquivo ou link) enviada'}), 400
 
         # Initialize uploader
         uploader = MetaUploader(account_id, access_token, APP_ID, APP_SECRET)
@@ -551,7 +504,7 @@ def upload_single(campaign_id):
 
         # Validation for Identity
         if not page_id:
-             return jsonify({'success': False, 'error': 'Página do Facebook Obrigatória'}), 400
+             return jsonify({'success': False, 'error': 'P├ígina do Facebook Obrigat├│ria'}), 400
 
         # Handle strategy: duplicate adset if needed
         actual_adset_id = target_adset_id
@@ -559,7 +512,7 @@ def upload_single(campaign_id):
             actual_adset_id = uploader.duplicate_adset(target_adset_id)
             uploader.smart_delay()
 
-        # Build full URL (UTMs vão apenas no url_tags, não na URL do link)
+        # Build full URL (UTMs v├úo apenas no url_tags, n├úo na URL do link)
         full_url = url_destino
 
         # Create creative with placement rules
@@ -581,7 +534,7 @@ def upload_single(campaign_id):
 
         uploader.smart_delay()
 
-        # Create ad — always PAUSED
+        # Create ad ÔÇö always PAUSED
         ad_id = uploader.create_ad(actual_adset_id, creative_id, ad_name, pixel_id=pixel_id)
 
         # Cleanup temp files
@@ -616,7 +569,7 @@ def duplicate_adset_route(campaign_id):
     """Duplica um Ad Set 1x. Retorna o ID do novo. Chamado ANTES do loop de criativos."""
     access_token = obter_token()
     if not access_token:
-        return jsonify({'success': False, 'error': 'Não autenticado'}), 401
+        return jsonify({'success': False, 'error': 'N├úo autenticado'}), 401
 
     try:
         account_id = session.get('account_id', '')
@@ -643,7 +596,7 @@ def duplicate_adset_route(campaign_id):
 
 @app.route('/account/<account_id>/otimizar')
 def otimizar_campanhas(account_id):
-    """Página principal do módulo de Otimização."""
+    """P├ígina principal do m├│dulo de Otimiza├º├úo."""
     access_token = obter_token()
     if not access_token:
         return redirect(url_for('pagina_login'))
@@ -657,7 +610,7 @@ def api_insights(account_id):
     """Retorna dados de performance das campanhas."""
     access_token = obter_token()
     if not access_token:
-        return jsonify({'success': False, 'error': 'Não autenticado'}), 401
+        return jsonify({'success': False, 'error': 'N├úo autenticado'}), 401
     
     date_preset = request.args.get('date_preset', 'today')
     
@@ -671,9 +624,6 @@ def api_insights(account_id):
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-@app.route('/ping')
-def ping_vps():
-    return "🚀 BATEU NA VPS! O Docker novo está rodando o nosso código atualizado e a página subiu!!", 200
 
 if __name__ == '__main__':
     print("Servidor rodando! Acesse http://localhost:5000 no seu navegador.")
