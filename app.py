@@ -30,7 +30,7 @@ app.secret_key = 'chave-secreta-optimizer-2024'
 from modules.optimization import optimization_bp
 app.register_blueprint(optimization_bp)
 
-VERSION = "v1.7.0"
+VERSION = "v1.7.2"
 
 @app.context_processor
 def inject_version():
@@ -515,15 +515,21 @@ def upload_single(campaign_id):
             if f.filename:
                 feed_path = os.path.join(temp_dir, f.filename)
                 f.save(feed_path)
+                saved_size = os.path.getsize(feed_path)
+                print(f"📁 [UPLOAD LOCAL] Feed salvo: {feed_path} ({saved_size / 1024:.0f} KB)")
 
         if 'arquivo_stories' in request.files:
             f = request.files['arquivo_stories']
             if f.filename:
                 stories_path = os.path.join(temp_dir, f.filename)
                 f.save(stories_path)
+                saved_size = os.path.getsize(stories_path)
+                print(f"📁 [UPLOAD LOCAL] Stories salvo: {stories_path} ({saved_size / 1024:.0f} KB)")
 
         if not feed_path and not stories_path and not url_feed_remote and not url_stories_remote:
             return jsonify({'success': False, 'error': 'Nenhuma mídia (arquivo ou link) enviada'}), 400
+
+        print(f"📦 [UPLOAD LOCAL] Resumo: feed_path={feed_path}, stories_path={stories_path}, url_feed={url_feed_remote}, url_stories={url_stories_remote}")
 
         # Initialize uploader
         uploader = MetaUploader(account_id, access_token, APP_ID, APP_SECRET)

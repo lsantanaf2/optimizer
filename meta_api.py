@@ -805,18 +805,48 @@ class MetaUploader:
             return None
 
     def upload_image(self, file_path):
-        """Upload de imagem para a conta. Retorna image_hash."""
+        """Upload de imagem para a conta. Retorna image_hash.
+        Estratégia 1: SDK (AdImage.remote_create)
+        Estratégia 2 (fallback): REST API direta via requests.post
+        """
         filename = os.path.basename(file_path)
-        self._log(f"📤 Fazendo upload de imagem: {filename}...")
+        file_size = os.path.getsize(file_path)
+        self._log(f"📤 Fazendo upload de imagem: {filename} ({file_size / 1024:.0f} KB)...")
 
-        def _do():
-            image = AdImage(parent_id=self.account_id)
-            image[AdImage.Field.filename] = file_path
-            image.remote_create()
-            return image[AdImage.Field.hash]
+        # --- Estratégia 1: SDK ---
+        try:
+            def _do_sdk():
+                image = AdImage(parent_id=self.account_id)
+                image[AdImage.Field.filename] = file_path
+                image.remote_create()
+                return image[AdImage.Field.hash]
 
-        image_hash = self._with_retry(f"Upload imagem '{filename}'", _do)
-        self._log(f"✅ Imagem '{filename}' enviada (hash: {image_hash[:12]}...)")
+            image_hash = self._with_retry(f"Upload imagem SDK '{filename}'", _do_sdk)
+            self._log(f"✅ Imagem '{filename}' enviada via SDK (hash: {image_hash[:12]}...)")
+            return image_hash
+        except Exception as sdk_err:
+            self._log(f"⚠️ SDK falhou para '{filename}': {str(sdk_err)[:120]}. Tentando REST API...")
+
+        # --- Estratégia 2: REST API direta (fallback) ---
+        def _do_rest():
+            api_url = f"https://graph.facebook.com/v22.0/{self.account_id}/adimages"
+            with open(file_path, 'rb') as img_file:
+                resp = requests.post(
+                    api_url,
+                    data={'access_token': self.access_token},
+                    files={'filename': (filename, img_file)},
+                    timeout=60
+                )
+            result = resp.json()
+            if 'error' in result:
+                raise Exception(f"REST API error: {result['error'].get('message', '?')}")
+            images = result.get('images', {})
+            if not images:
+                raise Exception("REST API não retornou hash da imagem")
+            return list(images.values())[0].get('hash')
+
+        image_hash = self._with_retry(f"Upload imagem REST '{filename}'", _do_rest)
+        self._log(f"✅ Imagem '{filename}' enviada via REST API (hash: {image_hash[:12]}...)")
         return image_hash
 
     def upload_video(self, file_path):
@@ -959,6 +989,18 @@ class MetaUploader:
 
         # Se for arquivo local
         if file_path:
+            # Validação de existência e tamanho
+            if not os.path.exists(file_path):
+                self._log(f"❌ Arquivo local não encontrado: {file_path}")
+                raise FileNotFoundError(f"Arquivo não encontrado: {file_path}")
+            
+            file_size = os.path.getsize(file_path)
+            if file_size == 0:
+                self._log(f"❌ Arquivo local tem 0 bytes: {file_path}")
+                raise ValueError(f"Arquivo vazio (0 bytes): {os.path.basename(file_path)}")
+            
+            self._log(f"📁 Arquivo local validado: {os.path.basename(file_path)} ({file_size / 1024:.0f} KB)")
+
             ext = os.path.splitext(file_path)[1].lower()
             video_exts = {'.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v', '.gif'}
 
