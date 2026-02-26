@@ -10,15 +10,15 @@
 <div class="card border-accent">
     <div class="card-title">
         <span>📊 Dashboard de Otimização</span>
-        <span class="badge badge-cyan">Alpha</span>
+        <span class="badge badge-cyan">v1.8</span>
     </div>
-    <p class="card-desc">Monitore a performance das suas campanhas em tempo real e identifique gargalos de custos.</p>
+    <p class="card-desc">Gerencie campanhas, conjuntos e anúncios: altere verbas, pause e ative em tempo real.</p>
 
     <!-- Filtros -->
     <div style="display: flex; gap: 12px; align-items: flex-end; margin-bottom: 24px;">
         <div style="flex: 1;">
             <label>Período de Análise</label>
-            <select id="date-preset" onchange="loadInsights()">
+            <select id="date-preset" onchange="loadTree()">
                 <option value="today">Hoje</option>
                 <option value="yesterday">Ontem</option>
                 <option value="last_7d">Últimos 7 dias</option>
@@ -28,69 +28,335 @@
                 <option value="maximum">Tempo Todo</option>
             </select>
         </div>
-        <button class="btn-history" onclick="loadInsights()" id="btn-refresh">🔄 Atualizar</button>
+        <button class="btn-history" onclick="loadTree()" id="btn-refresh">🔄 Atualizar</button>
     </div>
 </div>
 
-<div class="card">
-    <div class="card-title">🚀 Campanhas Ativas</div>
+<!-- Tree Container -->
+<div id="tree-loading" class="queue-empty">Carregando estrutura da Meta Ads API...</div>
+<div id="tree-container" style="display: none;"></div>
+<div id="tree-empty" class="queue-empty" style="display: none;">Nenhuma campanha ativa ou pausada encontrada.</div>
 
-    <div id="insights-container" style="margin-top: 20px;">
-        <div class="queue-empty" id="insights-loading">
-            Carregando métricas da Meta Ads API...
-        </div>
-
-        <table class="data-table" id="insights-table" style="display: none; width: 100%; border-collapse: collapse;">
-            <thead>
-                <tr
-                    style="text-align: left; border-bottom: 1px solid var(--border); color: var(--text-muted); font-size: 11px; text-transform: uppercase;">
-                    <th style="padding: 12px 0;">Campanha</th>
-                    <th style="padding: 12px 0;">Gasto</th>
-                    <th style="padding: 12px 0;">Compras</th>
-                    <th style="padding: 12px 0;">Checkouts</th>
-                    <th style="padding: 12px 0;">CPA Compra</th>
-                    <th style="padding: 12px 0; text-align: right;">CPA Check</th>
-                </tr>
-            </thead>
-            <tbody id="insights-body">
-                <!-- Injetado via JS -->
-            </tbody>
-        </table>
-    </div>
-</div>
+<!-- Toast para ações -->
+<div class="toast" id="action-toast"></div>
 
 <style>
-    .data-table tr {
-        border-bottom: 1px solid var(--border-subtle);
+    /* ======================== TREE STYLES ======================== */
+    .tree-campaign {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        margin-bottom: 16px;
+        overflow: hidden;
+        transition: border-color 0.3s;
+    }
+
+    .tree-campaign:hover {
+        border-color: var(--border-hover);
+    }
+
+    .tree-campaign-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 18px 22px;
+        cursor: pointer;
         transition: background 0.2s;
     }
 
-    .data-table tr:hover {
-        background: var(--bg-surface);
+    .tree-campaign-header:hover {
+        background: var(--card-bg-hover);
     }
 
-    .data-table td {
-        padding: 14px 0;
+    .tree-toggle {
+        font-size: 11px;
+        color: var(--text-muted);
+        transition: transform 0.3s;
+        flex-shrink: 0;
+        width: 16px;
+        text-align: center;
+    }
+
+    .tree-toggle.open {
+        transform: rotate(90deg);
+    }
+
+    .tree-name {
+        font-weight: 600;
+        font-size: 14px;
+        color: var(--text-primary);
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .tree-id {
+        font-size: 10px;
+        color: var(--text-muted);
+        font-family: var(--font-mono);
+    }
+
+    .tree-metrics {
+        display: flex;
+        gap: 16px;
+        align-items: center;
+        flex-shrink: 0;
+    }
+
+    .tree-metric {
+        text-align: right;
+    }
+
+    .tree-metric-label {
+        font-size: 9px;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .tree-metric-value {
         font-size: 13px;
-    }
-
-    .metric-value {
         font-family: var(--font-mono);
         font-weight: 500;
         color: var(--accent);
     }
 
-    .metric-cost {
-        color: var(--text-secondary);
-        font-size: 12px;
+    /* Status Badge */
+    .status-badge {
+        font-size: 10px;
+        font-weight: 700;
+        padding: 3px 10px;
+        border-radius: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        flex-shrink: 0;
+        cursor: pointer;
+        transition: all 0.2s;
+        border: none;
     }
 
-    .impact-high {
-        color: var(--danger);
+    .status-badge:hover {
+        transform: scale(1.05);
     }
 
-    .impact-good {
+    .status-active {
+        background: var(--success-bg);
         color: var(--success);
+        border: 1px solid var(--success);
+    }
+
+    .status-paused {
+        background: var(--danger-bg);
+        color: var(--danger);
+        border: 1px solid var(--danger);
+    }
+
+    /* Action Buttons */
+    .tree-actions {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        flex-shrink: 0;
+    }
+
+    .btn-action {
+        padding: 5px 10px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        background: var(--bg-surface);
+        color: var(--text-muted);
+        font-size: 11px;
+        font-family: var(--font-sans);
+        cursor: pointer;
+        transition: all 0.2s;
+        white-space: nowrap;
+    }
+
+    .btn-action:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+        background: #0a1a1c;
+    }
+
+    .btn-action.btn-pause:hover {
+        border-color: var(--warning);
+        color: var(--warning);
+    }
+
+    .btn-action.btn-activate:hover {
+        border-color: var(--success);
+        color: var(--success);
+    }
+
+    .btn-action:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+    }
+
+    /* Children Container */
+    .tree-children {
+        display: none;
+        border-top: 1px solid var(--border-subtle);
+    }
+
+    .tree-children.open {
+        display: block;
+    }
+
+    /* AdSet Row */
+    .tree-adset {
+        border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .tree-adset:last-child {
+        border-bottom: none;
+    }
+
+    .tree-adset-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 14px 22px 14px 44px;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+
+    .tree-adset-header:hover {
+        background: var(--bg-surface);
+    }
+
+    /* Ad Row */
+    .tree-ad {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 22px 10px 72px;
+        border-top: 1px solid var(--border-subtle);
+        transition: background 0.2s;
+    }
+
+    .tree-ad:hover {
+        background: var(--bg-surface);
+    }
+
+    .tree-ads-container {
+        display: none;
+    }
+
+    .tree-ads-container.open {
+        display: block;
+    }
+
+    /* Budget Input */
+    .budget-inline {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+    }
+
+    .budget-input {
+        width: 90px;
+        padding: 4px 8px;
+        background: var(--bg-deep);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        color: var(--accent);
+        font-family: var(--font-mono);
+        font-size: 12px;
+        text-align: right;
+        transition: border-color 0.2s;
+    }
+
+    .budget-input:focus {
+        outline: none;
+        border-color: var(--accent);
+        box-shadow: 0 0 6px var(--accent-glow);
+    }
+
+    .btn-save-budget {
+        padding: 4px 8px;
+        background: var(--success-bg);
+        border: 1px solid var(--success);
+        border-radius: 4px;
+        color: var(--success);
+        font-size: 10px;
+        cursor: pointer;
+        transition: all 0.2s;
+        display: none;
+    }
+
+    .btn-save-budget:hover {
+        background: var(--success);
+        color: #fff;
+    }
+
+    .btn-save-budget.visible {
+        display: inline-block;
+    }
+
+    /* Level Icons */
+    .level-icon {
+        font-size: 16px;
+        flex-shrink: 0;
+    }
+
+    /* Counter badge */
+    .children-count {
+        font-size: 10px;
+        color: var(--text-muted);
+        background: var(--bg-deep);
+        border: 1px solid var(--border);
+        padding: 2px 8px;
+        border-radius: 10px;
+        flex-shrink: 0;
+    }
+
+    /* Spinner */
+    .action-spinner {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border: 2px solid var(--border);
+        border-top-color: var(--accent);
+        border-radius: 50%;
+        animation: spin 0.6s linear infinite;
+    }
+
+    @keyframes spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+
+    /* Summary bar */
+    .tree-summary {
+        display: flex;
+        gap: 24px;
+        padding: 12px 22px;
+        background: var(--bg-deep);
+        border-radius: var(--radius-md);
+        margin-bottom: 16px;
+        border: 1px solid var(--border);
+    }
+
+    .tree-summary-item {
+        text-align: center;
+    }
+
+    .tree-summary-label {
+        font-size: 10px;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .tree-summary-value {
+        font-size: 18px;
+        font-weight: 700;
+        font-family: var(--font-mono);
+        color: var(--accent);
     }
 </style>
 
@@ -100,60 +366,279 @@
 <script>
     const ACCOUNT_ID = "{{ account_id }}";
 
-    async function loadInsights() {
-        const container = document.getElementById('insights-container');
-        const loading = document.getElementById('insights-loading');
-        const table = document.getElementById('insights-table');
-        const body = document.getElementById('insights-body');
-        const preset = document.getElementById('date-preset').value;
+    function fmtBRL(val, currency = 'BRL') {
+        return new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(val);
+    }
+
+    function statusBadgeHTML(status, entityId, entityType) {
+        const isActive = status === 'ACTIVE';
+        const cls = isActive ? 'status-active' : 'status-paused';
+        const label = isActive ? '🟢 ATIVO' : '🔴 PAUSADO';
+        const newStatus = isActive ? 'PAUSED' : 'ACTIVE';
+        const actionLabel = isActive ? '⏸ Pausar' : '▶ Ativar';
+        return `
+            <span class="status-badge ${cls}" id="badge-${entityId}">${label}</span>
+            <button class="btn-action ${isActive ? 'btn-pause' : 'btn-activate'}" 
+                    id="btn-status-${entityId}"
+                    onclick="event.stopPropagation(); toggleStatus('${entityId}', '${entityType}', '${newStatus}')"
+                    title="${actionLabel}">${actionLabel}</button>
+        `;
+    }
+
+    function budgetHTML(entityId, entityType, dailyBudget) {
+        if (dailyBudget === null || dailyBudget === undefined) return '<span style="color: var(--text-muted); font-size: 11px;">—</span>';
+        return `
+            <div class="budget-inline" onclick="event.stopPropagation()">
+                <span style="font-size: 11px; color: var(--text-muted);">R$</span>
+                <input type="number" class="budget-input" id="budget-${entityId}" 
+                       value="${dailyBudget.toFixed(2)}" step="1" min="1"
+                       onfocus="this.dataset.original = this.value"
+                       oninput="checkBudgetChange('${entityId}')">
+                <span style="font-size: 10px; color: var(--text-muted);">/dia</span>
+                <button class="btn-save-budget" id="btn-budget-${entityId}"
+                        onclick="saveBudget('${entityId}', '${entityType}')">💾</button>
+            </div>
+        `;
+    }
+
+    function checkBudgetChange(entityId) {
+        const input = document.getElementById(`budget-${entityId}`);
+        const btn = document.getElementById(`btn-budget-${entityId}`);
+        if (input && btn) {
+            btn.classList.toggle('visible', input.value !== input.dataset.original);
+        }
+    }
+
+    async function toggleStatus(entityId, entityType, newStatus) {
+        const btn = document.getElementById(`btn-status-${entityId}`);
+        const badge = document.getElementById(`badge-${entityId}`);
+        if (!btn) return;
+
+        const actionLabel = newStatus === 'PAUSED' ? 'Pausar' : 'Ativar';
+        if (!confirm(`${actionLabel} este ${entityType === 'campaign' ? 'campanha' : entityType === 'adset' ? 'conjunto' : 'anúncio'}?`)) return;
+
+        btn.disabled = true;
+        btn.innerHTML = '<span class="action-spinner"></span>';
+
+        try {
+            const r = await fetch(`/api/account/${ACCOUNT_ID}/entity/status`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ entity_id: entityId, entity_type: entityType, status: newStatus })
+            });
+            const res = await r.json();
+
+            if (res.success) {
+                // Update badge and button
+                const isActive = newStatus === 'ACTIVE';
+                badge.className = `status-badge ${isActive ? 'status-active' : 'status-paused'}`;
+                badge.textContent = isActive ? '🟢 ATIVO' : '🔴 PAUSADO';
+
+                const nextStatus = isActive ? 'PAUSED' : 'ACTIVE';
+                btn.className = `btn-action ${isActive ? 'btn-pause' : 'btn-activate'}`;
+                btn.textContent = isActive ? '⏸ Pausar' : '▶ Ativar';
+                btn.onclick = function (e) { e.stopPropagation(); toggleStatus(entityId, entityType, nextStatus); };
+
+                mostrarToast(`✅ ${entityType} ${newStatus === 'ACTIVE' ? 'ativado' : 'pausado'} com sucesso`);
+            } else {
+                mostrarToast(`❌ Erro: ${res.error}`);
+                btn.textContent = '⚠️ Erro';
+            }
+        } catch (e) {
+            mostrarToast(`❌ Erro de rede: ${e.message}`);
+            btn.textContent = '⚠️ Erro';
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    async function saveBudget(entityId, entityType) {
+        const input = document.getElementById(`budget-${entityId}`);
+        const btn = document.getElementById(`btn-budget-${entityId}`);
+        if (!input || !btn) return;
+
+        const newBudget = parseFloat(input.value);
+        if (isNaN(newBudget) || newBudget < 1) {
+            mostrarToast('❌ Verba inválida. Mínimo: R$ 1,00');
+            return;
+        }
+
+        if (!confirm(`Alterar verba para R$ ${newBudget.toFixed(2)}/dia?`)) return;
+
+        btn.innerHTML = '<span class="action-spinner"></span>';
+        btn.disabled = true;
+
+        try {
+            const r = await fetch(`/api/account/${ACCOUNT_ID}/entity/budget`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ entity_id: entityId, entity_type: entityType, daily_budget: newBudget })
+            });
+            const res = await r.json();
+
+            if (res.success) {
+                input.dataset.original = newBudget.toFixed(2);
+                btn.classList.remove('visible');
+                mostrarToast(`✅ Verba alterada para R$ ${newBudget.toFixed(2)}/dia`);
+            } else {
+                mostrarToast(`❌ Erro: ${res.error}`);
+            }
+        } catch (e) {
+            mostrarToast(`❌ Erro de rede: ${e.message}`);
+        } finally {
+            btn.innerHTML = '💾';
+            btn.disabled = false;
+        }
+    }
+
+    function toggleChildren(containerId, toggleId) {
+        const container = document.getElementById(containerId);
+        const toggle = document.getElementById(toggleId);
+        if (container && toggle) {
+            container.classList.toggle('open');
+            toggle.classList.toggle('open');
+        }
+    }
+
+    async function loadTree() {
+        const loading = document.getElementById('tree-loading');
+        const container = document.getElementById('tree-container');
+        const empty = document.getElementById('tree-empty');
         const btn = document.getElementById('btn-refresh');
+        const preset = document.getElementById('date-preset').value;
 
         loading.style.display = 'block';
-        table.style.display = 'none';
+        container.style.display = 'none';
+        empty.style.display = 'none';
         btn.disabled = true;
         btn.textContent = '⏳...';
 
         try {
-            const r = await fetch(`/api/account/${ACCOUNT_ID}/insights?date_preset=${preset}`);
+            const r = await fetch(`/api/account/${ACCOUNT_ID}/campaign-tree?date_preset=${preset}`);
             const res = await r.json();
 
             if (!res.success) throw new Error(res.error);
 
-            body.innerHTML = '';
-
             if (res.data.length === 0) {
-                loading.textContent = 'Nenhuma campanha ativa encontrada para este período.';
+                loading.style.display = 'none';
+                empty.style.display = 'block';
                 return;
             }
 
-            res.data.forEach(camp => {
-                const tr = document.createElement('tr');
-                const fmtCury = (val) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: camp.currency }).format(val);
+            // Summary
+            const totalCampaigns = res.data.length;
+            const totalAdsets = res.data.reduce((s, c) => s + c.adsets.length, 0);
+            const totalAds = res.data.reduce((s, c) => s + c.adsets.reduce((s2, a) => s2 + a.ads.length, 0), 0);
+            const totalSpend = res.data.reduce((s, c) => s + (c.spend || 0), 0);
+            const currency = res.data[0]?.currency || 'BRL';
 
-                tr.innerHTML = `
-                    <td title="${camp.id}">
-                        <div style="font-weight: 600;">${camp.name}</div>
-                        <div style="font-size: 10px; color: var(--text-muted);">ID: ${camp.id}</div>
-                    </td>
-                    <td class="metric-value">${fmtCury(camp.spend)}</td>
-                    <td>
-                        <div class="metric-value">${camp.compras}</div>
-                    </td>
-                    <td>
-                        <div class="metric-value">${camp.checkouts}</div>
-                    </td>
-                    <td>
-                        <div class="metric-value">${fmtCury(camp.cpa_compra)}</div>
-                    </td>
-                    <td style="text-align: right;">
-                        <div class="metric-value">${fmtCury(camp.cpa_checkout)}</div>
-                    </td>
+            let html = `
+                <div class="tree-summary">
+                    <div class="tree-summary-item">
+                        <div class="tree-summary-label">Campanhas</div>
+                        <div class="tree-summary-value">${totalCampaigns}</div>
+                    </div>
+                    <div class="tree-summary-item">
+                        <div class="tree-summary-label">Conjuntos</div>
+                        <div class="tree-summary-value">${totalAdsets}</div>
+                    </div>
+                    <div class="tree-summary-item">
+                        <div class="tree-summary-label">Anúncios</div>
+                        <div class="tree-summary-value">${totalAds}</div>
+                    </div>
+                    <div class="tree-summary-item">
+                        <div class="tree-summary-label">Gasto Total</div>
+                        <div class="tree-summary-value">${fmtBRL(totalSpend, currency)}</div>
+                    </div>
+                </div>
+            `;
+
+            res.data.forEach((camp, ci) => {
+                const campChildrenId = `camp-children-${ci}`;
+                const campToggleId = `camp-toggle-${ci}`;
+
+                html += `
+                <div class="tree-campaign">
+                    <div class="tree-campaign-header" onclick="toggleChildren('${campChildrenId}', '${campToggleId}')">
+                        <span class="tree-toggle" id="${campToggleId}">▶</span>
+                        <span class="level-icon">📊</span>
+                        <div style="flex: 1; min-width: 0;">
+                            <div class="tree-name">${escapeHtml(camp.name)}</div>
+                            <div class="tree-id">${camp.id}</div>
+                        </div>
+                        <div class="tree-metrics">
+                            <div class="tree-metric">
+                                <div class="tree-metric-label">Gasto</div>
+                                <div class="tree-metric-value">${fmtBRL(camp.spend, camp.currency)}</div>
+                            </div>
+                            <div class="tree-metric">
+                                <div class="tree-metric-label">Compras</div>
+                                <div class="tree-metric-value">${camp.compras}</div>
+                            </div>
+                        </div>
+                        <div class="tree-actions" onclick="event.stopPropagation()">
+                            ${budgetHTML(camp.id, 'campaign', camp.daily_budget)}
+                            ${statusBadgeHTML(camp.status, camp.id, 'campaign')}
+                        </div>
+                        <span class="children-count">${camp.adsets.length} conj.</span>
+                    </div>
+
+                    <div class="tree-children" id="${campChildrenId}">
                 `;
-                body.appendChild(tr);
+
+                camp.adsets.forEach((adset, ai) => {
+                    const adsetChildrenId = `adset-children-${ci}-${ai}`;
+                    const adsetToggleId = `adset-toggle-${ci}-${ai}`;
+
+                    html += `
+                        <div class="tree-adset">
+                            <div class="tree-adset-header" onclick="toggleChildren('${adsetChildrenId}', '${adsetToggleId}')">
+                                <span class="tree-toggle" id="${adsetToggleId}">▶</span>
+                                <span class="level-icon">📦</span>
+                                <div style="flex: 1; min-width: 0;">
+                                    <div class="tree-name" style="font-size: 13px;">${escapeHtml(adset.name)}</div>
+                                    <div class="tree-id">${adset.id}</div>
+                                </div>
+                                <div class="tree-actions" onclick="event.stopPropagation()">
+                                    ${budgetHTML(adset.id, 'adset', adset.daily_budget)}
+                                    ${statusBadgeHTML(adset.status, adset.id, 'adset')}
+                                </div>
+                                <span class="children-count">${adset.ads.length} ads</span>
+                            </div>
+
+                            <div class="tree-ads-container" id="${adsetChildrenId}">
+                    `;
+
+                    adset.ads.forEach(ad => {
+                        html += `
+                                <div class="tree-ad">
+                                    <span class="level-icon">🎨</span>
+                                    <div style="flex: 1; min-width: 0;">
+                                        <div class="tree-name" style="font-size: 12px; font-weight: 500;">${escapeHtml(ad.name)}</div>
+                                        <div class="tree-id">${ad.id}</div>
+                                    </div>
+                                    <div class="tree-actions">
+                                        ${statusBadgeHTML(ad.status, ad.id, 'ad')}
+                                    </div>
+                                </div>
+                        `;
+                    });
+
+                    html += `
+                            </div>
+                        </div>
+                    `;
+                });
+
+                html += `
+                    </div>
+                </div>
+                `;
             });
 
+            container.innerHTML = html;
             loading.style.display = 'none';
-            table.style.display = 'table';
+            container.style.display = 'block';
 
         } catch (err) {
             loading.textContent = '❌ Erro: ' + err.message;
@@ -163,7 +648,13 @@
         }
     }
 
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
     // Inicializar
-    document.addEventListener('DOMContentLoaded', loadInsights);
+    document.addEventListener('DOMContentLoaded', loadTree);
 </script>
 {% endblock %}

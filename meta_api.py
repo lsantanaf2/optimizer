@@ -150,6 +150,168 @@ class MetaUploader:
             print(f"❌ [get_campaign_insights] Erro: {e}")
             return []
 
+    # ======================== OPTIMIZATION COMMANDS ========================
+
+    def update_entity_status(self, entity_id, entity_type, new_status):
+        """
+        Altera o status de uma entidade (campaign, adset ou ad).
+        new_status: 'PAUSED' ou 'ACTIVE'
+        """
+        valid_statuses = ['PAUSED', 'ACTIVE']
+        if new_status.upper() not in valid_statuses:
+            raise ValueError(f"Status inválido: {new_status}. Use: {valid_statuses}")
+
+        url = f"https://graph.facebook.com/v22.0/{entity_id}"
+        payload = {
+            'status': new_status.upper(),
+            'access_token': self.access_token
+        }
+
+        resp = requests.post(url, data=payload, timeout=30)
+        result = resp.json()
+
+        if 'error' in result:
+            error_msg = result['error'].get('message', 'Erro desconhecido')
+            print(f"❌ [update_status] Falha ao alterar {entity_type} {entity_id}: {error_msg}")
+            raise Exception(error_msg)
+
+        print(f"✅ [update_status] {entity_type} {entity_id} → {new_status.upper()}")
+        return {'success': True, 'entity_id': entity_id, 'new_status': new_status.upper()}
+
+    def update_budget(self, entity_id, entity_type, daily_budget):
+        """
+        Altera o orçamento diário de uma campanha ou adset.
+        daily_budget: valor em reais (ex: 50.00). A Meta API espera centavos.
+        """
+        budget_cents = int(float(daily_budget) * 100)
+
+        url = f"https://graph.facebook.com/v22.0/{entity_id}"
+        payload = {
+            'daily_budget': budget_cents,
+            'access_token': self.access_token
+        }
+
+        resp = requests.post(url, data=payload, timeout=30)
+        result = resp.json()
+
+        if 'error' in result:
+            error_msg = result['error'].get('message', 'Erro desconhecido')
+            print(f"❌ [update_budget] Falha ao alterar verba {entity_type} {entity_id}: {error_msg}")
+            raise Exception(error_msg)
+
+        print(f"✅ [update_budget] {entity_type} {entity_id} → R$ {daily_budget}/dia ({budget_cents} centavos)")
+        return {'success': True, 'entity_id': entity_id, 'new_budget': float(daily_budget)}
+
+    def get_campaign_tree(self, date_preset='today'):
+        """
+        Retorna hierarquia completa: Campanhas → Ad Sets → Ads.
+        Inclui status, budget e métricas de cada nível.
+        """
+        try:
+            # 1. Buscar campanhas ativas e pausadas
+            url_campaigns = f"https://graph.facebook.com/v22.0/{self.account_id}/campaigns"
+            params = {
+                'access_token': self.access_token,
+                'fields': 'id,name,status,effective_status,daily_budget,lifetime_budget,objective',
+                'filtering': '[{"field":"effective_status","operator":"IN","value":["ACTIVE","PAUSED"]}]',
+                'limit': 100
+            }
+            resp = requests.get(url_campaigns, params=params, timeout=30)
+            campaigns_data = resp.json().get('data', [])
+
+            # Buscar insights das campanhas
+            insights_map = {}
+            try:
+                insights_list = self.get_campaign_insights(date_preset)
+                for ins in insights_list:
+                    insights_map[ins['id']] = ins
+            except Exception:
+                pass
+
+            tree = []
+
+            for camp in campaigns_data:
+                camp_id = camp['id']
+                camp_insights = insights_map.get(camp_id, {})
+                daily_budget_raw = camp.get('daily_budget')
+                daily_budget = float(daily_budget_raw) / 100 if daily_budget_raw else None
+
+                camp_node = {
+                    'id': camp_id,
+                    'name': camp.get('name', '?'),
+                    'status': camp.get('effective_status', camp.get('status', '?')),
+                    'daily_budget': daily_budget,
+                    'lifetime_budget': float(camp.get('lifetime_budget', 0)) / 100 if camp.get('lifetime_budget') else None,
+                    'objective': camp.get('objective', ''),
+                    'spend': camp_insights.get('spend', 0),
+                    'compras': camp_insights.get('compras', 0),
+                    'checkouts': camp_insights.get('checkouts', 0),
+                    'currency': camp_insights.get('currency', 'BRL'),
+                    'adsets': []
+                }
+
+                # 2. Buscar Ad Sets de cada campanha
+                url_adsets = f"https://graph.facebook.com/v22.0/{camp_id}/adsets"
+                params_adsets = {
+                    'access_token': self.access_token,
+                    'fields': 'id,name,status,effective_status,daily_budget,lifetime_budget',
+                    'filtering': '[{"field":"effective_status","operator":"IN","value":["ACTIVE","PAUSED"]}]',
+                    'limit': 100
+                }
+                try:
+                    resp_adsets = requests.get(url_adsets, params=params_adsets, timeout=30)
+                    adsets_data = resp_adsets.json().get('data', [])
+                except Exception:
+                    adsets_data = []
+
+                for adset in adsets_data:
+                    adset_id = adset['id']
+                    adset_daily = adset.get('daily_budget')
+                    adset_node = {
+                        'id': adset_id,
+                        'name': adset.get('name', '?'),
+                        'status': adset.get('effective_status', adset.get('status', '?')),
+                        'daily_budget': float(adset_daily) / 100 if adset_daily else None,
+                        'lifetime_budget': float(adset.get('lifetime_budget', 0)) / 100 if adset.get('lifetime_budget') else None,
+                        'ads': []
+                    }
+
+                    # 3. Buscar Ads de cada Ad Set
+                    url_ads = f"https://graph.facebook.com/v22.0/{adset_id}/ads"
+                    params_ads = {
+                        'access_token': self.access_token,
+                        'fields': 'id,name,status,effective_status',
+                        'filtering': '[{"field":"effective_status","operator":"IN","value":["ACTIVE","PAUSED"]}]',
+                        'limit': 100
+                    }
+                    try:
+                        resp_ads = requests.get(url_ads, params=params_ads, timeout=30)
+                        ads_data = resp_ads.json().get('data', [])
+                    except Exception:
+                        ads_data = []
+
+                    for ad in ads_data:
+                        adset_node['ads'].append({
+                            'id': ad['id'],
+                            'name': ad.get('name', '?'),
+                            'status': ad.get('effective_status', ad.get('status', '?'))
+                        })
+
+                    camp_node['adsets'].append(adset_node)
+
+                tree.append(camp_node)
+
+            print(f"📊 [get_campaign_tree] {len(tree)} campanhas, "
+                  f"{sum(len(c['adsets']) for c in tree)} conjuntos, "
+                  f"{sum(len(a['ads']) for c in tree for a in c['adsets'])} anúncios")
+            return tree
+
+        except Exception as e:
+            print(f"❌ [get_campaign_tree] Erro: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
+
     # ======================== IDENTITY & TRACKING FETCHERS ========================
 
     def get_pages(self):
