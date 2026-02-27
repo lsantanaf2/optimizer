@@ -61,23 +61,25 @@
                         <label class="drp-preset" data-preset="custom"><input type="radio" name="drp" value="custom">
                             Personalizado</label>
                     </div>
-                    <!-- Calendars -->
-                    <div class="drp-cals">
-                        <div class="drp-cal" id="drp-cal-left"></div>
-                        <div class="drp-cal" id="drp-cal-right"></div>
-                    </div>
-                </div>
-                <div class="drp-footer">
-                    <div class="drp-footer-dates">
-                        <input type="text" class="drp-date-input" id="drp-since-display" readonly
-                            placeholder="Data inicial">
-                        <span style="color:var(--text-muted);font-size:11px;">→</span>
-                        <input type="text" class="drp-date-input" id="drp-until-display" readonly
-                            placeholder="Data final">
-                    </div>
-                    <div class="drp-footer-btns">
-                        <button class="drp-btn-cancel" onclick="cancelDatePicker()">Cancelar</button>
-                        <button class="drp-btn-apply" onclick="applyDatePicker()">Atualizar</button>
+                    <!-- Calendars + date display + buttons — tudo integrado -->
+                    <div class="drp-cal-area">
+                        <div class="drp-cals">
+                            <div class="drp-cal" id="drp-cal-left"></div>
+                            <div class="drp-cal" id="drp-cal-right"></div>
+                        </div>
+                        <div class="drp-inline-footer">
+                            <div class="drp-footer-dates">
+                                <input type="text" class="drp-date-input" id="drp-since-display" readonly
+                                    placeholder="Data inicial">
+                                <span style="color:var(--text-muted);font-size:11px;">→</span>
+                                <input type="text" class="drp-date-input" id="drp-until-display" readonly
+                                    placeholder="Data final">
+                            </div>
+                            <div class="drp-footer-btns">
+                                <button class="drp-btn-cancel" onclick="cancelDatePicker()">Cancelar</button>
+                                <button class="drp-btn-apply" onclick="applyDatePicker()">Atualizar</button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -344,8 +346,15 @@
         pointer-events: none;
     }
 
-    /* Footer */
-    .drp-footer {
+    /* Calendar area (cals + dates + buttons — tudo integrado) */
+    .drp-cal-area {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+    }
+
+    /* Inline footer (dentro da cal area) */
+    .drp-inline-footer {
         display: flex;
         align-items: center;
         justify-content: space-between;
