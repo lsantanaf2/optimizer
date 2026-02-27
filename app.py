@@ -513,7 +513,8 @@ def upload_single(campaign_id):
         if 'arquivo_feed' in request.files:
             f = request.files['arquivo_feed']
             if f.filename:
-                feed_path = os.path.join(temp_dir, f.filename)
+                safe_name = os.path.basename(f.filename)  # webkitdirectory pode enviar path relativo
+                feed_path = os.path.join(temp_dir, safe_name)
                 f.save(feed_path)
                 saved_size = os.path.getsize(feed_path)
                 print(f"📁 [UPLOAD LOCAL] Feed salvo: {feed_path} ({saved_size / 1024:.0f} KB)")
@@ -521,7 +522,8 @@ def upload_single(campaign_id):
         if 'arquivo_stories' in request.files:
             f = request.files['arquivo_stories']
             if f.filename:
-                stories_path = os.path.join(temp_dir, f.filename)
+                safe_name = os.path.basename(f.filename)  # webkitdirectory pode enviar path relativo
+                stories_path = os.path.join(temp_dir, safe_name)
                 f.save(stories_path)
                 saved_size = os.path.getsize(stories_path)
                 print(f"📁 [UPLOAD LOCAL] Stories salvo: {stories_path} ({saved_size / 1024:.0f} KB)")

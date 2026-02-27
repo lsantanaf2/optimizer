@@ -364,9 +364,15 @@
             </div>
 
             <div id="queue-actions" style="display:none;">
-                <button type="button" class="btn-submit-all" id="btn-submit-all" onclick="subirTodos()">
-                    🚀 Subir Todos os Anúncios
-                </button>
+                <div style="display:flex; gap:10px; align-items:center;">
+                    <button type="button" class="btn-submit-all" id="btn-submit-all" onclick="subirTodos()">
+                        🚀 Subir Todos os Anúncios
+                    </button>
+                    <button type="button" id="btn-stop-upload" onclick="pararUpload()"
+                        style="display:none; padding:10px 20px; background:#ef4444; color:white; border:none; border-radius:8px; font-weight:bold; cursor:pointer; font-size:14px;">
+                        ⏹ Parar Upload
+                    </button>
+                </div>
                 <div class="footer-note">Todos os anúncios serão criados com status <strong>PAUSED</strong>.</div>
             </div>
 
@@ -453,6 +459,14 @@
         const CAMPAIGN_ID = "{{ campaign_id }}";
         const ACCOUNT_ID = "{{ account_id }}";
         const filaAnuncios = [];
+        let uploadCancelado = false;
+
+        function pararUpload() {
+            uploadCancelado = true;
+            document.getElementById('btn-stop-upload').textContent = '⏳ Parando...';
+            document.getElementById('btn-stop-upload').disabled = true;
+            logConsole('⏹ Upload será interrompido após o anúncio atual...', 'log-warning');
+        }
         let historicoCarregado = false;
 
         function escapeHtml(str) {
@@ -1092,7 +1106,12 @@
             if (!estrategia) { mostrarToast('❌ Selecione uma estratégia de estruturação'); return; }
 
             const btn = document.getElementById('btn-submit-all');
+            const btnStop = document.getElementById('btn-stop-upload');
             btn.disabled = true;
+            btnStop.style.display = 'inline-block';
+            btnStop.disabled = false;
+            btnStop.textContent = '⏹ Parar Upload';
+            uploadCancelado = false;
 
             const destino = document.querySelector('input[name="destino_conjunto"]:checked')?.value;
             const adsetExistente = document.getElementById('adset_existente')?.value;
@@ -1148,6 +1167,12 @@
             let enviados = 0, erros = 0;
 
             for (let i = 0; i < filaAnuncios.length; i++) {
+                // Check cancelamento
+                if (uploadCancelado) {
+                    logConsole(`⏹ Upload cancelado pelo usuário. ${enviados} enviado(s), ${filaAnuncios.length - i} restante(s).`, 'log-warning');
+                    break;
+                }
+
                 const item = filaAnuncios[i];
                 btn.textContent = `⏳ Enviando ${i + 1}/${filaAnuncios.length}...`;
 
@@ -1253,7 +1278,8 @@
                     }
 
                     if (i < filaAnuncios.length - 1) {
-                        logConsole(`⏳ Aguardando delay de segurança...`);
+                        logConsole(`⏳ Aguardando delay de segurança (2s)...`);
+                        await new Promise(r => setTimeout(r, 2000));
                     }
 
                 } catch (e) {
@@ -1264,6 +1290,7 @@
 
             btn.disabled = false;
             btn.textContent = '🚀 Subir Todos os Anúncios';
+            btnStop.style.display = 'none';
 
             logConsole(`🏁 Lote concluído: ${enviados} ✅ sucesso, ${erros} ❌ erro(s)`, enviados > 0 ? 'log-success' : 'log-error');
             logStop();
