@@ -89,6 +89,27 @@ class MetaUploader:
         FacebookAdsApi.init(app_id, app_secret, access_token)
         self.account = AdAccount(account_id)
 
+    @staticmethod
+    def _extract_conversions(actions):
+        """Extrai compras e checkouts de actions sem duplicar.
+        Prioridade: action_type específico > genérico (que é agregado)."""
+        compras_specific = checkouts_specific = 0
+        compras_generic = checkouts_generic = 0
+        for action in (actions or []):
+            a_type = action.get('action_type', '')
+            val = int(action.get('value', 0))
+            # Compras
+            if a_type == 'offsite_conversion.fb_pixel_purchase':
+                compras_specific += val
+            elif a_type == 'purchase' and compras_specific == 0:
+                compras_generic = val  # fallback, não soma
+            # Checkouts
+            if a_type == 'offsite_conversion.fb_pixel_initiate_checkout':
+                checkouts_specific += val
+            elif a_type == 'initiate_checkout' and checkouts_specific == 0:
+                checkouts_generic = val
+        return (compras_specific or compras_generic, checkouts_specific or checkouts_generic)
+
     # ======================== PERFORMANCE & INSIGHTS ========================
 
     def get_campaign_insights(self, date_preset='today', since=None, until=None):
@@ -119,15 +140,7 @@ class MetaUploader:
                 actions = ins.get('actions', [])
                 spend = float(ins.get('spend', 0))
 
-                compras = 0
-                checkouts = 0
-                for action in actions:
-                    a_type = action.get('action_type', '')
-                    val = int(action.get('value', 0))
-                    if a_type in ['purchase', 'offsite_conversion.fb_pixel_purchase', 'onsite_conversion.purchase']:
-                        compras += val
-                    if a_type in ['initiate_checkout', 'offsite_conversion.fb_pixel_initiate_checkout']:
-                        checkouts += val
+                compras, checkouts = self._extract_conversions(actions)
 
                 results.append({
                     'id': ins.get('campaign_id'),
@@ -293,14 +306,7 @@ class MetaUploader:
                     spend = float(ins.get('spend', 0))
                     daily_raw = struct.get('daily_budget')
 
-                    compras, checkouts = 0, 0
-                    for action in ins.get('actions', []):
-                        a_type = action.get('action_type', '')
-                        val = int(action.get('value', 0))
-                        if a_type in ['purchase', 'offsite_conversion.fb_pixel_purchase', 'onsite_conversion.purchase']:
-                            compras += val
-                        if a_type in ['initiate_checkout', 'offsite_conversion.fb_pixel_initiate_checkout']:
-                            checkouts += val
+                    compras, checkouts = self._extract_conversions(ins.get('actions', []))
 
                     all_adsets.append({
                         'id': adset_id,
@@ -369,14 +375,7 @@ class MetaUploader:
                     struct = struct_map.get(ad_id, {})
                     spend = float(ins.get('spend', 0))
 
-                    compras, checkouts = 0, 0
-                    for action in ins.get('actions', []):
-                        a_type = action.get('action_type', '')
-                        val = int(action.get('value', 0))
-                        if a_type in ['purchase', 'offsite_conversion.fb_pixel_purchase', 'onsite_conversion.purchase']:
-                            compras += val
-                        if a_type in ['initiate_checkout', 'offsite_conversion.fb_pixel_initiate_checkout']:
-                            checkouts += val
+                    compras, checkouts = self._extract_conversions(ins.get('actions', []))
 
                     all_ads.append({
                         'id': ad_id,
