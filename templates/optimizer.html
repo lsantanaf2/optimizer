@@ -15,10 +15,10 @@
     <p class="card-desc">Gerencie campanhas, conjuntos e anúncios: altere verbas, pause e ative em tempo real.</p>
 
     <!-- Filtros -->
-    <div style="display: flex; gap: 12px; align-items: flex-end; margin-bottom: 24px;">
+    <div style="display: flex; gap: 12px; align-items: flex-end;">
         <div style="flex: 1;">
-            <label>Período de Análise</label>
-            <select id="date-preset" onchange="loadTree()">
+            <label style="margin-top:0;">Período de Análise</label>
+            <select id="date-preset" onchange="loadCurrentLevel()">
                 <option value="today">Hoje</option>
                 <option value="yesterday">Ontem</option>
                 <option value="last_7d">Últimos 7 dias</option>
@@ -28,102 +28,222 @@
                 <option value="maximum">Tempo Todo</option>
             </select>
         </div>
-        <button class="btn-history" onclick="loadTree()" id="btn-refresh">🔄 Atualizar</button>
+        <button class="btn-history" onclick="loadCurrentLevel()" id="btn-refresh">🔄 Atualizar</button>
     </div>
 </div>
 
-<!-- Tree Container -->
-<div id="tree-loading" class="queue-empty">Carregando estrutura da Meta Ads API...</div>
-<div id="tree-container" style="display: none;"></div>
-<div id="tree-empty" class="queue-empty" style="display: none;">Nenhuma campanha ativa ou pausada encontrada.</div>
+<!-- Navigation Tabs -->
+<div class="opt-tabs">
+    <button class="opt-tab active" id="tab-campaigns" onclick="navigateTo('campaigns')">
+        📊 Campanhas <span class="opt-tab-count" id="count-campaigns"></span>
+    </button>
+    <button class="opt-tab" id="tab-adsets" onclick="navigateTo('adsets')">
+        📦 Conjuntos <span class="opt-tab-count" id="count-adsets"></span>
+    </button>
+    <button class="opt-tab" id="tab-ads" onclick="navigateTo('ads')">
+        🎨 Anúncios <span class="opt-tab-count" id="count-ads"></span>
+    </button>
+</div>
 
-<!-- Toast para ações -->
-<div class="toast" id="action-toast"></div>
+<!-- Breadcrumb de contexto (ex: "Conjuntos da Campanha X") -->
+<div class="opt-context" id="context-bar" style="display: none;">
+    <span id="context-text"></span>
+    <button class="opt-context-clear" onclick="clearFilter()">✕ Limpar filtro</button>
+</div>
+
+<!-- Selection bar -->
+<div class="opt-selection-bar" id="selection-bar" style="display: none;">
+    <span id="selection-count">0 selecionados</span>
+    <button class="btn-action" onclick="viewChildrenOfSelected()" id="btn-view-children">
+        📂 Ver conjuntos das selecionadas
+    </button>
+</div>
+
+<!-- Data Table -->
+<div class="card" style="padding: 0; overflow: hidden;">
+    <div id="table-loading" class="queue-empty" style="border: none; border-radius: 0;">
+        Carregando dados da Meta Ads API...
+    </div>
+    <div id="table-empty" class="queue-empty" style="display: none; border: none; border-radius: 0;">
+        Nenhum dado encontrado para este período.
+    </div>
+    <table class="opt-table" id="data-table" style="display: none;">
+        <thead id="table-head">
+            <!-- Injetado via JS -->
+        </thead>
+        <tbody id="table-body">
+            <!-- Injetado via JS -->
+        </tbody>
+    </table>
+</div>
 
 <style>
-    /* ======================== TREE STYLES ======================== */
-    .tree-campaign {
-        background: var(--card-bg);
+    /* ======================== TABS ======================== */
+    .opt-tabs {
+        display: flex;
+        gap: 0;
+        margin-bottom: 0;
+        border-bottom: 2px solid var(--border);
+    }
+
+    .opt-tab {
+        padding: 12px 24px;
+        background: transparent;
+        border: none;
+        color: var(--text-muted);
+        font-family: var(--font-sans);
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+        border-bottom: 2px solid transparent;
+        margin-bottom: -2px;
+    }
+
+    .opt-tab:hover {
+        color: var(--text-primary);
+        background: var(--bg-surface);
+    }
+
+    .opt-tab.active {
+        color: var(--accent);
+        border-bottom-color: var(--accent);
+    }
+
+    .opt-tab-count {
+        font-size: 10px;
+        background: var(--bg-deep);
         border: 1px solid var(--border);
-        border-radius: var(--radius-lg);
-        margin-bottom: 16px;
-        overflow: hidden;
-        transition: border-color 0.3s;
+        padding: 1px 8px;
+        border-radius: 10px;
+        margin-left: 6px;
     }
 
-    .tree-campaign:hover {
-        border-color: var(--border-hover);
-    }
-
-    .tree-campaign-header {
+    /* ======================== CONTEXT BAR ======================== */
+    .opt-context {
         display: flex;
         align-items: center;
         gap: 12px;
-        padding: 18px 22px;
-        cursor: pointer;
-        transition: background 0.2s;
+        padding: 10px 16px;
+        background: var(--accent-glow);
+        border: 1px solid var(--accent);
+        border-radius: var(--radius-sm);
+        margin-top: 12px;
+        font-size: 13px;
+        color: var(--accent);
+        font-weight: 500;
     }
 
-    .tree-campaign-header:hover {
+    .opt-context-clear {
+        background: transparent;
+        border: 1px solid var(--accent);
+        color: var(--accent);
+        padding: 3px 10px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 11px;
+        font-family: var(--font-sans);
+        transition: all 0.2s;
+        margin-left: auto;
+    }
+
+    .opt-context-clear:hover {
+        background: var(--accent);
+        color: var(--bg-deep);
+    }
+
+    /* ======================== SELECTION BAR ======================== */
+    .opt-selection-bar {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 8px 16px;
+        background: var(--bg-surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        margin-top: 8px;
+        font-size: 12px;
+        color: var(--text-secondary);
+    }
+
+    /* ======================== TABLE ======================== */
+    .opt-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    .opt-table thead th {
+        padding: 14px 16px;
+        text-align: left;
+        font-size: 10px;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        font-weight: 700;
+        border-bottom: 1px solid var(--border);
+        background: var(--bg-surface);
+        cursor: pointer;
+        white-space: nowrap;
+        user-select: none;
+        transition: color 0.2s;
+    }
+
+    .opt-table thead th:hover {
+        color: var(--accent);
+    }
+
+    .opt-table thead th.sort-asc::after {
+        content: ' ▲';
+        color: var(--accent);
+    }
+
+    .opt-table thead th.sort-desc::after {
+        content: ' ▼';
+        color: var(--accent);
+    }
+
+    .opt-table tbody tr {
+        border-bottom: 1px solid var(--border-subtle);
+        transition: background 0.15s;
+    }
+
+    .opt-table tbody tr:hover {
         background: var(--card-bg-hover);
     }
 
-    .tree-toggle {
-        font-size: 11px;
-        color: var(--text-muted);
-        transition: transform 0.3s;
-        flex-shrink: 0;
-        width: 16px;
-        text-align: center;
+    .opt-table tbody td {
+        padding: 12px 16px;
+        font-size: 13px;
+        vertical-align: middle;
     }
 
-    .tree-toggle.open {
-        transform: rotate(90deg);
-    }
-
-    .tree-name {
+    /* Name cell - clickable */
+    .cell-name {
         font-weight: 600;
-        font-size: 14px;
         color: var(--text-primary);
-        flex: 1;
-        min-width: 0;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+        cursor: pointer;
+        transition: color 0.2s;
     }
 
-    .tree-id {
+    .cell-name:hover {
+        color: var(--accent);
+        text-decoration: underline;
+    }
+
+    .cell-id {
         font-size: 10px;
         color: var(--text-muted);
         font-family: var(--font-mono);
     }
 
-    .tree-metrics {
-        display: flex;
-        gap: 16px;
-        align-items: center;
-        flex-shrink: 0;
-    }
-
-    .tree-metric {
-        text-align: right;
-    }
-
-    .tree-metric-label {
-        font-size: 9px;
-        color: var(--text-muted);
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-    }
-
-    .tree-metric-value {
-        font-size: 13px;
+    .cell-mono {
         font-family: var(--font-mono);
         font-weight: 500;
         color: var(--accent);
+        font-size: 13px;
     }
 
-    /* Status Badge */
+    /* Status badge */
     .status-badge {
         font-size: 10px;
         font-weight: 700;
@@ -131,14 +251,14 @@
         border-radius: 12px;
         text-transform: uppercase;
         letter-spacing: 0.5px;
-        flex-shrink: 0;
         cursor: pointer;
         transition: all 0.2s;
         border: none;
+        white-space: nowrap;
     }
 
     .status-badge:hover {
-        transform: scale(1.05);
+        opacity: 0.8;
     }
 
     .status-active {
@@ -153,103 +273,7 @@
         border: 1px solid var(--danger);
     }
 
-    /* Action Buttons */
-    .tree-actions {
-        display: flex;
-        gap: 6px;
-        align-items: center;
-        flex-shrink: 0;
-    }
-
-    .btn-action {
-        padding: 5px 10px;
-        border: 1px solid var(--border);
-        border-radius: var(--radius-sm);
-        background: var(--bg-surface);
-        color: var(--text-muted);
-        font-size: 11px;
-        font-family: var(--font-sans);
-        cursor: pointer;
-        transition: all 0.2s;
-        white-space: nowrap;
-    }
-
-    .btn-action:hover {
-        border-color: var(--accent);
-        color: var(--accent);
-        background: #0a1a1c;
-    }
-
-    .btn-action.btn-pause:hover {
-        border-color: var(--warning);
-        color: var(--warning);
-    }
-
-    .btn-action.btn-activate:hover {
-        border-color: var(--success);
-        color: var(--success);
-    }
-
-    .btn-action:disabled {
-        opacity: 0.4;
-        cursor: not-allowed;
-    }
-
-    /* Children Container */
-    .tree-children {
-        display: none;
-        border-top: 1px solid var(--border-subtle);
-    }
-
-    .tree-children.open {
-        display: block;
-    }
-
-    /* AdSet Row */
-    .tree-adset {
-        border-bottom: 1px solid var(--border-subtle);
-    }
-
-    .tree-adset:last-child {
-        border-bottom: none;
-    }
-
-    .tree-adset-header {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: 14px 22px 14px 44px;
-        cursor: pointer;
-        transition: background 0.2s;
-    }
-
-    .tree-adset-header:hover {
-        background: var(--bg-surface);
-    }
-
-    /* Ad Row */
-    .tree-ad {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: 10px 22px 10px 72px;
-        border-top: 1px solid var(--border-subtle);
-        transition: background 0.2s;
-    }
-
-    .tree-ad:hover {
-        background: var(--bg-surface);
-    }
-
-    .tree-ads-container {
-        display: none;
-    }
-
-    .tree-ads-container.open {
-        display: block;
-    }
-
-    /* Budget Input */
+    /* Budget inline */
     .budget-inline {
         display: inline-flex;
         align-items: center;
@@ -257,8 +281,8 @@
     }
 
     .budget-input {
-        width: 90px;
-        padding: 4px 8px;
+        width: 80px;
+        padding: 3px 6px;
         background: var(--bg-deep);
         border: 1px solid var(--border);
         border-radius: 4px;
@@ -276,7 +300,7 @@
     }
 
     .btn-save-budget {
-        padding: 4px 8px;
+        padding: 3px 6px;
         background: var(--success-bg);
         border: 1px solid var(--success);
         border-radius: 4px;
@@ -296,21 +320,12 @@
         display: inline-block;
     }
 
-    /* Level Icons */
-    .level-icon {
-        font-size: 16px;
-        flex-shrink: 0;
-    }
-
-    /* Counter badge */
-    .children-count {
-        font-size: 10px;
-        color: var(--text-muted);
-        background: var(--bg-deep);
-        border: 1px solid var(--border);
-        padding: 2px 8px;
-        border-radius: 10px;
-        flex-shrink: 0;
+    /* Checkbox */
+    .opt-check {
+        width: 16px;
+        height: 16px;
+        accent-color: var(--accent);
+        cursor: pointer;
     }
 
     /* Spinner */
@@ -329,96 +344,394 @@
             transform: rotate(360deg);
         }
     }
-
-    /* Summary bar */
-    .tree-summary {
-        display: flex;
-        gap: 24px;
-        padding: 12px 22px;
-        background: var(--bg-deep);
-        border-radius: var(--radius-md);
-        margin-bottom: 16px;
-        border: 1px solid var(--border);
-    }
-
-    .tree-summary-item {
-        text-align: center;
-    }
-
-    .tree-summary-label {
-        font-size: 10px;
-        color: var(--text-muted);
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-    }
-
-    .tree-summary-value {
-        font-size: 18px;
-        font-weight: 700;
-        font-family: var(--font-mono);
-        color: var(--accent);
-    }
 </style>
-
 {% endblock %}
 
 {% block scripts %}
 <script>
     const ACCOUNT_ID = "{{ account_id }}";
 
+    // ======================== STATE ========================
+    let currentLevel = 'campaigns'; // 'campaigns' | 'adsets' | 'ads'
+    let currentData = [];
+    let selectedIds = new Set();
+    let sortColumn = null;
+    let sortDir = 'desc';
+    // Filtro de contexto: quando clicamos no nome de uma campanha, filtramos por ela
+    let filterContext = null; // { type: 'campaign', ids: [...], label: '...' } ou { type: 'adset', ... }
+
+    const COLUMNS = {
+        campaigns: [
+            { key: 'check', label: '', sortable: false },
+            { key: 'name', label: 'Campanha', sortable: true },
+            { key: 'status', label: 'Status', sortable: true },
+            { key: 'daily_budget', label: 'Verba/Dia', sortable: true },
+            { key: 'spend', label: 'Gasto', sortable: true },
+            { key: 'checkouts', label: 'Checkouts', sortable: true },
+            { key: 'cpa_checkout', label: 'CPA Check', sortable: true },
+            { key: 'compras', label: 'Compras', sortable: true },
+            { key: 'cpa_compra', label: 'CAC', sortable: true },
+        ],
+        adsets: [
+            { key: 'check', label: '', sortable: false },
+            { key: 'name', label: 'Conjunto', sortable: true },
+            { key: 'status', label: 'Status', sortable: true },
+            { key: 'daily_budget', label: 'Verba/Dia', sortable: true },
+            { key: 'spend', label: 'Gasto', sortable: true },
+            { key: 'checkouts', label: 'Checkouts', sortable: true },
+            { key: 'cpa_checkout', label: 'CPA Check', sortable: true },
+            { key: 'compras', label: 'Compras', sortable: true },
+            { key: 'cpa_compra', label: 'CAC', sortable: true },
+        ],
+        ads: [
+            { key: 'check', label: '', sortable: false },
+            { key: 'name', label: 'Anúncio', sortable: true },
+            { key: 'status', label: 'Status', sortable: true },
+            { key: 'spend', label: 'Gasto', sortable: true },
+            { key: 'checkouts', label: 'Checkouts', sortable: true },
+            { key: 'cpa_checkout', label: 'CPA Check', sortable: true },
+            { key: 'compras', label: 'Compras', sortable: true },
+            { key: 'cpa_compra', label: 'CAC', sortable: true },
+        ]
+    };
+
     function fmtBRL(val, currency = 'BRL') {
-        return new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(val);
+        return new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(val || 0);
     }
 
-    function statusBadgeHTML(status, entityId, entityType) {
-        const isActive = status === 'ACTIVE';
-        const cls = isActive ? 'status-active' : 'status-paused';
-        const label = isActive ? '🟢 ATIVO' : '🔴 PAUSADO';
-        const newStatus = isActive ? 'PAUSED' : 'ACTIVE';
-        const actionLabel = isActive ? '⏸ Pausar' : '▶ Ativar';
-        return `
-            <span class="status-badge ${cls}" id="badge-${entityId}">${label}</span>
-            <button class="btn-action ${isActive ? 'btn-pause' : 'btn-activate'}" 
-                    id="btn-status-${entityId}"
-                    onclick="event.stopPropagation(); toggleStatus('${entityId}', '${entityType}', '${newStatus}')"
-                    title="${actionLabel}">${actionLabel}</button>
-        `;
+    function escapeHtml(text) {
+        const d = document.createElement('div');
+        d.textContent = text;
+        return d.innerHTML;
     }
 
-    function budgetHTML(entityId, entityType, dailyBudget) {
-        if (dailyBudget === null || dailyBudget === undefined) return '<span style="color: var(--text-muted); font-size: 11px;">—</span>';
-        return `
-            <div class="budget-inline" onclick="event.stopPropagation()">
-                <span style="font-size: 11px; color: var(--text-muted);">R$</span>
-                <input type="number" class="budget-input" id="budget-${entityId}" 
-                       value="${dailyBudget.toFixed(2)}" step="1" min="1"
-                       onfocus="this.dataset.original = this.value"
-                       oninput="checkBudgetChange('${entityId}')">
-                <span style="font-size: 10px; color: var(--text-muted);">/dia</span>
-                <button class="btn-save-budget" id="btn-budget-${entityId}"
-                        onclick="saveBudget('${entityId}', '${entityType}')">💾</button>
-            </div>
-        `;
+    // ======================== NAVIGATION ========================
+    function navigateTo(level) {
+        currentLevel = level;
+        selectedIds.clear();
+        updateTabsUI();
+
+        if (level === 'campaigns') {
+            filterContext = null;
+        }
+
+        loadCurrentLevel();
     }
 
-    function checkBudgetChange(entityId) {
-        const input = document.getElementById(`budget-${entityId}`);
-        const btn = document.getElementById(`btn-budget-${entityId}`);
-        if (input && btn) {
-            btn.classList.toggle('visible', input.value !== input.dataset.original);
+    function updateTabsUI() {
+        document.querySelectorAll('.opt-tab').forEach(t => t.classList.remove('active'));
+        document.getElementById(`tab-${currentLevel}`).classList.add('active');
+
+        // Update "ver children" button text
+        const btn = document.getElementById('btn-view-children');
+        if (currentLevel === 'campaigns') {
+            btn.textContent = '📦 Ver conjuntos das selecionadas';
+        } else if (currentLevel === 'adsets') {
+            btn.textContent = '🎨 Ver anúncios dos selecionados';
+        } else {
+            btn.style.display = 'none';
+        }
+        if (currentLevel !== 'ads') btn.style.display = '';
+    }
+
+    function updateSelectionBar() {
+        const bar = document.getElementById('selection-bar');
+        const countEl = document.getElementById('selection-count');
+        if (selectedIds.size > 0) {
+            bar.style.display = 'flex';
+            countEl.textContent = `${selectedIds.size} selecionado(s)`;
+        } else {
+            bar.style.display = 'none';
         }
     }
 
+    function updateContextBar() {
+        const bar = document.getElementById('context-bar');
+        const text = document.getElementById('context-text');
+        if (filterContext) {
+            bar.style.display = 'flex';
+            text.textContent = filterContext.label;
+        } else {
+            bar.style.display = 'none';
+        }
+    }
+
+    function clearFilter() {
+        filterContext = null;
+        updateContextBar();
+        loadCurrentLevel();
+    }
+
+    // Click no nome → navegar para children
+    function drillDown(entityId, entityName) {
+        if (currentLevel === 'campaigns') {
+            filterContext = { type: 'campaign', ids: [entityId], label: `📦 Conjuntos da campanha: "${entityName}"` };
+            currentLevel = 'adsets';
+        } else if (currentLevel === 'adsets') {
+            filterContext = { type: 'adset', ids: [entityId], label: `🎨 Anúncios do conjunto: "${entityName}"` };
+            currentLevel = 'ads';
+        }
+        selectedIds.clear();
+        updateTabsUI();
+        updateContextBar();
+        loadCurrentLevel();
+    }
+
+    // Multi-select → ver children
+    function viewChildrenOfSelected() {
+        if (selectedIds.size === 0) {
+            mostrarToast('⚠️ Selecione ao menos um item');
+            return;
+        }
+        const ids = Array.from(selectedIds);
+        const names = ids.map(id => {
+            const item = currentData.find(d => d.id === id);
+            return item ? item.name : id;
+        });
+
+        if (currentLevel === 'campaigns') {
+            const label = names.length === 1
+                ? `📦 Conjuntos da campanha: "${names[0]}"`
+                : `📦 Conjuntos de ${names.length} campanhas selecionadas`;
+            filterContext = { type: 'campaign', ids, label };
+            currentLevel = 'adsets';
+        } else if (currentLevel === 'adsets') {
+            const label = names.length === 1
+                ? `🎨 Anúncios do conjunto: "${names[0]}"`
+                : `🎨 Anúncios de ${names.length} conjuntos selecionados`;
+            filterContext = { type: 'adset', ids, label };
+            currentLevel = 'ads';
+        }
+        selectedIds.clear();
+        updateTabsUI();
+        updateContextBar();
+        loadCurrentLevel();
+    }
+
+    // ======================== DATA LOADING ========================
+    async function loadCurrentLevel() {
+        const loading = document.getElementById('table-loading');
+        const empty = document.getElementById('table-empty');
+        const table = document.getElementById('data-table');
+        const btn = document.getElementById('btn-refresh');
+        const preset = document.getElementById('date-preset').value;
+
+        loading.style.display = 'block';
+        empty.style.display = 'none';
+        table.style.display = 'none';
+        btn.disabled = true;
+        btn.textContent = '⏳...';
+
+        let url = '';
+        if (currentLevel === 'campaigns') {
+            url = `/api/account/${ACCOUNT_ID}/campaigns?date_preset=${preset}`;
+        } else if (currentLevel === 'adsets') {
+            const ids = filterContext?.ids?.join(',') || '';
+            if (!ids) {
+                // Se não tem filtro, mostra todas as campanhas selecionadas ou nada
+                loading.style.display = 'none';
+                empty.textContent = 'Selecione ou clique em uma campanha para ver os conjuntos.';
+                empty.style.display = 'block';
+                btn.disabled = false;
+                btn.textContent = '🔄 Atualizar';
+                return;
+            }
+            url = `/api/account/${ACCOUNT_ID}/adsets?campaign_ids=${ids}&date_preset=${preset}`;
+        } else if (currentLevel === 'ads') {
+            const ids = filterContext?.ids?.join(',') || '';
+            if (!ids) {
+                loading.style.display = 'none';
+                empty.textContent = 'Selecione ou clique em um conjunto para ver os anúncios.';
+                empty.style.display = 'block';
+                btn.disabled = false;
+                btn.textContent = '🔄 Atualizar';
+                return;
+            }
+            url = `/api/account/${ACCOUNT_ID}/ads?adset_ids=${ids}&date_preset=${preset}`;
+        }
+
+        try {
+            const r = await fetch(url);
+            const res = await r.json();
+
+            if (!res.success) throw new Error(res.error);
+
+            currentData = res.data;
+
+            // Update tab counts
+            document.getElementById(`count-${currentLevel}`).textContent = currentData.length;
+
+            if (currentData.length === 0) {
+                loading.style.display = 'none';
+                empty.textContent = 'Nenhum dado encontrado para este período.';
+                empty.style.display = 'block';
+                return;
+            }
+
+            renderTable();
+
+            loading.style.display = 'none';
+            table.style.display = 'table';
+
+        } catch (err) {
+            loading.textContent = '❌ Erro: ' + err.message;
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '🔄 Atualizar';
+        }
+    }
+
+    // ======================== TABLE RENDERING ========================
+    function renderTable() {
+        const cols = COLUMNS[currentLevel];
+        const head = document.getElementById('table-head');
+        const body = document.getElementById('table-body');
+
+        // Header
+        let headHTML = '<tr>';
+        cols.forEach(col => {
+            if (col.key === 'check') {
+                headHTML += `<th style="width: 40px; text-align: center;">
+                    <input type="checkbox" class="opt-check" onchange="toggleSelectAll(this.checked)">
+                </th>`;
+            } else {
+                const sortCls = sortColumn === col.key ? (sortDir === 'asc' ? 'sort-asc' : 'sort-desc') : '';
+                const onclick = col.sortable ? `onclick="sortBy('${col.key}')"` : '';
+                headHTML += `<th class="${sortCls}" ${onclick}>${col.label}</th>`;
+            }
+        });
+        headHTML += '</tr>';
+        head.innerHTML = headHTML;
+
+        // Sort data
+        let sorted = [...currentData];
+        if (sortColumn) {
+            sorted.sort((a, b) => {
+                let va = a[sortColumn], vb = b[sortColumn];
+                if (typeof va === 'string') {
+                    va = va.toLowerCase(); vb = (vb || '').toLowerCase();
+                    return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+                }
+                va = va || 0; vb = vb || 0;
+                return sortDir === 'asc' ? va - vb : vb - va;
+            });
+        }
+
+        // Body
+        let bodyHTML = '';
+        sorted.forEach(item => {
+            const isChecked = selectedIds.has(item.id) ? 'checked' : '';
+            const currency = item.currency || 'BRL';
+            const entityType = currentLevel === 'campaigns' ? 'campaign' : currentLevel === 'adsets' ? 'adset' : 'ad';
+            const canDrill = currentLevel !== 'ads';
+
+            bodyHTML += '<tr>';
+            cols.forEach(col => {
+                switch (col.key) {
+                    case 'check':
+                        bodyHTML += `<td style="text-align: center;">
+                            <input type="checkbox" class="opt-check" ${isChecked}
+                                onchange="toggleSelect('${item.id}', this.checked)">
+                        </td>`;
+                        break;
+                    case 'name':
+                        const clickAttr = canDrill ? `onclick="drillDown('${item.id}', '${escapeHtml(item.name).replace(/'/g, "\\'")}')"` : '';
+                        bodyHTML += `<td>
+                            <div class="${canDrill ? 'cell-name' : ''}" ${clickAttr}>${escapeHtml(item.name)}</div>
+                            <div class="cell-id">${item.id}</div>
+                        </td>`;
+                        break;
+                    case 'status':
+                        const isActive = item.status === 'ACTIVE';
+                        const cls = isActive ? 'status-active' : 'status-paused';
+                        const label = isActive ? '🟢 ATIVO' : '🔴 PAUSADO';
+                        const newStatus = isActive ? 'PAUSED' : 'ACTIVE';
+                        bodyHTML += `<td>
+                            <span class="status-badge ${cls}" id="badge-${item.id}"
+                                onclick="toggleStatus('${item.id}', '${entityType}', '${newStatus}')"
+                                title="Clique para ${isActive ? 'pausar' : 'ativar'}">${label}</span>
+                        </td>`;
+                        break;
+                    case 'daily_budget':
+                        if (item.daily_budget !== null && item.daily_budget !== undefined) {
+                            bodyHTML += `<td>
+                                <div class="budget-inline">
+                                    <span style="font-size:11px;color:var(--text-muted);">R$</span>
+                                    <input type="number" class="budget-input" id="budget-${item.id}"
+                                        value="${item.daily_budget.toFixed(2)}" step="1" min="1"
+                                        onfocus="this.dataset.original=this.value"
+                                        oninput="checkBudgetChange('${item.id}')">
+                                    <span style="font-size:10px;color:var(--text-muted);">/dia</span>
+                                    <button class="btn-save-budget" id="btn-budget-${item.id}"
+                                        onclick="saveBudget('${item.id}', '${entityType}')">💾</button>
+                                </div>
+                            </td>`;
+                        } else {
+                            bodyHTML += `<td><span style="color:var(--text-muted);font-size:11px;">—</span></td>`;
+                        }
+                        break;
+                    case 'spend':
+                        bodyHTML += `<td class="cell-mono">${fmtBRL(item.spend, currency)}</td>`;
+                        break;
+                    case 'compras':
+                        bodyHTML += `<td class="cell-mono">${item.compras || 0}</td>`;
+                        break;
+                    case 'checkouts':
+                        bodyHTML += `<td class="cell-mono">${item.checkouts || 0}</td>`;
+                        break;
+                    case 'cpa_compra':
+                        bodyHTML += `<td class="cell-mono">${item.cpa_compra > 0 ? fmtBRL(item.cpa_compra, currency) : '—'}</td>`;
+                        break;
+                    case 'cpa_checkout':
+                        bodyHTML += `<td class="cell-mono">${item.cpa_checkout > 0 ? fmtBRL(item.cpa_checkout, currency) : '—'}</td>`;
+                        break;
+                }
+            });
+            bodyHTML += '</tr>';
+        });
+
+        body.innerHTML = bodyHTML;
+    }
+
+    // ======================== SORTING ========================
+    function sortBy(column) {
+        if (sortColumn === column) {
+            sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+        } else {
+            sortColumn = column;
+            sortDir = 'desc';
+        }
+        renderTable();
+    }
+
+    // ======================== SELECTION ========================
+    function toggleSelect(id, checked) {
+        if (checked) selectedIds.add(id);
+        else selectedIds.delete(id);
+        updateSelectionBar();
+    }
+
+    function toggleSelectAll(checked) {
+        if (checked) {
+            currentData.forEach(d => selectedIds.add(d.id));
+        } else {
+            selectedIds.clear();
+        }
+        renderTable();
+        updateSelectionBar();
+    }
+
+    // ======================== ACTIONS ========================
     async function toggleStatus(entityId, entityType, newStatus) {
-        const btn = document.getElementById(`btn-status-${entityId}`);
         const badge = document.getElementById(`badge-${entityId}`);
-        if (!btn) return;
+        if (!badge) return;
 
         const actionLabel = newStatus === 'PAUSED' ? 'Pausar' : 'Ativar';
-        if (!confirm(`${actionLabel} este ${entityType === 'campaign' ? 'campanha' : entityType === 'adset' ? 'conjunto' : 'anúncio'}?`)) return;
+        const typeLabel = entityType === 'campaign' ? 'campanha' : entityType === 'adset' ? 'conjunto' : 'anúncio';
+        if (!confirm(`${actionLabel} este ${typeLabel}?`)) return;
 
-        btn.disabled = true;
-        btn.innerHTML = '<span class="action-spinner"></span>';
+        const origHTML = badge.innerHTML;
+        badge.innerHTML = '<span class="action-spinner"></span>';
 
         try {
             const r = await fetch(`/api/account/${ACCOUNT_ID}/entity/status`, {
@@ -429,26 +742,34 @@
             const res = await r.json();
 
             if (res.success) {
-                // Update badge and button
+                // Update badge
                 const isActive = newStatus === 'ACTIVE';
                 badge.className = `status-badge ${isActive ? 'status-active' : 'status-paused'}`;
                 badge.textContent = isActive ? '🟢 ATIVO' : '🔴 PAUSADO';
-
                 const nextStatus = isActive ? 'PAUSED' : 'ACTIVE';
-                btn.className = `btn-action ${isActive ? 'btn-pause' : 'btn-activate'}`;
-                btn.textContent = isActive ? '⏸ Pausar' : '▶ Ativar';
-                btn.onclick = function (e) { e.stopPropagation(); toggleStatus(entityId, entityType, nextStatus); };
+                badge.onclick = () => toggleStatus(entityId, entityType, nextStatus);
+                badge.title = `Clique para ${isActive ? 'pausar' : 'ativar'}`;
 
-                mostrarToast(`✅ ${entityType} ${newStatus === 'ACTIVE' ? 'ativado' : 'pausado'} com sucesso`);
+                // Update item in currentData
+                const item = currentData.find(d => d.id === entityId);
+                if (item) item.status = newStatus;
+
+                mostrarToast(`✅ ${typeLabel} ${newStatus === 'ACTIVE' ? 'ativado' : 'pausado'}`);
             } else {
+                badge.innerHTML = origHTML;
                 mostrarToast(`❌ Erro: ${res.error}`);
-                btn.textContent = '⚠️ Erro';
             }
         } catch (e) {
+            badge.innerHTML = origHTML;
             mostrarToast(`❌ Erro de rede: ${e.message}`);
-            btn.textContent = '⚠️ Erro';
-        } finally {
-            btn.disabled = false;
+        }
+    }
+
+    function checkBudgetChange(entityId) {
+        const input = document.getElementById(`budget-${entityId}`);
+        const btn = document.getElementById(`btn-budget-${entityId}`);
+        if (input && btn) {
+            btn.classList.toggle('visible', input.value !== input.dataset.original);
         }
     }
 
@@ -462,7 +783,6 @@
             mostrarToast('❌ Verba inválida. Mínimo: R$ 1,00');
             return;
         }
-
         if (!confirm(`Alterar verba para R$ ${newBudget.toFixed(2)}/dia?`)) return;
 
         btn.innerHTML = '<span class="action-spinner"></span>';
@@ -491,170 +811,10 @@
         }
     }
 
-    function toggleChildren(containerId, toggleId) {
-        const container = document.getElementById(containerId);
-        const toggle = document.getElementById(toggleId);
-        if (container && toggle) {
-            container.classList.toggle('open');
-            toggle.classList.toggle('open');
-        }
-    }
-
-    async function loadTree() {
-        const loading = document.getElementById('tree-loading');
-        const container = document.getElementById('tree-container');
-        const empty = document.getElementById('tree-empty');
-        const btn = document.getElementById('btn-refresh');
-        const preset = document.getElementById('date-preset').value;
-
-        loading.style.display = 'block';
-        container.style.display = 'none';
-        empty.style.display = 'none';
-        btn.disabled = true;
-        btn.textContent = '⏳...';
-
-        try {
-            const r = await fetch(`/api/account/${ACCOUNT_ID}/campaign-tree?date_preset=${preset}`);
-            const res = await r.json();
-
-            if (!res.success) throw new Error(res.error);
-
-            if (res.data.length === 0) {
-                loading.style.display = 'none';
-                empty.style.display = 'block';
-                return;
-            }
-
-            // Summary
-            const totalCampaigns = res.data.length;
-            const totalAdsets = res.data.reduce((s, c) => s + c.adsets.length, 0);
-            const totalAds = res.data.reduce((s, c) => s + c.adsets.reduce((s2, a) => s2 + a.ads.length, 0), 0);
-            const totalSpend = res.data.reduce((s, c) => s + (c.spend || 0), 0);
-            const currency = res.data[0]?.currency || 'BRL';
-
-            let html = `
-                <div class="tree-summary">
-                    <div class="tree-summary-item">
-                        <div class="tree-summary-label">Campanhas</div>
-                        <div class="tree-summary-value">${totalCampaigns}</div>
-                    </div>
-                    <div class="tree-summary-item">
-                        <div class="tree-summary-label">Conjuntos</div>
-                        <div class="tree-summary-value">${totalAdsets}</div>
-                    </div>
-                    <div class="tree-summary-item">
-                        <div class="tree-summary-label">Anúncios</div>
-                        <div class="tree-summary-value">${totalAds}</div>
-                    </div>
-                    <div class="tree-summary-item">
-                        <div class="tree-summary-label">Gasto Total</div>
-                        <div class="tree-summary-value">${fmtBRL(totalSpend, currency)}</div>
-                    </div>
-                </div>
-            `;
-
-            res.data.forEach((camp, ci) => {
-                const campChildrenId = `camp-children-${ci}`;
-                const campToggleId = `camp-toggle-${ci}`;
-
-                html += `
-                <div class="tree-campaign">
-                    <div class="tree-campaign-header" onclick="toggleChildren('${campChildrenId}', '${campToggleId}')">
-                        <span class="tree-toggle" id="${campToggleId}">▶</span>
-                        <span class="level-icon">📊</span>
-                        <div style="flex: 1; min-width: 0;">
-                            <div class="tree-name">${escapeHtml(camp.name)}</div>
-                            <div class="tree-id">${camp.id}</div>
-                        </div>
-                        <div class="tree-metrics">
-                            <div class="tree-metric">
-                                <div class="tree-metric-label">Gasto</div>
-                                <div class="tree-metric-value">${fmtBRL(camp.spend, camp.currency)}</div>
-                            </div>
-                            <div class="tree-metric">
-                                <div class="tree-metric-label">Compras</div>
-                                <div class="tree-metric-value">${camp.compras}</div>
-                            </div>
-                        </div>
-                        <div class="tree-actions" onclick="event.stopPropagation()">
-                            ${budgetHTML(camp.id, 'campaign', camp.daily_budget)}
-                            ${statusBadgeHTML(camp.status, camp.id, 'campaign')}
-                        </div>
-                        <span class="children-count">${camp.adsets.length} conj.</span>
-                    </div>
-
-                    <div class="tree-children" id="${campChildrenId}">
-                `;
-
-                camp.adsets.forEach((adset, ai) => {
-                    const adsetChildrenId = `adset-children-${ci}-${ai}`;
-                    const adsetToggleId = `adset-toggle-${ci}-${ai}`;
-
-                    html += `
-                        <div class="tree-adset">
-                            <div class="tree-adset-header" onclick="toggleChildren('${adsetChildrenId}', '${adsetToggleId}')">
-                                <span class="tree-toggle" id="${adsetToggleId}">▶</span>
-                                <span class="level-icon">📦</span>
-                                <div style="flex: 1; min-width: 0;">
-                                    <div class="tree-name" style="font-size: 13px;">${escapeHtml(adset.name)}</div>
-                                    <div class="tree-id">${adset.id}</div>
-                                </div>
-                                <div class="tree-actions" onclick="event.stopPropagation()">
-                                    ${budgetHTML(adset.id, 'adset', adset.daily_budget)}
-                                    ${statusBadgeHTML(adset.status, adset.id, 'adset')}
-                                </div>
-                                <span class="children-count">${adset.ads.length} ads</span>
-                            </div>
-
-                            <div class="tree-ads-container" id="${adsetChildrenId}">
-                    `;
-
-                    adset.ads.forEach(ad => {
-                        html += `
-                                <div class="tree-ad">
-                                    <span class="level-icon">🎨</span>
-                                    <div style="flex: 1; min-width: 0;">
-                                        <div class="tree-name" style="font-size: 12px; font-weight: 500;">${escapeHtml(ad.name)}</div>
-                                        <div class="tree-id">${ad.id}</div>
-                                    </div>
-                                    <div class="tree-actions">
-                                        ${statusBadgeHTML(ad.status, ad.id, 'ad')}
-                                    </div>
-                                </div>
-                        `;
-                    });
-
-                    html += `
-                            </div>
-                        </div>
-                    `;
-                });
-
-                html += `
-                    </div>
-                </div>
-                `;
-            });
-
-            container.innerHTML = html;
-            loading.style.display = 'none';
-            container.style.display = 'block';
-
-        } catch (err) {
-            loading.textContent = '❌ Erro: ' + err.message;
-        } finally {
-            btn.disabled = false;
-            btn.textContent = '🔄 Atualizar';
-        }
-    }
-
-    function escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
-
-    // Inicializar
-    document.addEventListener('DOMContentLoaded', loadTree);
+    // ======================== INIT ========================
+    document.addEventListener('DOMContentLoaded', () => {
+        updateTabsUI();
+        loadCurrentLevel();
+    });
 </script>
 {% endblock %}

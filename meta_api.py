@@ -202,114 +202,202 @@ class MetaUploader:
         print(f"✅ [update_budget] {entity_type} {entity_id} → R$ {daily_budget}/dia ({budget_cents} centavos)")
         return {'success': True, 'entity_id': entity_id, 'new_budget': float(daily_budget)}
 
-    def get_campaign_tree(self, date_preset='today'):
+    def get_campaigns_list(self, date_preset='today'):
         """
-        Retorna hierarquia completa: Campanhas → Ad Sets → Ads.
-        Inclui status, budget e métricas de cada nível.
+        Lista campanhas (ACTIVE + PAUSED) com status, budget e métricas.
+        Lazy: apenas 2 chamadas API (campaigns + insights).
         """
         try:
-            # 1. Buscar campanhas ativas e pausadas
-            url_campaigns = f"https://graph.facebook.com/v22.0/{self.account_id}/campaigns"
+            # 1. Buscar campanhas
+            url = f"https://graph.facebook.com/v22.0/{self.account_id}/campaigns"
             params = {
                 'access_token': self.access_token,
                 'fields': 'id,name,status,effective_status,daily_budget,lifetime_budget,objective',
                 'filtering': '[{"field":"effective_status","operator":"IN","value":["ACTIVE","PAUSED"]}]',
                 'limit': 100
             }
-            resp = requests.get(url_campaigns, params=params, timeout=30)
+            resp = requests.get(url, params=params, timeout=30)
             campaigns_data = resp.json().get('data', [])
 
-            # Buscar insights das campanhas
+            # 2. Buscar insights (métricas)
             insights_map = {}
             try:
-                insights_list = self.get_campaign_insights(date_preset)
-                for ins in insights_list:
+                for ins in self.get_campaign_insights(date_preset):
                     insights_map[ins['id']] = ins
             except Exception:
                 pass
 
-            tree = []
-
+            results = []
             for camp in campaigns_data:
                 camp_id = camp['id']
-                camp_insights = insights_map.get(camp_id, {})
-                daily_budget_raw = camp.get('daily_budget')
-                daily_budget = float(daily_budget_raw) / 100 if daily_budget_raw else None
-
-                camp_node = {
+                ins = insights_map.get(camp_id, {})
+                daily_raw = camp.get('daily_budget')
+                results.append({
                     'id': camp_id,
                     'name': camp.get('name', '?'),
                     'status': camp.get('effective_status', camp.get('status', '?')),
-                    'daily_budget': daily_budget,
+                    'daily_budget': float(daily_raw) / 100 if daily_raw else None,
                     'lifetime_budget': float(camp.get('lifetime_budget', 0)) / 100 if camp.get('lifetime_budget') else None,
                     'objective': camp.get('objective', ''),
-                    'spend': camp_insights.get('spend', 0),
-                    'compras': camp_insights.get('compras', 0),
-                    'checkouts': camp_insights.get('checkouts', 0),
-                    'currency': camp_insights.get('currency', 'BRL'),
-                    'adsets': []
-                }
+                    'spend': ins.get('spend', 0),
+                    'compras': ins.get('compras', 0),
+                    'checkouts': ins.get('checkouts', 0),
+                    'cpa_compra': ins.get('cpa_compra', 0),
+                    'cpa_checkout': ins.get('cpa_checkout', 0),
+                    'currency': ins.get('currency', 'BRL'),
+                })
 
-                # 2. Buscar Ad Sets de cada campanha
-                url_adsets = f"https://graph.facebook.com/v22.0/{camp_id}/adsets"
-                params_adsets = {
+            print(f"📊 [get_campaigns_list] {len(results)} campanhas carregadas.")
+            return results
+        except Exception as e:
+            print(f"❌ [get_campaigns_list] Erro: {e}")
+            import traceback; traceback.print_exc()
+            return []
+
+    def get_adsets_list(self, campaign_ids, date_preset='today'):
+        """
+        Lista ad sets de uma ou mais campanhas, com status, budget e métricas de gasto.
+        Lazy: 1 chamada de adsets + 1 de insights por campaign.
+        """
+        try:
+            all_adsets = []
+            for camp_id in campaign_ids:
+                # Buscar ad sets
+                url = f"https://graph.facebook.com/v22.0/{camp_id}/adsets"
+                params = {
                     'access_token': self.access_token,
-                    'fields': 'id,name,status,effective_status,daily_budget,lifetime_budget',
+                    'fields': 'id,name,status,effective_status,daily_budget,lifetime_budget,campaign_id',
                     'filtering': '[{"field":"effective_status","operator":"IN","value":["ACTIVE","PAUSED"]}]',
                     'limit': 100
                 }
+                resp = requests.get(url, params=params, timeout=30)
+                adsets_data = resp.json().get('data', [])
+
+                # Buscar insights dos adsets (gasto, ações)
+                insights_map = {}
                 try:
-                    resp_adsets = requests.get(url_adsets, params=params_adsets, timeout=30)
-                    adsets_data = resp_adsets.json().get('data', [])
+                    url_ins = f"https://graph.facebook.com/v22.0/{self.account_id}/insights"
+                    params_ins = {
+                        'access_token': self.access_token,
+                        'level': 'adset',
+                        'fields': 'adset_id,adset_name,spend,actions,cost_per_action_type,account_currency',
+                        'date_preset': date_preset,
+                        'filtering': f'[{{"field":"campaign.id","operator":"EQUAL","value":"{camp_id}"}}]',
+                        'limit': 200
+                    }
+                    resp_ins = requests.get(url_ins, params=params_ins, timeout=30)
+                    for ins in resp_ins.json().get('data', []):
+                        insights_map[ins.get('adset_id')] = ins
                 except Exception:
-                    adsets_data = []
+                    pass
 
                 for adset in adsets_data:
                     adset_id = adset['id']
-                    adset_daily = adset.get('daily_budget')
-                    adset_node = {
+                    ins = insights_map.get(adset_id, {})
+                    daily_raw = adset.get('daily_budget')
+                    spend = float(ins.get('spend', 0))
+
+                    # Extrair compras e checkouts
+                    compras, checkouts = 0, 0
+                    for action in ins.get('actions', []):
+                        a_type = action.get('action_type', '')
+                        val = int(action.get('value', 0))
+                        if a_type in ['purchase', 'offsite_conversion.fb_pixel_purchase', 'onsite_conversion.purchase']:
+                            compras += val
+                        if a_type in ['initiate_checkout', 'offsite_conversion.fb_pixel_initiate_checkout']:
+                            checkouts += val
+
+                    all_adsets.append({
                         'id': adset_id,
                         'name': adset.get('name', '?'),
+                        'campaign_id': camp_id,
                         'status': adset.get('effective_status', adset.get('status', '?')),
-                        'daily_budget': float(adset_daily) / 100 if adset_daily else None,
+                        'daily_budget': float(daily_raw) / 100 if daily_raw else None,
                         'lifetime_budget': float(adset.get('lifetime_budget', 0)) / 100 if adset.get('lifetime_budget') else None,
-                        'ads': []
-                    }
+                        'spend': spend,
+                        'compras': compras,
+                        'checkouts': checkouts,
+                        'cpa_compra': spend / compras if compras > 0 else 0,
+                        'cpa_checkout': spend / checkouts if checkouts > 0 else 0,
+                        'currency': ins.get('account_currency', 'BRL'),
+                    })
 
-                    # 3. Buscar Ads de cada Ad Set
-                    url_ads = f"https://graph.facebook.com/v22.0/{adset_id}/ads"
-                    params_ads = {
-                        'access_token': self.access_token,
-                        'fields': 'id,name,status,effective_status',
-                        'filtering': '[{"field":"effective_status","operator":"IN","value":["ACTIVE","PAUSED"]}]',
-                        'limit': 100
-                    }
-                    try:
-                        resp_ads = requests.get(url_ads, params=params_ads, timeout=30)
-                        ads_data = resp_ads.json().get('data', [])
-                    except Exception:
-                        ads_data = []
-
-                    for ad in ads_data:
-                        adset_node['ads'].append({
-                            'id': ad['id'],
-                            'name': ad.get('name', '?'),
-                            'status': ad.get('effective_status', ad.get('status', '?'))
-                        })
-
-                    camp_node['adsets'].append(adset_node)
-
-                tree.append(camp_node)
-
-            print(f"📊 [get_campaign_tree] {len(tree)} campanhas, "
-                  f"{sum(len(c['adsets']) for c in tree)} conjuntos, "
-                  f"{sum(len(a['ads']) for c in tree for a in c['adsets'])} anúncios")
-            return tree
-
+            print(f"📦 [get_adsets_list] {len(all_adsets)} conjuntos de {len(campaign_ids)} campanha(s).")
+            return all_adsets
         except Exception as e:
-            print(f"❌ [get_campaign_tree] Erro: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"❌ [get_adsets_list] Erro: {e}")
+            import traceback; traceback.print_exc()
+            return []
+
+    def get_ads_list(self, adset_ids, date_preset='today'):
+        """
+        Lista ads de um ou mais ad sets, com status e métricas de gasto.
+        Lazy: 1 chamada de ads + 1 de insights por adset.
+        """
+        try:
+            all_ads = []
+            for adset_id in adset_ids:
+                # Buscar ads
+                url = f"https://graph.facebook.com/v22.0/{adset_id}/ads"
+                params = {
+                    'access_token': self.access_token,
+                    'fields': 'id,name,status,effective_status,adset_id',
+                    'filtering': '[{"field":"effective_status","operator":"IN","value":["ACTIVE","PAUSED"]}]',
+                    'limit': 100
+                }
+                resp = requests.get(url, params=params, timeout=30)
+                ads_data = resp.json().get('data', [])
+
+                # Buscar insights dos ads (gasto)
+                insights_map = {}
+                try:
+                    url_ins = f"https://graph.facebook.com/v22.0/{self.account_id}/insights"
+                    params_ins = {
+                        'access_token': self.access_token,
+                        'level': 'ad',
+                        'fields': 'ad_id,ad_name,spend,actions,cost_per_action_type,account_currency',
+                        'date_preset': date_preset,
+                        'filtering': f'[{{"field":"adset.id","operator":"EQUAL","value":"{adset_id}"}}]',
+                        'limit': 200
+                    }
+                    resp_ins = requests.get(url_ins, params=params_ins, timeout=30)
+                    for ins in resp_ins.json().get('data', []):
+                        insights_map[ins.get('ad_id')] = ins
+                except Exception:
+                    pass
+
+                for ad in ads_data:
+                    ad_id = ad['id']
+                    ins = insights_map.get(ad_id, {})
+                    spend = float(ins.get('spend', 0))
+
+                    compras, checkouts = 0, 0
+                    for action in ins.get('actions', []):
+                        a_type = action.get('action_type', '')
+                        val = int(action.get('value', 0))
+                        if a_type in ['purchase', 'offsite_conversion.fb_pixel_purchase', 'onsite_conversion.purchase']:
+                            compras += val
+                        if a_type in ['initiate_checkout', 'offsite_conversion.fb_pixel_initiate_checkout']:
+                            checkouts += val
+
+                    all_ads.append({
+                        'id': ad_id,
+                        'name': ad.get('name', '?'),
+                        'adset_id': adset_id,
+                        'status': ad.get('effective_status', ad.get('status', '?')),
+                        'spend': spend,
+                        'compras': compras,
+                        'checkouts': checkouts,
+                        'cpa_compra': spend / compras if compras > 0 else 0,
+                        'cpa_checkout': spend / checkouts if checkouts > 0 else 0,
+                        'currency': ins.get('account_currency', 'BRL'),
+                    })
+
+            print(f"🎨 [get_ads_list] {len(all_ads)} anúncios de {len(adset_ids)} conjunto(s).")
+            return all_ads
+        except Exception as e:
+            print(f"❌ [get_ads_list] Erro: {e}")
+            import traceback; traceback.print_exc()
             return []
 
     # ======================== IDENTITY & TRACKING FETCHERS ========================

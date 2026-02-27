@@ -21,35 +21,11 @@ def otimizar_campanhas(account_id):
     session['account_id'] = account_id
     return render_template('optimizer.html', account_id=account_id)
 
-@optimization_bp.route('/api/account/<account_id>/insights')
-def api_insights(account_id):
-    """
-    Retorna dados de performance das campanhas.
-    """
-    from app import obter_token
-    from meta_api import MetaUploader
-    
-    token = obter_token()
-    if not token:
-        return jsonify({"success": False, "error": "Não autenticado"}), 401
+# ======================== DATA ENDPOINTS ========================
 
-    date_preset = request.args.get('date_preset', 'today')
-
-    try:
-        uploader = MetaUploader(account_id, token, APP_ID, APP_SECRET)
-        insights_data = uploader.get_campaign_insights(date_preset=date_preset)
-        return jsonify({"success": True, "data": insights_data})
-
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({"success": False, "error": str(e)}), 500
-
-@optimization_bp.route('/api/account/<account_id>/campaign-tree')
-def api_campaign_tree(account_id):
-    """
-    Retorna hierarquia completa: Campanhas → Ad Sets → Ads.
-    """
+@optimization_bp.route('/api/account/<account_id>/campaigns')
+def api_campaigns(account_id):
+    """Lista campanhas com métricas, status e budget."""
     from app import obter_token
     from meta_api import MetaUploader
 
@@ -61,20 +37,67 @@ def api_campaign_tree(account_id):
 
     try:
         uploader = MetaUploader(account_id, token, APP_ID, APP_SECRET)
-        tree = uploader.get_campaign_tree(date_preset=date_preset)
-        return jsonify({"success": True, "data": tree})
-
+        data = uploader.get_campaigns_list(date_preset=date_preset)
+        return jsonify({"success": True, "data": data})
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        import traceback; traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
+
+@optimization_bp.route('/api/account/<account_id>/adsets')
+def api_adsets(account_id):
+    """Lista ad sets de campanhas específicas."""
+    from app import obter_token
+    from meta_api import MetaUploader
+
+    token = obter_token()
+    if not token:
+        return jsonify({"success": False, "error": "Não autenticado"}), 401
+
+    campaign_ids = request.args.get('campaign_ids', '')
+    if not campaign_ids:
+        return jsonify({"success": False, "error": "campaign_ids é obrigatório"}), 400
+
+    ids_list = [cid.strip() for cid in campaign_ids.split(',') if cid.strip()]
+    date_preset = request.args.get('date_preset', 'today')
+
+    try:
+        uploader = MetaUploader(account_id, token, APP_ID, APP_SECRET)
+        data = uploader.get_adsets_list(ids_list, date_preset=date_preset)
+        return jsonify({"success": True, "data": data})
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@optimization_bp.route('/api/account/<account_id>/ads')
+def api_ads(account_id):
+    """Lista ads de ad sets específicos."""
+    from app import obter_token
+    from meta_api import MetaUploader
+
+    token = obter_token()
+    if not token:
+        return jsonify({"success": False, "error": "Não autenticado"}), 401
+
+    adset_ids = request.args.get('adset_ids', '')
+    if not adset_ids:
+        return jsonify({"success": False, "error": "adset_ids é obrigatório"}), 400
+
+    ids_list = [aid.strip() for aid in adset_ids.split(',') if aid.strip()]
+    date_preset = request.args.get('date_preset', 'today')
+
+    try:
+        uploader = MetaUploader(account_id, token, APP_ID, APP_SECRET)
+        data = uploader.get_ads_list(ids_list, date_preset=date_preset)
+        return jsonify({"success": True, "data": data})
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+# ======================== ACTION ENDPOINTS ========================
 
 @optimization_bp.route('/api/account/<account_id>/entity/status', methods=['POST'])
 def api_entity_status(account_id):
-    """
-    Altera o status (PAUSED/ACTIVE) de uma entidade (campaign, adset, ad).
-    Body JSON: {entity_id, entity_type, status}
-    """
+    """Altera status (PAUSED/ACTIVE) de campaign, adset ou ad."""
     from app import obter_token
     from meta_api import MetaUploader
 
@@ -97,18 +120,13 @@ def api_entity_status(account_id):
         uploader = MetaUploader(account_id, token, APP_ID, APP_SECRET)
         result = uploader.update_entity_status(entity_id, entity_type, new_status)
         return jsonify(result)
-
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        import traceback; traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
 
 @optimization_bp.route('/api/account/<account_id>/entity/budget', methods=['POST'])
 def api_entity_budget(account_id):
-    """
-    Altera o orçamento diário de uma campanha ou adset.
-    Body JSON: {entity_id, entity_type, daily_budget}
-    """
+    """Altera orçamento diário de campaign ou adset."""
     from app import obter_token
     from meta_api import MetaUploader
 
@@ -131,9 +149,6 @@ def api_entity_budget(account_id):
         uploader = MetaUploader(account_id, token, APP_ID, APP_SECRET)
         result = uploader.update_budget(entity_id, entity_type, daily_budget)
         return jsonify(result)
-
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        import traceback; traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
-
