@@ -7,45 +7,59 @@
 {% endblock %}
 
 {% block content %}
-<div class="card border-accent">
-    <div class="card-title">
-        <span>📊 Dashboard de Otimização</span>
-        <span class="badge badge-cyan">v1.8</span>
-    </div>
-    <p class="card-desc">Gerencie campanhas, conjuntos e anúncios: altere verbas, pause e ative em tempo real.</p>
+<style>
+    /* Override container width for optimizer */
+    .container {
+        max-width: 100% !important;
+        padding: 0 20px !important;
+        margin: 16px auto !important;
+    }
+</style>
 
-    <!-- Filtros -->
-    <div style="display: flex; gap: 12px; align-items: flex-end;">
-        <div style="flex: 1;">
-            <label style="margin-top:0;">Período de Análise</label>
-            <select id="date-preset" onchange="loadCurrentLevel()">
-                <option value="today">Hoje</option>
-                <option value="yesterday">Ontem</option>
-                <option value="last_7d">Últimos 7 dias</option>
-                <option value="last_30d">Últimos 30 dias</option>
-                <option value="this_month">Este Mês</option>
-                <option value="last_month">Mês Passado</option>
-                <option value="maximum">Tempo Todo</option>
-            </select>
+<!-- Header compacto -->
+<div
+    style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; gap: 10px;">
+    <div style="display: flex; align-items: center; gap: 12px;">
+        <h2 style="font-size: 16px; font-weight: 700; color: var(--text-primary); margin: 0;">📊 Otimização</h2>
+        <span
+            style="font-size: 10px; padding: 2px 8px; border-radius: 10px; background: linear-gradient(135deg, #0891b2, #06b6d4); color: #fff; font-weight: 700;">v1.8</span>
+    </div>
+
+    <!-- Date selector -->
+    <div style="display: flex; align-items: center; gap: 8px;">
+        <select id="date-preset" onchange="onPresetChange()" style="padding: 6px 10px; font-size: 12px; width: auto;">
+            <option value="today">Hoje</option>
+            <option value="yesterday">Ontem</option>
+            <option value="last_7d" selected>Últimos 7 dias</option>
+            <option value="last_30d">Últimos 30 dias</option>
+            <option value="this_month">Este Mês</option>
+            <option value="last_month">Mês Passado</option>
+            <option value="custom">📅 Personalizado</option>
+        </select>
+        <div id="custom-dates" style="display: none; align-items: center; gap: 4px;">
+            <input type="date" id="date-since" style="padding: 5px 8px; font-size: 12px; width: auto;">
+            <span style="color: var(--text-muted); font-size: 11px;">até</span>
+            <input type="date" id="date-until" style="padding: 5px 8px; font-size: 12px; width: auto;">
         </div>
-        <button class="btn-history" onclick="loadCurrentLevel()" id="btn-refresh">🔄 Atualizar</button>
+        <button class="btn-history" onclick="loadCurrentLevel()" id="btn-refresh"
+            style="padding: 6px 12px; font-size: 12px;">🔄</button>
     </div>
 </div>
 
 <!-- Navigation Tabs -->
 <div class="opt-tabs">
     <button class="opt-tab active" id="tab-campaigns" onclick="navigateTo('campaigns')">
-        📊 Campanhas <span class="opt-tab-count" id="count-campaigns"></span>
+        📊 Campanhas <span class="opt-tab-count" id="count-campaigns">—</span>
     </button>
     <button class="opt-tab" id="tab-adsets" onclick="navigateTo('adsets')">
-        📦 Conjuntos <span class="opt-tab-count" id="count-adsets"></span>
+        📦 Conjuntos <span class="opt-tab-count" id="count-adsets">—</span>
     </button>
     <button class="opt-tab" id="tab-ads" onclick="navigateTo('ads')">
-        🎨 Anúncios <span class="opt-tab-count" id="count-ads"></span>
+        🎨 Anúncios <span class="opt-tab-count" id="count-ads">—</span>
     </button>
 </div>
 
-<!-- Breadcrumb de contexto (ex: "Conjuntos da Campanha X") -->
+<!-- Context bar -->
 <div class="opt-context" id="context-bar" style="display: none;">
     <span id="context-text"></span>
     <button class="opt-context-clear" onclick="clearFilter()">✕ Limpar filtro</button>
@@ -53,27 +67,22 @@
 
 <!-- Selection bar -->
 <div class="opt-selection-bar" id="selection-bar" style="display: none;">
-    <span id="selection-count">0 selecionados</span>
-    <button class="btn-action" onclick="viewChildrenOfSelected()" id="btn-view-children">
-        📂 Ver conjuntos das selecionadas
-    </button>
+    <span id="selection-count">0</span>
+    <button class="btn-action" onclick="viewChildrenOfSelected()" id="btn-view-children">📂 Ver conjuntos</button>
 </div>
 
+<!-- Totals row -->
+<div class="opt-totals" id="totals-bar" style="display: none;"></div>
+
 <!-- Data Table -->
-<div class="card" style="padding: 0; overflow: hidden;">
-    <div id="table-loading" class="queue-empty" style="border: none; border-radius: 0;">
-        Carregando dados da Meta Ads API...
+<div class="opt-table-wrap">
+    <div id="table-loading" class="opt-empty">Carregando...</div>
+    <div id="table-empty" class="opt-empty" style="display:none;">Nenhum dado com gasto para o período selecionado.
     </div>
-    <div id="table-empty" class="queue-empty" style="display: none; border: none; border-radius: 0;">
-        Nenhum dado encontrado para este período.
-    </div>
-    <table class="opt-table" id="data-table" style="display: none;">
-        <thead id="table-head">
-            <!-- Injetado via JS -->
-        </thead>
-        <tbody id="table-body">
-            <!-- Injetado via JS -->
-        </tbody>
+    <table class="opt-table" id="data-table" style="display:none;">
+        <thead id="table-head"></thead>
+        <tbody id="table-body"></tbody>
+        <tfoot id="table-foot"></tfoot>
     </table>
 </div>
 
@@ -82,54 +91,58 @@
     .opt-tabs {
         display: flex;
         gap: 0;
-        margin-bottom: 0;
-        border-bottom: 2px solid var(--border);
+        background: var(--bg-surface);
+        border: 1px solid var(--border);
+        border-bottom: none;
+        border-radius: var(--radius-md) var(--radius-md) 0 0;
+        overflow: hidden;
     }
 
     .opt-tab {
-        padding: 12px 24px;
+        flex: 1;
+        padding: 10px 16px;
         background: transparent;
         border: none;
         color: var(--text-muted);
         font-family: var(--font-sans);
-        font-size: 13px;
+        font-size: 12px;
         font-weight: 600;
         cursor: pointer;
         transition: all 0.2s;
         border-bottom: 2px solid transparent;
-        margin-bottom: -2px;
+        text-align: center;
     }
 
     .opt-tab:hover {
         color: var(--text-primary);
-        background: var(--bg-surface);
+        background: var(--card-bg-hover);
     }
 
     .opt-tab.active {
         color: var(--accent);
         border-bottom-color: var(--accent);
+        background: var(--bg-deep);
     }
 
     .opt-tab-count {
         font-size: 10px;
         background: var(--bg-deep);
         border: 1px solid var(--border);
-        padding: 1px 8px;
-        border-radius: 10px;
-        margin-left: 6px;
+        padding: 1px 7px;
+        border-radius: 8px;
+        margin-left: 4px;
     }
 
     /* ======================== CONTEXT BAR ======================== */
     .opt-context {
         display: flex;
         align-items: center;
-        gap: 12px;
-        padding: 10px 16px;
-        background: var(--accent-glow);
-        border: 1px solid var(--accent);
-        border-radius: var(--radius-sm);
-        margin-top: 12px;
-        font-size: 13px;
+        gap: 10px;
+        padding: 6px 14px;
+        background: #00f2ff0d;
+        border: 1px solid #00f2ff33;
+        border-radius: 0;
+        font-size: 12px;
         color: var(--accent);
         font-weight: 500;
     }
@@ -138,10 +151,10 @@
         background: transparent;
         border: 1px solid var(--accent);
         color: var(--accent);
-        padding: 3px 10px;
-        border-radius: 4px;
+        padding: 2px 8px;
+        border-radius: 3px;
         cursor: pointer;
-        font-size: 11px;
+        font-size: 10px;
         font-family: var(--font-sans);
         transition: all 0.2s;
         margin-left: auto;
@@ -156,36 +169,61 @@
     .opt-selection-bar {
         display: flex;
         align-items: center;
-        gap: 12px;
-        padding: 8px 16px;
+        gap: 10px;
+        padding: 5px 14px;
         background: var(--bg-surface);
         border: 1px solid var(--border);
-        border-radius: var(--radius-sm);
-        margin-top: 8px;
-        font-size: 12px;
+        border-top: none;
+        font-size: 11px;
         color: var(--text-secondary);
     }
 
+    .opt-selection-bar .btn-action {
+        padding: 3px 8px;
+        font-size: 10px;
+    }
+
     /* ======================== TABLE ======================== */
+    .opt-table-wrap {
+        border: 1px solid var(--border);
+        border-radius: 0 0 var(--radius-md) var(--radius-md);
+        overflow: hidden;
+        overflow-x: auto;
+    }
+
+    .opt-empty {
+        padding: 40px;
+        text-align: center;
+        color: var(--text-muted);
+        font-size: 13px;
+        font-weight: 300;
+    }
+
     .opt-table {
         width: 100%;
         border-collapse: collapse;
+        table-layout: auto;
+        min-width: 900px;
     }
 
+    /* Head */
     .opt-table thead th {
-        padding: 14px 16px;
+        padding: 8px 12px;
         text-align: left;
         font-size: 10px;
         color: var(--text-muted);
         text-transform: uppercase;
-        letter-spacing: 0.8px;
+        letter-spacing: 0.6px;
         font-weight: 700;
-        border-bottom: 1px solid var(--border);
+        border-bottom: 2px solid var(--border);
         background: var(--bg-surface);
         cursor: pointer;
         white-space: nowrap;
         user-select: none;
-        transition: color 0.2s;
+        transition: color 0.15s;
+        position: sticky;
+        top: 0;
+        z-index: 2;
     }
 
     .opt-table thead th:hover {
@@ -195,43 +233,74 @@
     .opt-table thead th.sort-asc::after {
         content: ' ▲';
         color: var(--accent);
+        font-size: 9px;
     }
 
     .opt-table thead th.sort-desc::after {
         content: ' ▼';
         color: var(--accent);
+        font-size: 9px;
     }
 
+    /* Body */
     .opt-table tbody tr {
         border-bottom: 1px solid var(--border-subtle);
-        transition: background 0.15s;
+        transition: background 0.1s;
+    }
+
+    .opt-table tbody tr:nth-child(even) {
+        background: #111116;
+    }
+
+    .opt-table tbody tr:nth-child(odd) {
+        background: var(--card-bg);
     }
 
     .opt-table tbody tr:hover {
-        background: var(--card-bg-hover);
+        background: #1c1c24 !important;
+    }
+
+    .opt-table tbody tr.selected-row {
+        background: #00f2ff0a !important;
+        border-left: 2px solid var(--accent);
     }
 
     .opt-table tbody td {
-        padding: 12px 16px;
-        font-size: 13px;
+        padding: 7px 12px;
+        font-size: 12px;
         vertical-align: middle;
+        white-space: nowrap;
     }
 
-    /* Name cell - clickable */
+    /* Foot — totals */
+    .opt-table tfoot td {
+        padding: 8px 12px;
+        font-size: 12px;
+        font-weight: 700;
+        background: var(--bg-surface);
+        border-top: 2px solid var(--border);
+        color: var(--accent);
+        font-family: var(--font-mono);
+    }
+
+    /* Name cell */
     .cell-name {
         font-weight: 600;
         color: var(--text-primary);
         cursor: pointer;
-        transition: color 0.2s;
+        transition: color 0.15s;
+        font-size: 12px;
+        max-width: 280px;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     .cell-name:hover {
         color: var(--accent);
-        text-decoration: underline;
     }
 
     .cell-id {
-        font-size: 10px;
+        font-size: 9px;
         color: var(--text-muted);
         font-family: var(--font-mono);
     }
@@ -239,80 +308,84 @@
     .cell-mono {
         font-family: var(--font-mono);
         font-weight: 500;
-        color: var(--accent);
-        font-size: 13px;
+        font-size: 12px;
+        color: var(--text-primary);
+    }
+
+    .cell-zero {
+        color: var(--text-muted) !important;
     }
 
     /* Status badge */
     .status-badge {
-        font-size: 10px;
+        font-size: 9px;
         font-weight: 700;
-        padding: 3px 10px;
-        border-radius: 12px;
+        padding: 2px 8px;
+        border-radius: 10px;
         text-transform: uppercase;
-        letter-spacing: 0.5px;
+        letter-spacing: 0.4px;
         cursor: pointer;
-        transition: all 0.2s;
+        transition: all 0.15s;
         border: none;
         white-space: nowrap;
     }
 
     .status-badge:hover {
-        opacity: 0.8;
+        filter: brightness(1.2);
     }
 
     .status-active {
-        background: var(--success-bg);
-        color: var(--success);
-        border: 1px solid var(--success);
+        background: #22c55e18;
+        color: #22c55e;
+        border: 1px solid #22c55e44;
     }
 
     .status-paused {
-        background: var(--danger-bg);
-        color: var(--danger);
-        border: 1px solid var(--danger);
+        background: #ef444418;
+        color: #ef4444;
+        border: 1px solid #ef444444;
     }
 
     /* Budget inline */
     .budget-inline {
         display: inline-flex;
         align-items: center;
-        gap: 4px;
+        gap: 3px;
     }
 
     .budget-input {
-        width: 80px;
-        padding: 3px 6px;
+        width: 70px;
+        padding: 2px 5px;
         background: var(--bg-deep);
         border: 1px solid var(--border);
-        border-radius: 4px;
+        border-radius: 3px;
         color: var(--accent);
         font-family: var(--font-mono);
-        font-size: 12px;
+        font-size: 11px;
         text-align: right;
-        transition: border-color 0.2s;
+        transition: border-color 0.15s;
     }
 
     .budget-input:focus {
         outline: none;
         border-color: var(--accent);
-        box-shadow: 0 0 6px var(--accent-glow);
+        box-shadow: 0 0 4px var(--accent-glow);
     }
 
     .btn-save-budget {
-        padding: 3px 6px;
-        background: var(--success-bg);
-        border: 1px solid var(--success);
-        border-radius: 4px;
-        color: var(--success);
-        font-size: 10px;
+        padding: 2px 5px;
+        background: #22c55e18;
+        border: 1px solid #22c55e;
+        border-radius: 3px;
+        color: #22c55e;
+        font-size: 9px;
         cursor: pointer;
-        transition: all 0.2s;
+        transition: all 0.15s;
         display: none;
     }
 
     .btn-save-budget:hover {
-        background: var(--success);
+        background: #22c55e;
         color: #fff;
     }
 
@@ -322,8 +395,8 @@
 
     /* Checkbox */
     .opt-check {
-        width: 16px;
-        height: 16px;
+        width: 14px;
+        height: 14px;
         accent-color: var(--accent);
         cursor: pointer;
     }
@@ -331,12 +404,12 @@
     /* Spinner */
     .action-spinner {
         display: inline-block;
-        width: 12px;
-        height: 12px;
+        width: 10px;
+        height: 10px;
         border: 2px solid var(--border);
         border-top-color: var(--accent);
         border-radius: 50%;
-        animation: spin 0.6s linear infinite;
+        animation: spin 0.5s linear infinite;
     }
 
     @keyframes spin {
@@ -352,117 +425,108 @@
     const ACCOUNT_ID = "{{ account_id }}";
 
     // ======================== STATE ========================
-    let currentLevel = 'campaigns'; // 'campaigns' | 'adsets' | 'ads'
+    let currentLevel = 'campaigns';
     let currentData = [];
     let selectedIds = new Set();
-    let sortColumn = null;
+    let sortColumn = 'spend';
     let sortDir = 'desc';
-    // Filtro de contexto: quando clicamos no nome de uma campanha, filtramos por ela
-    let filterContext = null; // { type: 'campaign', ids: [...], label: '...' } ou { type: 'adset', ... }
+    let filterContext = null;
+    let lastCheckedIndex = -1; // Para shift+click
 
     const COLUMNS = {
         campaigns: [
-            { key: 'check', label: '', sortable: false },
+            { key: 'check', label: '', sortable: false, w: '30px' },
             { key: 'name', label: 'Campanha', sortable: true },
-            { key: 'status', label: 'Status', sortable: true },
-            { key: 'daily_budget', label: 'Verba/Dia', sortable: true },
-            { key: 'spend', label: 'Gasto', sortable: true },
-            { key: 'checkouts', label: 'Checkouts', sortable: true },
-            { key: 'cpa_checkout', label: 'CPA Check', sortable: true },
-            { key: 'compras', label: 'Compras', sortable: true },
-            { key: 'cpa_compra', label: 'CAC', sortable: true },
+            { key: 'status', label: 'Status', sortable: true, w: '80px' },
+            { key: 'daily_budget', label: 'Verba/Dia', sortable: true, w: '110px' },
+            { key: 'spend', label: 'Gasto', sortable: true, w: '100px' },
+            { key: 'checkouts', label: 'Fin. Compra', sortable: true, w: '80px' },
+            { key: 'cpa_checkout', label: 'Custo/Fin.', sortable: true, w: '90px' },
+            { key: 'compras', label: 'Compras', sortable: true, w: '70px' },
+            { key: 'cpa_compra', label: 'CAC', sortable: true, w: '90px' },
         ],
         adsets: [
-            { key: 'check', label: '', sortable: false },
-            { key: 'name', label: 'Conjunto', sortable: true },
-            { key: 'status', label: 'Status', sortable: true },
-            { key: 'daily_budget', label: 'Verba/Dia', sortable: true },
-            { key: 'spend', label: 'Gasto', sortable: true },
-            { key: 'checkouts', label: 'Checkouts', sortable: true },
-            { key: 'cpa_checkout', label: 'CPA Check', sortable: true },
-            { key: 'compras', label: 'Compras', sortable: true },
-            { key: 'cpa_compra', label: 'CAC', sortable: true },
+            { key: 'check', label: '', sortable: false, w: '30px' },
+            { key: 'name', label: 'Conjunto de Anúncios', sortable: true },
+            { key: 'status', label: 'Status', sortable: true, w: '80px' },
+            { key: 'daily_budget', label: 'Verba/Dia', sortable: true, w: '110px' },
+            { key: 'spend', label: 'Gasto', sortable: true, w: '100px' },
+            { key: 'checkouts', label: 'Fin. Compra', sortable: true, w: '80px' },
+            { key: 'cpa_checkout', label: 'Custo/Fin.', sortable: true, w: '90px' },
+            { key: 'compras', label: 'Compras', sortable: true, w: '70px' },
+            { key: 'cpa_compra', label: 'CAC', sortable: true, w: '90px' },
         ],
         ads: [
-            { key: 'check', label: '', sortable: false },
+            { key: 'check', label: '', sortable: false, w: '30px' },
             { key: 'name', label: 'Anúncio', sortable: true },
-            { key: 'status', label: 'Status', sortable: true },
-            { key: 'spend', label: 'Gasto', sortable: true },
-            { key: 'checkouts', label: 'Checkouts', sortable: true },
-            { key: 'cpa_checkout', label: 'CPA Check', sortable: true },
-            { key: 'compras', label: 'Compras', sortable: true },
-            { key: 'cpa_compra', label: 'CAC', sortable: true },
+            { key: 'status', label: 'Status', sortable: true, w: '80px' },
+            { key: 'spend', label: 'Gasto', sortable: true, w: '100px' },
+            { key: 'checkouts', label: 'Fin. Compra', sortable: true, w: '80px' },
+            { key: 'cpa_checkout', label: 'Custo/Fin.', sortable: true, w: '90px' },
+            { key: 'compras', label: 'Compras', sortable: true, w: '70px' },
+            { key: 'cpa_compra', label: 'CAC', sortable: true, w: '90px' },
         ]
     };
 
-    function fmtBRL(val, currency = 'BRL') {
-        return new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(val || 0);
+    function fmtBRL(val, currency = 'BRL') { return new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(val || 0); }
+    function escapeHtml(t) { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
+
+    // ======================== DATE ========================
+    function onPresetChange() {
+        const sel = document.getElementById('date-preset').value;
+        document.getElementById('custom-dates').style.display = sel === 'custom' ? 'flex' : 'none';
+        if (sel !== 'custom') loadCurrentLevel();
     }
 
-    function escapeHtml(text) {
-        const d = document.createElement('div');
-        d.textContent = text;
-        return d.innerHTML;
+    function getDateParams() {
+        const preset = document.getElementById('date-preset').value;
+        if (preset === 'custom') {
+            const since = document.getElementById('date-since').value;
+            const until = document.getElementById('date-until').value;
+            if (since && until) return `since=${since}&until=${until}`;
+            return 'date_preset=today';
+        }
+        return `date_preset=${preset}`;
     }
 
     // ======================== NAVIGATION ========================
     function navigateTo(level) {
         currentLevel = level;
         selectedIds.clear();
+        lastCheckedIndex = -1;
         updateTabsUI();
-
-        if (level === 'campaigns') {
-            filterContext = null;
-        }
-
+        if (level === 'campaigns') filterContext = null;
         loadCurrentLevel();
     }
 
     function updateTabsUI() {
         document.querySelectorAll('.opt-tab').forEach(t => t.classList.remove('active'));
         document.getElementById(`tab-${currentLevel}`).classList.add('active');
-
-        // Update "ver children" button text
         const btn = document.getElementById('btn-view-children');
-        if (currentLevel === 'campaigns') {
-            btn.textContent = '📦 Ver conjuntos das selecionadas';
-        } else if (currentLevel === 'adsets') {
-            btn.textContent = '🎨 Ver anúncios dos selecionados';
-        } else {
-            btn.style.display = 'none';
-        }
-        if (currentLevel !== 'ads') btn.style.display = '';
+        if (currentLevel === 'campaigns') btn.textContent = '📦 Ver conjuntos';
+        else if (currentLevel === 'adsets') btn.textContent = '🎨 Ver anúncios';
+        btn.style.display = currentLevel === 'ads' ? 'none' : '';
     }
 
     function updateSelectionBar() {
         const bar = document.getElementById('selection-bar');
-        const countEl = document.getElementById('selection-count');
-        if (selectedIds.size > 0) {
-            bar.style.display = 'flex';
-            countEl.textContent = `${selectedIds.size} selecionado(s)`;
-        } else {
-            bar.style.display = 'none';
-        }
+        const cnt = document.getElementById('selection-count');
+        if (selectedIds.size > 0) { bar.style.display = 'flex'; cnt.textContent = `${selectedIds.size} selecionado(s)`; }
+        else bar.style.display = 'none';
+        // Highlight rows
+        document.querySelectorAll('#table-body tr').forEach(tr => {
+            tr.classList.toggle('selected-row', selectedIds.has(tr.dataset.id));
+        });
     }
 
     function updateContextBar() {
-        const bar = document.getElementById('context-bar');
-        const text = document.getElementById('context-text');
-        if (filterContext) {
-            bar.style.display = 'flex';
-            text.textContent = filterContext.label;
-        } else {
-            bar.style.display = 'none';
-        }
+        const bar = document.getElementById('context-bar'), text = document.getElementById('context-text');
+        if (filterContext) { bar.style.display = 'flex'; text.textContent = filterContext.label; }
+        else bar.style.display = 'none';
     }
 
-    function clearFilter() {
-        filterContext = null;
-        updateContextBar();
-        loadCurrentLevel();
-    }
+    function clearFilter() { filterContext = null; updateContextBar(); loadCurrentLevel(); }
 
-    // Click no nome → navegar para children
     function drillDown(entityId, entityName) {
         if (currentLevel === 'campaigns') {
             filterContext = { type: 'campaign', ids: [entityId], label: `📦 Conjuntos da campanha: "${entityName}"` };
@@ -471,114 +535,59 @@
             filterContext = { type: 'adset', ids: [entityId], label: `🎨 Anúncios do conjunto: "${entityName}"` };
             currentLevel = 'ads';
         }
-        selectedIds.clear();
-        updateTabsUI();
-        updateContextBar();
-        loadCurrentLevel();
+        selectedIds.clear(); lastCheckedIndex = -1;
+        updateTabsUI(); updateContextBar(); loadCurrentLevel();
     }
 
-    // Multi-select → ver children
     function viewChildrenOfSelected() {
-        if (selectedIds.size === 0) {
-            mostrarToast('⚠️ Selecione ao menos um item');
-            return;
-        }
+        if (selectedIds.size === 0) { mostrarToast('⚠️ Selecione ao menos um item'); return; }
         const ids = Array.from(selectedIds);
-        const names = ids.map(id => {
-            const item = currentData.find(d => d.id === id);
-            return item ? item.name : id;
-        });
-
+        const names = ids.map(id => { const i = currentData.find(d => d.id === id); return i ? i.name : id; });
         if (currentLevel === 'campaigns') {
-            const label = names.length === 1
-                ? `📦 Conjuntos da campanha: "${names[0]}"`
-                : `📦 Conjuntos de ${names.length} campanhas selecionadas`;
-            filterContext = { type: 'campaign', ids, label };
+            filterContext = { type: 'campaign', ids, label: names.length === 1 ? `📦 Conjuntos: "${names[0]}"` : `📦 Conjuntos de ${names.length} campanhas` };
             currentLevel = 'adsets';
         } else if (currentLevel === 'adsets') {
-            const label = names.length === 1
-                ? `🎨 Anúncios do conjunto: "${names[0]}"`
-                : `🎨 Anúncios de ${names.length} conjuntos selecionados`;
-            filterContext = { type: 'adset', ids, label };
+            filterContext = { type: 'adset', ids, label: names.length === 1 ? `🎨 Anúncios: "${names[0]}"` : `🎨 Anúncios de ${names.length} conjuntos` };
             currentLevel = 'ads';
         }
-        selectedIds.clear();
-        updateTabsUI();
-        updateContextBar();
-        loadCurrentLevel();
+        selectedIds.clear(); lastCheckedIndex = -1;
+        updateTabsUI(); updateContextBar(); loadCurrentLevel();
     }
 
     // ======================== DATA LOADING ========================
     async function loadCurrentLevel() {
-        const loading = document.getElementById('table-loading');
-        const empty = document.getElementById('table-empty');
-        const table = document.getElementById('data-table');
-        const btn = document.getElementById('btn-refresh');
-        const preset = document.getElementById('date-preset').value;
+        const loading = document.getElementById('table-loading'), empty = document.getElementById('table-empty'),
+            table = document.getElementById('data-table'), btn = document.getElementById('btn-refresh');
+        const dp = getDateParams();
 
-        loading.style.display = 'block';
-        empty.style.display = 'none';
-        table.style.display = 'none';
-        btn.disabled = true;
-        btn.textContent = '⏳...';
+        loading.style.display = 'block'; empty.style.display = 'none'; table.style.display = 'none';
+        document.getElementById('totals-bar').style.display = 'none';
+        btn.disabled = true; btn.textContent = '⏳';
 
         let url = '';
         if (currentLevel === 'campaigns') {
-            url = `/api/account/${ACCOUNT_ID}/campaigns?date_preset=${preset}`;
+            url = `/api/account/${ACCOUNT_ID}/campaigns?${dp}`;
         } else if (currentLevel === 'adsets') {
             const ids = filterContext?.ids?.join(',') || '';
-            if (!ids) {
-                // Se não tem filtro, mostra todas as campanhas selecionadas ou nada
-                loading.style.display = 'none';
-                empty.textContent = 'Selecione ou clique em uma campanha para ver os conjuntos.';
-                empty.style.display = 'block';
-                btn.disabled = false;
-                btn.textContent = '🔄 Atualizar';
-                return;
-            }
-            url = `/api/account/${ACCOUNT_ID}/adsets?campaign_ids=${ids}&date_preset=${preset}`;
+            if (!ids) { loading.style.display = 'none'; empty.textContent = 'Selecione ou clique em uma campanha.'; empty.style.display = 'block'; btn.disabled = false; btn.textContent = '🔄'; return; }
+            url = `/api/account/${ACCOUNT_ID}/adsets?campaign_ids=${ids}&${dp}`;
         } else if (currentLevel === 'ads') {
             const ids = filterContext?.ids?.join(',') || '';
-            if (!ids) {
-                loading.style.display = 'none';
-                empty.textContent = 'Selecione ou clique em um conjunto para ver os anúncios.';
-                empty.style.display = 'block';
-                btn.disabled = false;
-                btn.textContent = '🔄 Atualizar';
-                return;
-            }
-            url = `/api/account/${ACCOUNT_ID}/ads?adset_ids=${ids}&date_preset=${preset}`;
+            if (!ids) { loading.style.display = 'none'; empty.textContent = 'Selecione ou clique em um conjunto.'; empty.style.display = 'block'; btn.disabled = false; btn.textContent = '🔄'; return; }
+            url = `/api/account/${ACCOUNT_ID}/ads?adset_ids=${ids}&${dp}`;
         }
 
         try {
-            const r = await fetch(url);
-            const res = await r.json();
-
+            const r = await fetch(url); const res = await r.json();
             if (!res.success) throw new Error(res.error);
-
             currentData = res.data;
-
-            // Update tab counts
             document.getElementById(`count-${currentLevel}`).textContent = currentData.length;
 
-            if (currentData.length === 0) {
-                loading.style.display = 'none';
-                empty.textContent = 'Nenhum dado encontrado para este período.';
-                empty.style.display = 'block';
-                return;
-            }
-
+            if (currentData.length === 0) { loading.style.display = 'none'; empty.textContent = 'Nenhum dado com gasto no período selecionado.'; empty.style.display = 'block'; return; }
             renderTable();
-
-            loading.style.display = 'none';
-            table.style.display = 'table';
-
-        } catch (err) {
-            loading.textContent = '❌ Erro: ' + err.message;
-        } finally {
-            btn.disabled = false;
-            btn.textContent = '🔄 Atualizar';
-        }
+            loading.style.display = 'none'; table.style.display = 'table';
+        } catch (err) { loading.textContent = '❌ ' + err.message; }
+        finally { btn.disabled = false; btn.textContent = '🔄'; }
     }
 
     // ======================== TABLE RENDERING ========================
@@ -586,233 +595,205 @@
         const cols = COLUMNS[currentLevel];
         const head = document.getElementById('table-head');
         const body = document.getElementById('table-body');
+        const foot = document.getElementById('table-foot');
 
-        // Header
-        let headHTML = '<tr>';
-        cols.forEach(col => {
-            if (col.key === 'check') {
-                headHTML += `<th style="width: 40px; text-align: center;">
-                    <input type="checkbox" class="opt-check" onchange="toggleSelectAll(this.checked)">
-                </th>`;
+        // Head
+        let h = '<tr>';
+        cols.forEach(c => {
+            if (c.key === 'check') {
+                h += `<th style="width:${c.w};text-align:center;"><input type="checkbox" class="opt-check" onchange="toggleSelectAll(this.checked)"></th>`;
             } else {
-                const sortCls = sortColumn === col.key ? (sortDir === 'asc' ? 'sort-asc' : 'sort-desc') : '';
-                const onclick = col.sortable ? `onclick="sortBy('${col.key}')"` : '';
-                headHTML += `<th class="${sortCls}" ${onclick}>${col.label}</th>`;
+                const sc = sortColumn === c.key ? (sortDir === 'asc' ? 'sort-asc' : 'sort-desc') : '';
+                const oc = c.sortable ? `onclick="sortBy('${c.key}')"` : '';
+                const w = c.w ? `style="width:${c.w}"` : '';
+                h += `<th class="${sc}" ${oc} ${w}>${c.label}</th>`;
             }
         });
-        headHTML += '</tr>';
-        head.innerHTML = headHTML;
+        h += '</tr>'; head.innerHTML = h;
 
         // Sort data
         let sorted = [...currentData];
         if (sortColumn) {
             sorted.sort((a, b) => {
                 let va = a[sortColumn], vb = b[sortColumn];
-                if (typeof va === 'string') {
-                    va = va.toLowerCase(); vb = (vb || '').toLowerCase();
-                    return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
-                }
-                va = va || 0; vb = vb || 0;
-                return sortDir === 'asc' ? va - vb : vb - va;
+                if (typeof va === 'string') { va = (va || '').toLowerCase(); vb = (vb || '').toLowerCase(); return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va); }
+                va = va || 0; vb = vb || 0; return sortDir === 'asc' ? va - vb : vb - va;
             });
         }
 
         // Body
-        let bodyHTML = '';
-        sorted.forEach(item => {
-            const isChecked = selectedIds.has(item.id) ? 'checked' : '';
-            const currency = item.currency || 'BRL';
-            const entityType = currentLevel === 'campaigns' ? 'campaign' : currentLevel === 'adsets' ? 'adset' : 'ad';
-            const canDrill = currentLevel !== 'ads';
+        let b = '';
+        const entityType = currentLevel === 'campaigns' ? 'campaign' : currentLevel === 'adsets' ? 'adset' : 'ad';
+        const canDrill = currentLevel !== 'ads';
 
-            bodyHTML += '<tr>';
-            cols.forEach(col => {
-                switch (col.key) {
+        sorted.forEach((item, idx) => {
+            const chk = selectedIds.has(item.id) ? 'checked' : '';
+            const cur = item.currency || 'BRL';
+            const selCls = selectedIds.has(item.id) ? 'selected-row' : '';
+
+            b += `<tr class="${selCls}" data-id="${item.id}">`;
+            cols.forEach(c => {
+                switch (c.key) {
                     case 'check':
-                        bodyHTML += `<td style="text-align: center;">
-                            <input type="checkbox" class="opt-check" ${isChecked}
-                                onchange="toggleSelect('${item.id}', this.checked)">
-                        </td>`;
-                        break;
+                        b += `<td style="text-align:center;"><input type="checkbox" class="opt-check" data-idx="${idx}" ${chk}
+                        onclick="handleCheckClick(event, '${item.id}', ${idx})"></td>`; break;
                     case 'name':
-                        const clickAttr = canDrill ? `onclick="drillDown('${item.id}', '${escapeHtml(item.name).replace(/'/g, "\\'")}')"` : '';
-                        bodyHTML += `<td>
-                            <div class="${canDrill ? 'cell-name' : ''}" ${clickAttr}>${escapeHtml(item.name)}</div>
-                            <div class="cell-id">${item.id}</div>
-                        </td>`;
-                        break;
+                        const click = canDrill ? `onclick="drillDown('${item.id}','${escapeHtml(item.name).replace(/'/g, "\\'")}')"` : '';
+                        b += `<td><div class="${canDrill ? 'cell-name' : ''}" ${click} title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</div><div class="cell-id">${item.id}</div></td>`; break;
                     case 'status':
-                        const isActive = item.status === 'ACTIVE';
-                        const cls = isActive ? 'status-active' : 'status-paused';
-                        const label = isActive ? '🟢 ATIVO' : '🔴 PAUSADO';
-                        const newStatus = isActive ? 'PAUSED' : 'ACTIVE';
-                        bodyHTML += `<td>
-                            <span class="status-badge ${cls}" id="badge-${item.id}"
-                                onclick="toggleStatus('${item.id}', '${entityType}', '${newStatus}')"
-                                title="Clique para ${isActive ? 'pausar' : 'ativar'}">${label}</span>
-                        </td>`;
-                        break;
+                        const isA = item.status === 'ACTIVE'; const cls = isA ? 'status-active' : 'status-paused'; const lbl = isA ? 'Ativo' : 'Pausado';
+                        const ns = isA ? 'PAUSED' : 'ACTIVE';
+                        b += `<td><span class="status-badge ${cls}" id="badge-${item.id}" onclick="toggleStatus('${item.id}','${entityType}','${ns}')" title="Clique para ${isA ? 'pausar' : 'ativar'}">${lbl}</span></td>`; break;
                     case 'daily_budget':
-                        if (item.daily_budget !== null && item.daily_budget !== undefined) {
-                            bodyHTML += `<td>
-                                <div class="budget-inline">
-                                    <span style="font-size:11px;color:var(--text-muted);">R$</span>
-                                    <input type="number" class="budget-input" id="budget-${item.id}"
-                                        value="${item.daily_budget.toFixed(2)}" step="1" min="1"
-                                        onfocus="this.dataset.original=this.value"
-                                        oninput="checkBudgetChange('${item.id}')">
-                                    <span style="font-size:10px;color:var(--text-muted);">/dia</span>
-                                    <button class="btn-save-budget" id="btn-budget-${item.id}"
-                                        onclick="saveBudget('${item.id}', '${entityType}')">💾</button>
-                                </div>
-                            </td>`;
-                        } else {
-                            bodyHTML += `<td><span style="color:var(--text-muted);font-size:11px;">—</span></td>`;
-                        }
-                        break;
+                        if (item.daily_budget != null) {
+                            b += `<td><div class="budget-inline"><span style="font-size:10px;color:var(--text-muted)">R$</span>
+                            <input type="number" class="budget-input" id="budget-${item.id}" value="${item.daily_budget.toFixed(2)}" step="1" min="1"
+                            onfocus="this.dataset.original=this.value" oninput="checkBudgetChange('${item.id}')">
+                            <button class="btn-save-budget" id="btn-budget-${item.id}" onclick="saveBudget('${item.id}','${entityType}')">💾</button></div></td>`;
+                        } else { b += `<td><span style="color:var(--text-muted);font-size:10px">—</span></td>`; } break;
                     case 'spend':
-                        bodyHTML += `<td class="cell-mono">${fmtBRL(item.spend, currency)}</td>`;
-                        break;
+                        b += `<td class="cell-mono ${item.spend == 0 ? 'cell-zero' : ''}">${fmtBRL(item.spend, cur)}</td>`; break;
                     case 'compras':
-                        bodyHTML += `<td class="cell-mono">${item.compras || 0}</td>`;
-                        break;
+                        b += `<td class="cell-mono ${item.compras == 0 ? 'cell-zero' : ''}">${item.compras || 0}</td>`; break;
                     case 'checkouts':
-                        bodyHTML += `<td class="cell-mono">${item.checkouts || 0}</td>`;
-                        break;
+                        b += `<td class="cell-mono ${item.checkouts == 0 ? 'cell-zero' : ''}">${item.checkouts || 0}</td>`; break;
                     case 'cpa_compra':
-                        bodyHTML += `<td class="cell-mono">${item.cpa_compra > 0 ? fmtBRL(item.cpa_compra, currency) : '—'}</td>`;
-                        break;
+                        b += `<td class="cell-mono ${!item.cpa_compra ? 'cell-zero' : ''}">${item.cpa_compra > 0 ? fmtBRL(item.cpa_compra, cur) : '—'}</td>`; break;
                     case 'cpa_checkout':
-                        bodyHTML += `<td class="cell-mono">${item.cpa_checkout > 0 ? fmtBRL(item.cpa_checkout, currency) : '—'}</td>`;
-                        break;
+                        b += `<td class="cell-mono ${!item.cpa_checkout ? 'cell-zero' : ''}">${item.cpa_checkout > 0 ? fmtBRL(item.cpa_checkout, cur) : '—'}</td>`; break;
                 }
             });
-            bodyHTML += '</tr>';
+            b += '</tr>';
         });
+        body.innerHTML = b;
 
-        body.innerHTML = bodyHTML;
+        // Footer totals
+        const totalSpend = currentData.reduce((s, i) => s + (i.spend || 0), 0);
+        const totalCompras = currentData.reduce((s, i) => s + (i.compras || 0), 0);
+        const totalCheckouts = currentData.reduce((s, i) => s + (i.checkouts || 0), 0);
+        const cur = currentData[0]?.currency || 'BRL';
+
+        let f = '<tr>';
+        cols.forEach(c => {
+            switch (c.key) {
+                case 'check': f += `<td></td>`; break;
+                case 'name': f += `<td style="color:var(--text-primary)">Total: ${currentData.length} resultados</td>`; break;
+                case 'spend': f += `<td>${fmtBRL(totalSpend, cur)}</td>`; break;
+                case 'compras': f += `<td>${totalCompras}</td>`; break;
+                case 'checkouts': f += `<td>${totalCheckouts}</td>`; break;
+                case 'cpa_compra': f += `<td>${totalCompras > 0 ? fmtBRL(totalSpend / totalCompras, cur) : '—'}</td>`; break;
+                case 'cpa_checkout': f += `<td>${totalCheckouts > 0 ? fmtBRL(totalSpend / totalCheckouts, cur) : '—'}</td>`; break;
+                default: f += `<td></td>`; break;
+            }
+        });
+        f += '</tr>'; foot.innerHTML = f;
     }
 
     // ======================== SORTING ========================
-    function sortBy(column) {
-        if (sortColumn === column) {
-            sortDir = sortDir === 'asc' ? 'desc' : 'asc';
-        } else {
-            sortColumn = column;
-            sortDir = 'desc';
-        }
+    function sortBy(col) {
+        if (sortColumn === col) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+        else { sortColumn = col; sortDir = 'desc'; }
         renderTable();
     }
 
-    // ======================== SELECTION ========================
+    // ======================== SELECTION with SHIFT+CLICK ========================
+    function handleCheckClick(event, id, idx) {
+        const checked = event.target.checked;
+        if (event.shiftKey && lastCheckedIndex >= 0) {
+            // Shift+click: selecionar range
+            const start = Math.min(lastCheckedIndex, idx);
+            const end = Math.max(lastCheckedIndex, idx);
+            const sorted = getSortedData();
+            for (let i = start; i <= end; i++) {
+                if (sorted[i]) {
+                    if (checked) selectedIds.add(sorted[i].id);
+                    else selectedIds.delete(sorted[i].id);
+                }
+            }
+            renderTable(); // Re-render to update checkboxes
+        } else {
+            if (checked) selectedIds.add(id);
+            else selectedIds.delete(id);
+        }
+        lastCheckedIndex = idx;
+        updateSelectionBar();
+    }
+
+    function getSortedData() {
+        let sorted = [...currentData];
+        if (sortColumn) {
+            sorted.sort((a, b) => {
+                let va = a[sortColumn], vb = b[sortColumn];
+                if (typeof va === 'string') { va = (va || '').toLowerCase(); vb = (vb || '').toLowerCase(); return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va); }
+                va = va || 0; vb = vb || 0; return sortDir === 'asc' ? va - vb : vb - va;
+            });
+        }
+        return sorted;
+    }
+
     function toggleSelect(id, checked) {
-        if (checked) selectedIds.add(id);
-        else selectedIds.delete(id);
+        if (checked) selectedIds.add(id); else selectedIds.delete(id);
         updateSelectionBar();
     }
 
     function toggleSelectAll(checked) {
-        if (checked) {
-            currentData.forEach(d => selectedIds.add(d.id));
-        } else {
-            selectedIds.clear();
-        }
-        renderTable();
-        updateSelectionBar();
+        if (checked) currentData.forEach(d => selectedIds.add(d.id)); else selectedIds.clear();
+        lastCheckedIndex = -1;
+        renderTable(); updateSelectionBar();
     }
 
     // ======================== ACTIONS ========================
     async function toggleStatus(entityId, entityType, newStatus) {
         const badge = document.getElementById(`badge-${entityId}`);
         if (!badge) return;
-
-        const actionLabel = newStatus === 'PAUSED' ? 'Pausar' : 'Ativar';
         const typeLabel = entityType === 'campaign' ? 'campanha' : entityType === 'adset' ? 'conjunto' : 'anúncio';
-        if (!confirm(`${actionLabel} este ${typeLabel}?`)) return;
+        if (!confirm(`${newStatus === 'PAUSED' ? 'Pausar' : 'Ativar'} ${typeLabel}?`)) return;
 
-        const origHTML = badge.innerHTML;
-        badge.innerHTML = '<span class="action-spinner"></span>';
-
+        const orig = badge.innerHTML; badge.innerHTML = '<span class="action-spinner"></span>';
         try {
-            const r = await fetch(`/api/account/${ACCOUNT_ID}/entity/status`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ entity_id: entityId, entity_type: entityType, status: newStatus })
-            });
+            const r = await fetch(`/api/account/${ACCOUNT_ID}/entity/status`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity_id: entityId, entity_type: entityType, status: newStatus }) });
             const res = await r.json();
-
             if (res.success) {
-                // Update badge
-                const isActive = newStatus === 'ACTIVE';
-                badge.className = `status-badge ${isActive ? 'status-active' : 'status-paused'}`;
-                badge.textContent = isActive ? '🟢 ATIVO' : '🔴 PAUSADO';
-                const nextStatus = isActive ? 'PAUSED' : 'ACTIVE';
-                badge.onclick = () => toggleStatus(entityId, entityType, nextStatus);
-                badge.title = `Clique para ${isActive ? 'pausar' : 'ativar'}`;
-
-                // Update item in currentData
-                const item = currentData.find(d => d.id === entityId);
-                if (item) item.status = newStatus;
-
-                mostrarToast(`✅ ${typeLabel} ${newStatus === 'ACTIVE' ? 'ativado' : 'pausado'}`);
-            } else {
-                badge.innerHTML = origHTML;
-                mostrarToast(`❌ Erro: ${res.error}`);
-            }
-        } catch (e) {
-            badge.innerHTML = origHTML;
-            mostrarToast(`❌ Erro de rede: ${e.message}`);
-        }
+                const isA = newStatus === 'ACTIVE';
+                badge.className = `status-badge ${isA ? 'status-active' : 'status-paused'}`;
+                badge.textContent = isA ? 'Ativo' : 'Pausado';
+                const next = isA ? 'PAUSED' : 'ACTIVE';
+                badge.onclick = () => toggleStatus(entityId, entityType, next);
+                badge.title = `Clique para ${isA ? 'pausar' : 'ativar'}`;
+                const item = currentData.find(d => d.id === entityId); if (item) item.status = newStatus;
+                mostrarToast(`✅ ${typeLabel} ${isA ? 'ativado' : 'pausado'}`);
+            } else { badge.innerHTML = orig; mostrarToast(`❌ ${res.error}`); }
+        } catch (e) { badge.innerHTML = orig; mostrarToast(`❌ ${e.message}`); }
     }
 
-    function checkBudgetChange(entityId) {
-        const input = document.getElementById(`budget-${entityId}`);
-        const btn = document.getElementById(`btn-budget-${entityId}`);
-        if (input && btn) {
-            btn.classList.toggle('visible', input.value !== input.dataset.original);
-        }
+    function checkBudgetChange(id) {
+        const inp = document.getElementById(`budget-${id}`), btn = document.getElementById(`btn-budget-${id}`);
+        if (inp && btn) btn.classList.toggle('visible', inp.value !== inp.dataset.original);
     }
 
     async function saveBudget(entityId, entityType) {
-        const input = document.getElementById(`budget-${entityId}`);
-        const btn = document.getElementById(`btn-budget-${entityId}`);
-        if (!input || !btn) return;
-
-        const newBudget = parseFloat(input.value);
-        if (isNaN(newBudget) || newBudget < 1) {
-            mostrarToast('❌ Verba inválida. Mínimo: R$ 1,00');
-            return;
-        }
-        if (!confirm(`Alterar verba para R$ ${newBudget.toFixed(2)}/dia?`)) return;
-
-        btn.innerHTML = '<span class="action-spinner"></span>';
-        btn.disabled = true;
-
+        const inp = document.getElementById(`budget-${entityId}`), btn = document.getElementById(`btn-budget-${entityId}`);
+        if (!inp || !btn) return;
+        const v = parseFloat(inp.value);
+        if (isNaN(v) || v < 1) { mostrarToast('❌ Mínimo R$ 1,00'); return; }
+        if (!confirm(`Alterar verba para R$ ${v.toFixed(2)}/dia?`)) return;
+        btn.innerHTML = '<span class="action-spinner"></span>'; btn.disabled = true;
         try {
-            const r = await fetch(`/api/account/${ACCOUNT_ID}/entity/budget`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ entity_id: entityId, entity_type: entityType, daily_budget: newBudget })
-            });
+            const r = await fetch(`/api/account/${ACCOUNT_ID}/entity/budget`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity_id: entityId, entity_type: entityType, daily_budget: v }) });
             const res = await r.json();
-
-            if (res.success) {
-                input.dataset.original = newBudget.toFixed(2);
-                btn.classList.remove('visible');
-                mostrarToast(`✅ Verba alterada para R$ ${newBudget.toFixed(2)}/dia`);
-            } else {
-                mostrarToast(`❌ Erro: ${res.error}`);
-            }
-        } catch (e) {
-            mostrarToast(`❌ Erro de rede: ${e.message}`);
-        } finally {
-            btn.innerHTML = '💾';
-            btn.disabled = false;
-        }
+            if (res.success) { inp.dataset.original = v.toFixed(2); btn.classList.remove('visible'); mostrarToast(`✅ Verba: R$ ${v.toFixed(2)}/dia`); }
+            else mostrarToast(`❌ ${res.error}`);
+        } catch (e) { mostrarToast(`❌ ${e.message}`); }
+        finally { btn.innerHTML = '💾'; btn.disabled = false; }
     }
 
     // ======================== INIT ========================
     document.addEventListener('DOMContentLoaded', () => {
+        // Set default dates for custom
+        const today = new Date().toISOString().split('T')[0];
+        const week = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        document.getElementById('date-since').value = week;
+        document.getElementById('date-until').value = today;
         updateTabsUI();
         loadCurrentLevel();
     });

@@ -8,16 +8,19 @@ optimization_bp = Blueprint('optimization', __name__)
 APP_ID = os.getenv('APP_ID')
 APP_SECRET = os.getenv('APP_SECRET')
 
+def _get_date_params():
+    """Extrai parâmetros de data da request: date_preset OU since/until."""
+    since = request.args.get('since')
+    until = request.args.get('until')
+    date_preset = request.args.get('date_preset', 'today')
+    return date_preset, since, until
+
 @optimization_bp.route('/account/<account_id>/otimizar')
 def otimizar_campanhas(account_id):
-    """
-    Página principal do módulo de Otimização.
-    """
     from app import obter_token
     token = obter_token()
     if not token:
         return redirect(url_for('pagina_login'))
-    
     session['account_id'] = account_id
     return render_template('optimizer.html', account_id=account_id)
 
@@ -25,7 +28,6 @@ def otimizar_campanhas(account_id):
 
 @optimization_bp.route('/api/account/<account_id>/campaigns')
 def api_campaigns(account_id):
-    """Lista campanhas com métricas, status e budget."""
     from app import obter_token
     from meta_api import MetaUploader
 
@@ -33,11 +35,11 @@ def api_campaigns(account_id):
     if not token:
         return jsonify({"success": False, "error": "Não autenticado"}), 401
 
-    date_preset = request.args.get('date_preset', 'today')
+    date_preset, since, until = _get_date_params()
 
     try:
         uploader = MetaUploader(account_id, token, APP_ID, APP_SECRET)
-        data = uploader.get_campaigns_list(date_preset=date_preset)
+        data = uploader.get_campaigns_list(date_preset=date_preset, since=since, until=until)
         return jsonify({"success": True, "data": data})
     except Exception as e:
         import traceback; traceback.print_exc()
@@ -45,7 +47,6 @@ def api_campaigns(account_id):
 
 @optimization_bp.route('/api/account/<account_id>/adsets')
 def api_adsets(account_id):
-    """Lista ad sets de campanhas específicas."""
     from app import obter_token
     from meta_api import MetaUploader
 
@@ -58,11 +59,11 @@ def api_adsets(account_id):
         return jsonify({"success": False, "error": "campaign_ids é obrigatório"}), 400
 
     ids_list = [cid.strip() for cid in campaign_ids.split(',') if cid.strip()]
-    date_preset = request.args.get('date_preset', 'today')
+    date_preset, since, until = _get_date_params()
 
     try:
         uploader = MetaUploader(account_id, token, APP_ID, APP_SECRET)
-        data = uploader.get_adsets_list(ids_list, date_preset=date_preset)
+        data = uploader.get_adsets_list(ids_list, date_preset=date_preset, since=since, until=until)
         return jsonify({"success": True, "data": data})
     except Exception as e:
         import traceback; traceback.print_exc()
@@ -70,7 +71,6 @@ def api_adsets(account_id):
 
 @optimization_bp.route('/api/account/<account_id>/ads')
 def api_ads(account_id):
-    """Lista ads de ad sets específicos."""
     from app import obter_token
     from meta_api import MetaUploader
 
@@ -83,11 +83,11 @@ def api_ads(account_id):
         return jsonify({"success": False, "error": "adset_ids é obrigatório"}), 400
 
     ids_list = [aid.strip() for aid in adset_ids.split(',') if aid.strip()]
-    date_preset = request.args.get('date_preset', 'today')
+    date_preset, since, until = _get_date_params()
 
     try:
         uploader = MetaUploader(account_id, token, APP_ID, APP_SECRET)
-        data = uploader.get_ads_list(ids_list, date_preset=date_preset)
+        data = uploader.get_ads_list(ids_list, date_preset=date_preset, since=since, until=until)
         return jsonify({"success": True, "data": data})
     except Exception as e:
         import traceback; traceback.print_exc()
@@ -97,7 +97,6 @@ def api_ads(account_id):
 
 @optimization_bp.route('/api/account/<account_id>/entity/status', methods=['POST'])
 def api_entity_status(account_id):
-    """Altera status (PAUSED/ACTIVE) de campaign, adset ou ad."""
     from app import obter_token
     from meta_api import MetaUploader
 
@@ -126,7 +125,6 @@ def api_entity_status(account_id):
 
 @optimization_bp.route('/api/account/<account_id>/entity/budget', methods=['POST'])
 def api_entity_budget(account_id):
-    """Altera orçamento diário de campaign ou adset."""
     from app import obter_token
     from meta_api import MetaUploader
 

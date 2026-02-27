@@ -91,38 +91,34 @@ class MetaUploader:
 
     # ======================== PERFORMANCE & INSIGHTS ========================
 
-    def get_campaign_insights(self, date_preset='today'):
+    def get_campaign_insights(self, date_preset='today', since=None, until=None):
         """
         Busca métricas de performance das campanhas (Gasto, CAC, etc).
         Filtra por campanhas ACTIVE ou PAUSED.
+        Aceita date_preset OU since/until para datas customizadas.
         """
         try:
-            fields = [
-                'campaign_id',
-                'campaign_name',
-                'spend',
-                'actions',
-                'cost_per_action_type',
-                'objective',
-                'account_currency'
-            ]
+            url = f"https://graph.facebook.com/v22.0/{self.account_id}/insights"
             params = {
+                'access_token': self.access_token,
                 'level': 'campaign',
-                'date_preset': date_preset,
-                'filtering': [
-                    {'field': 'campaign.effective_status', 'operator': 'IN', 'value': ['ACTIVE']}
-                ],
+                'fields': 'campaign_id,campaign_name,spend,actions,cost_per_action_type,objective,account_currency',
+                'filtering': '[{"field":"campaign.effective_status","operator":"IN","value":["ACTIVE","PAUSED"]}]',
                 'limit': 100
             }
-            
-            insights = self.account.get_insights(fields=fields, params=params)
-            
+            if since and until:
+                params['time_range'] = f'{{"since":"{since}","until":"{until}"}}'
+            else:
+                params['date_preset'] = date_preset
+
+            resp = requests.get(url, params=params, timeout=30)
+            data = resp.json().get('data', [])
+
             results = []
-            for ins in insights:
+            for ins in data:
                 actions = ins.get('actions', [])
                 spend = float(ins.get('spend', 0))
-                
-                # Métricas específicas para o Optimizer
+
                 compras = 0
                 checkouts = 0
                 for action in actions:
@@ -143,7 +139,7 @@ class MetaUploader:
                     'cpa_checkout': spend / checkouts if checkouts > 0 else 0,
                     'currency': ins.get('account_currency', 'BRL')
                 })
-            
+
             print(f"📈 [get_campaign_insights] {len(results)} campanhas auditadas.")
             return results
         except Exception as e:
@@ -202,13 +198,18 @@ class MetaUploader:
         print(f"✅ [update_budget] {entity_type} {entity_id} → R$ {daily_budget}/dia ({budget_cents} centavos)")
         return {'success': True, 'entity_id': entity_id, 'new_budget': float(daily_budget)}
 
-    def get_campaigns_list(self, date_preset='today'):
+    def get_campaigns_list(self, date_preset='today', since=None, until=None):
         """
-        Lista campanhas (ACTIVE + PAUSED) com status, budget e métricas.
-        Lazy: apenas 2 chamadas API (campaigns + insights).
+        Lista campanhas que tiveram GASTO no período, com status, budget e métricas.
+        Usa insights como fonte primária (quem gastou) → enriquece com dados de estrutura.
         """
         try:
-            # 1. Buscar campanhas
+            # 1. Insights = fonte primária (só retorna quem gastou)
+            insights = self.get_campaign_insights(date_preset, since, until)
+            if not insights:
+                return []
+
+            # 2. Buscar dados estruturais (status, budget)
             url = f"https://graph.facebook.com/v22.0/{self.account_id}/campaigns"
             params = {
                 'access_token': self.access_token,
@@ -217,28 +218,20 @@ class MetaUploader:
                 'limit': 100
             }
             resp = requests.get(url, params=params, timeout=30)
-            campaigns_data = resp.json().get('data', [])
-
-            # 2. Buscar insights (métricas)
-            insights_map = {}
-            try:
-                for ins in self.get_campaign_insights(date_preset):
-                    insights_map[ins['id']] = ins
-            except Exception:
-                pass
+            camp_map = {c['id']: c for c in resp.json().get('data', [])}
 
             results = []
-            for camp in campaigns_data:
-                camp_id = camp['id']
-                ins = insights_map.get(camp_id, {})
+            for ins in insights:
+                camp_id = ins['id']
+                camp = camp_map.get(camp_id, {})
                 daily_raw = camp.get('daily_budget')
                 results.append({
                     'id': camp_id,
-                    'name': camp.get('name', '?'),
+                    'name': ins.get('name', camp.get('name', '?')),
                     'status': camp.get('effective_status', camp.get('status', '?')),
                     'daily_budget': float(daily_raw) / 100 if daily_raw else None,
                     'lifetime_budget': float(camp.get('lifetime_budget', 0)) / 100 if camp.get('lifetime_budget') else None,
-                    'objective': camp.get('objective', ''),
+                    'objective': camp.get('objective', ins.get('objective', '')),
                     'spend': ins.get('spend', 0),
                     'compras': ins.get('compras', 0),
                     'checkouts': ins.get('checkouts', 0),
@@ -247,57 +240,59 @@ class MetaUploader:
                     'currency': ins.get('currency', 'BRL'),
                 })
 
-            print(f"📊 [get_campaigns_list] {len(results)} campanhas carregadas.")
+            print(f"📊 [get_campaigns_list] {len(results)} campanhas com gasto.")
             return results
         except Exception as e:
             print(f"❌ [get_campaigns_list] Erro: {e}")
             import traceback; traceback.print_exc()
             return []
 
-    def get_adsets_list(self, campaign_ids, date_preset='today'):
+    def get_adsets_list(self, campaign_ids, date_preset='today', since=None, until=None):
         """
-        Lista ad sets de uma ou mais campanhas, com status, budget e métricas de gasto.
-        Lazy: 1 chamada de adsets + 1 de insights por campaign.
+        Lista ad sets de campanhas que tiveram GASTO no período.
+        Insights como fonte primária → enriquece com dados estruturais.
         """
         try:
             all_adsets = []
             for camp_id in campaign_ids:
-                # Buscar ad sets
-                url = f"https://graph.facebook.com/v22.0/{camp_id}/adsets"
-                params = {
+                # 1. Insights (fonte primária — só quem gastou)
+                url_ins = f"https://graph.facebook.com/v22.0/{self.account_id}/insights"
+                params_ins = {
                     'access_token': self.access_token,
-                    'fields': 'id,name,status,effective_status,daily_budget,lifetime_budget,campaign_id',
-                    'filtering': '[{"field":"effective_status","operator":"IN","value":["ACTIVE","PAUSED"]}]',
-                    'limit': 100
+                    'level': 'adset',
+                    'fields': 'adset_id,adset_name,spend,actions,cost_per_action_type,account_currency',
+                    'filtering': f'[{{"field":"campaign.id","operator":"EQUAL","value":"{camp_id}"}}]',
+                    'limit': 200
                 }
-                resp = requests.get(url, params=params, timeout=30)
-                adsets_data = resp.json().get('data', [])
+                if since and until:
+                    params_ins['time_range'] = f'{{"since":"{since}","until":"{until}"}}'
+                else:
+                    params_ins['date_preset'] = date_preset
 
-                # Buscar insights dos adsets (gasto, ações)
-                insights_map = {}
-                try:
-                    url_ins = f"https://graph.facebook.com/v22.0/{self.account_id}/insights"
-                    params_ins = {
+                resp_ins = requests.get(url_ins, params=params_ins, timeout=30)
+                insights_data = resp_ins.json().get('data', [])
+
+                # 2. Dados estruturais (status, budget)
+                adset_ids_with_spend = [i.get('adset_id') for i in insights_data]
+                struct_map = {}
+                if adset_ids_with_spend:
+                    url = f"https://graph.facebook.com/v22.0/{camp_id}/adsets"
+                    params = {
                         'access_token': self.access_token,
-                        'level': 'adset',
-                        'fields': 'adset_id,adset_name,spend,actions,cost_per_action_type,account_currency',
-                        'date_preset': date_preset,
-                        'filtering': f'[{{"field":"campaign.id","operator":"EQUAL","value":"{camp_id}"}}]',
-                        'limit': 200
+                        'fields': 'id,name,status,effective_status,daily_budget,lifetime_budget,campaign_id',
+                        'filtering': '[{"field":"effective_status","operator":"IN","value":["ACTIVE","PAUSED"]}]',
+                        'limit': 100
                     }
-                    resp_ins = requests.get(url_ins, params=params_ins, timeout=30)
-                    for ins in resp_ins.json().get('data', []):
-                        insights_map[ins.get('adset_id')] = ins
-                except Exception:
-                    pass
+                    resp = requests.get(url, params=params, timeout=30)
+                    for a in resp.json().get('data', []):
+                        struct_map[a['id']] = a
 
-                for adset in adsets_data:
-                    adset_id = adset['id']
-                    ins = insights_map.get(adset_id, {})
-                    daily_raw = adset.get('daily_budget')
+                for ins in insights_data:
+                    adset_id = ins.get('adset_id')
+                    struct = struct_map.get(adset_id, {})
                     spend = float(ins.get('spend', 0))
+                    daily_raw = struct.get('daily_budget')
 
-                    # Extrair compras e checkouts
                     compras, checkouts = 0, 0
                     for action in ins.get('actions', []):
                         a_type = action.get('action_type', '')
@@ -309,11 +304,11 @@ class MetaUploader:
 
                     all_adsets.append({
                         'id': adset_id,
-                        'name': adset.get('name', '?'),
+                        'name': ins.get('adset_name', struct.get('name', '?')),
                         'campaign_id': camp_id,
-                        'status': adset.get('effective_status', adset.get('status', '?')),
+                        'status': struct.get('effective_status', struct.get('status', '?')),
                         'daily_budget': float(daily_raw) / 100 if daily_raw else None,
-                        'lifetime_budget': float(adset.get('lifetime_budget', 0)) / 100 if adset.get('lifetime_budget') else None,
+                        'lifetime_budget': float(struct.get('lifetime_budget', 0)) / 100 if struct.get('lifetime_budget') else None,
                         'spend': spend,
                         'compras': compras,
                         'checkouts': checkouts,
@@ -322,53 +317,56 @@ class MetaUploader:
                         'currency': ins.get('account_currency', 'BRL'),
                     })
 
-            print(f"📦 [get_adsets_list] {len(all_adsets)} conjuntos de {len(campaign_ids)} campanha(s).")
+            print(f"📦 [get_adsets_list] {len(all_adsets)} conjuntos com gasto de {len(campaign_ids)} campanha(s).")
             return all_adsets
         except Exception as e:
             print(f"❌ [get_adsets_list] Erro: {e}")
             import traceback; traceback.print_exc()
             return []
 
-    def get_ads_list(self, adset_ids, date_preset='today'):
+    def get_ads_list(self, adset_ids, date_preset='today', since=None, until=None):
         """
-        Lista ads de um ou mais ad sets, com status e métricas de gasto.
-        Lazy: 1 chamada de ads + 1 de insights por adset.
+        Lista ads de ad sets que tiveram GASTO no período.
+        Insights como fonte primária → enriquece com dados estruturais.
         """
         try:
             all_ads = []
             for adset_id in adset_ids:
-                # Buscar ads
-                url = f"https://graph.facebook.com/v22.0/{adset_id}/ads"
-                params = {
+                # 1. Insights (fonte primária)
+                url_ins = f"https://graph.facebook.com/v22.0/{self.account_id}/insights"
+                params_ins = {
                     'access_token': self.access_token,
-                    'fields': 'id,name,status,effective_status,adset_id',
-                    'filtering': '[{"field":"effective_status","operator":"IN","value":["ACTIVE","PAUSED"]}]',
-                    'limit': 100
+                    'level': 'ad',
+                    'fields': 'ad_id,ad_name,spend,actions,cost_per_action_type,account_currency',
+                    'filtering': f'[{{"field":"adset.id","operator":"EQUAL","value":"{adset_id}"}}]',
+                    'limit': 200
                 }
-                resp = requests.get(url, params=params, timeout=30)
-                ads_data = resp.json().get('data', [])
+                if since and until:
+                    params_ins['time_range'] = f'{{"since":"{since}","until":"{until}"}}'
+                else:
+                    params_ins['date_preset'] = date_preset
 
-                # Buscar insights dos ads (gasto)
-                insights_map = {}
-                try:
-                    url_ins = f"https://graph.facebook.com/v22.0/{self.account_id}/insights"
-                    params_ins = {
+                resp_ins = requests.get(url_ins, params=params_ins, timeout=30)
+                insights_data = resp_ins.json().get('data', [])
+
+                # 2. Dados estruturais (status)
+                ad_ids_with_spend = [i.get('ad_id') for i in insights_data]
+                struct_map = {}
+                if ad_ids_with_spend:
+                    url = f"https://graph.facebook.com/v22.0/{adset_id}/ads"
+                    params = {
                         'access_token': self.access_token,
-                        'level': 'ad',
-                        'fields': 'ad_id,ad_name,spend,actions,cost_per_action_type,account_currency',
-                        'date_preset': date_preset,
-                        'filtering': f'[{{"field":"adset.id","operator":"EQUAL","value":"{adset_id}"}}]',
-                        'limit': 200
+                        'fields': 'id,name,status,effective_status,adset_id',
+                        'filtering': '[{"field":"effective_status","operator":"IN","value":["ACTIVE","PAUSED"]}]',
+                        'limit': 100
                     }
-                    resp_ins = requests.get(url_ins, params=params_ins, timeout=30)
-                    for ins in resp_ins.json().get('data', []):
-                        insights_map[ins.get('ad_id')] = ins
-                except Exception:
-                    pass
+                    resp = requests.get(url, params=params, timeout=30)
+                    for a in resp.json().get('data', []):
+                        struct_map[a['id']] = a
 
-                for ad in ads_data:
-                    ad_id = ad['id']
-                    ins = insights_map.get(ad_id, {})
+                for ins in insights_data:
+                    ad_id = ins.get('ad_id')
+                    struct = struct_map.get(ad_id, {})
                     spend = float(ins.get('spend', 0))
 
                     compras, checkouts = 0, 0
@@ -382,9 +380,9 @@ class MetaUploader:
 
                     all_ads.append({
                         'id': ad_id,
-                        'name': ad.get('name', '?'),
+                        'name': ins.get('ad_name', struct.get('name', '?')),
                         'adset_id': adset_id,
-                        'status': ad.get('effective_status', ad.get('status', '?')),
+                        'status': struct.get('effective_status', struct.get('status', '?')),
                         'spend': spend,
                         'compras': compras,
                         'checkouts': checkouts,
@@ -393,7 +391,7 @@ class MetaUploader:
                         'currency': ins.get('account_currency', 'BRL'),
                     })
 
-            print(f"🎨 [get_ads_list] {len(all_ads)} anúncios de {len(adset_ids)} conjunto(s).")
+            print(f"🎨 [get_ads_list] {len(all_ads)} anúncios com gasto de {len(adset_ids)} conjunto(s).")
             return all_ads
         except Exception as e:
             print(f"❌ [get_ads_list] Erro: {e}")
