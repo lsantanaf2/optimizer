@@ -982,7 +982,7 @@
             }
 
             const ds = dateStr(thisDate);
-            html += `<div class="${classes.join(' ')}" onclick="onDayClick('${ds}')">${d}</div>`;
+            html += `<div class="${classes.join(' ')}" onclick="event.stopPropagation(); onDayClick('${ds}')">${d}</div>`;
         }
 
         // Next month fill
