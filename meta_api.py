@@ -1755,10 +1755,21 @@ class MetaUploader:
                 params['rename_options'] = {
                     'rename_suffix': f' - Cópia {int(time.time())}',
                 }
-            result = source.create_copy(params=params)
-            copied_id = result.get('copied_adset_id') or result.get('id')
 
-            # Forçar status PAUSED + renomear (create_copy nem sempre respeita status_option)
+            try:
+                result = source.create_copy(params=params)
+                copied_id = result.get('copied_adset_id') or result.get('id')
+            except Exception as copy_err:
+                err_str = str(copy_err)
+                # Fallback: se erro é location_types (subcode 1870199), cria manualmente
+                if '1870199' in err_str or 'location_types' in err_str:
+                    self._log("⚠️ Erro location_types na cópia. Criando manualmente...")
+                    copied_id = self._manual_duplicate_adset(source_adset_id, new_name)
+                    return copied_id
+                else:
+                    raise
+
+            # Forçar status PAUSED + renomear
             if copied_id:
                 try:
                     update_data = {
@@ -1782,6 +1793,72 @@ class MetaUploader:
         adset_id = self._with_retry(f"Duplicar Ad Set", _do)
         self._log(f"✅ Ad Set duplicado (novo ID: {adset_id})")
         return adset_id
+
+    def _manual_duplicate_adset(self, source_adset_id, new_name=None):
+        """Cria um novo Ad Set copiando configs do original (fallback para location_types)."""
+        import json as _json
+
+        # Ler config completa do original
+        fields_to_read = [
+            'name', 'campaign_id', 'daily_budget', 'lifetime_budget',
+            'bid_amount', 'bid_strategy', 'billing_event',
+            'optimization_goal', 'targeting', 'promoted_object',
+            'start_time', 'end_time', 'attribution_spec',
+            'destination_type',
+        ]
+        url = f"https://graph.facebook.com/v22.0/{source_adset_id}"
+        resp = requests.get(url, params={
+            'fields': ','.join(fields_to_read),
+            'access_token': self.access_token
+        }).json()
+
+        if 'error' in resp:
+            raise Exception(f"Erro ao ler Ad Set original: {resp['error'].get('message')}")
+
+        # Limpar targeting: remover location_types
+        targeting = resp.get('targeting', {})
+        geo = targeting.get('geo_locations', {})
+        if 'location_types' in geo:
+            del geo['location_types']
+            self._log("🔧 Removido location_types do targeting")
+
+        # Montar params do novo ad set
+        create_params = {
+            'campaign_id': resp['campaign_id'],
+            'name': new_name or f"{resp.get('name', 'Conjunto')} - Cópia {int(time.time())}",
+            'status': 'PAUSED',
+            'targeting': _json.dumps(targeting),
+            'billing_event': resp.get('billing_event', 'IMPRESSIONS'),
+            'optimization_goal': resp.get('optimization_goal', 'OFFSITE_CONVERSIONS'),
+            'access_token': self.access_token,
+        }
+
+        # Copiar campos opcionais
+        if resp.get('daily_budget'):
+            create_params['daily_budget'] = resp['daily_budget']
+        if resp.get('lifetime_budget'):
+            create_params['lifetime_budget'] = resp['lifetime_budget']
+        if resp.get('bid_amount'):
+            create_params['bid_amount'] = resp['bid_amount']
+        if resp.get('bid_strategy'):
+            create_params['bid_strategy'] = resp['bid_strategy']
+        if resp.get('promoted_object'):
+            create_params['promoted_object'] = _json.dumps(resp['promoted_object'])
+        if resp.get('attribution_spec'):
+            create_params['attribution_spec'] = _json.dumps(resp['attribution_spec'])
+        if resp.get('destination_type'):
+            create_params['destination_type'] = resp['destination_type']
+
+        # Criar novo ad set
+        create_url = f"https://graph.facebook.com/v22.0/{self.account.get_id()}/adsets"
+        create_resp = requests.post(create_url, data=create_params).json()
+
+        if 'error' in create_resp:
+            raise Exception(f"Erro ao criar Ad Set: {create_resp['error'].get('message')}")
+
+        new_id = create_resp.get('id')
+        self._log(f"✅ Ad Set criado manualmente: {new_id}")
+        return new_id
 
     # ======================== PROCESSAR FILA ========================
 
