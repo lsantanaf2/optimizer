@@ -84,16 +84,25 @@
                     <input type="radio" name="estrategia" value="agrupado">
                     <div class="option-icon">📦</div>
                     <div class="option-title">Opção A — Agrupado</div>
-                    <div class="option-desc">Todos os criativos sobem dentro do mesmo Conjunto de Anúncios.</div>
+                    <div class="option-desc">Todos os criativos sobem dentro do mesmo Conjunto de Anúncios existente ou
+                        duplicado.</div>
+                </label>
+                <label class="radio-option" id="opt-novo" onclick="selecionarEstrategia('novo')">
+                    <input type="radio" name="estrategia" value="novo">
+                    <div class="option-icon">📋</div>
+                    <div class="option-title">Opção B — Novo Conjunto</div>
+                    <div class="option-desc">Cria uma cópia de um conjunto modelo e sobe todos os criativos nele.</div>
                 </label>
                 <label class="radio-option" id="opt-garimpo" onclick="selecionarEstrategia('garimpo')">
                     <input type="radio" name="estrategia" value="garimpo">
                     <div class="option-icon">⛏️</div>
-                    <div class="option-title">Opção B — Garimpo</div>
-                    <div class="option-desc">Um Conjunto de Anúncios diferente para cada criativo selecionado.</div>
+                    <div class="option-title">Opção C — Garimpo</div>
+                    <div class="option-desc">Cada criativo ganha seu próprio conjunto. O nome do conjunto será o nome do
+                        anúncio.</div>
                 </label>
             </div>
 
+            <!-- Sub-opções: Agrupado -->
             <div class="sub-options" id="sub-agrupado">
                 <label>Destino do Conjunto</label>
                 <div class="sub-radio-group">
@@ -125,17 +134,29 @@
                 </div>
             </div>
 
+            <!-- Sub-opções: Novo Conjunto -->
+            <div class="sub-options" id="sub-novo">
+                <label>Conjunto modelo para duplicação</label>
+                <select name="adset_modelo_novo" id="adset_modelo_novo">
+                    <option value="">— Selecione o molde —</option>
+                    {% for adset in adsets %}<option value="{{ adset.id }}">{{ adset.name }}</option>{% endfor %}
+                </select>
+                <label style="margin-top:8px;">Nome do novo conjunto</label>
+                <input type="text" id="adset_new_name_novo" placeholder="Ex: Lote Criativos"
+                    style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text);">
+                <div class="card-desc" style="margin-top:6px;">📋 Uma cópia será criada e todos os criativos serão
+                    subidos dentro dela.</div>
+            </div>
+
+            <!-- Sub-opções: Garimpo -->
             <div class="sub-options" id="sub-garimpo">
                 <label>Conjunto modelo para duplicação</label>
                 <select name="adset_modelo_garimpo" id="adset_modelo_garimpo">
                     <option value="">— Selecione o molde —</option>
                     {% for adset in adsets %}<option value="{{ adset.id }}">{{ adset.name }}</option>{% endfor %}
                 </select>
-                <label style="margin-top:8px;">Nome do novo conjunto</label>
-                <input type="text" id="adset_new_name_garimpo" placeholder="Ex: Garimpo - Lote 1"
-                    style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text);">
-                <div class="card-desc" style="margin-top:6px;">Cada criativo ganhará um novo conjunto baseado neste
-                    molde.</div>
+                <div class="card-desc" style="margin-top:6px;">⛏️ Cada criativo ganhará seu próprio conjunto, copiado
+                    deste modelo. O nome do conjunto será o <strong>nome do anúncio</strong>.</div>
             </div>
         </div>
 
@@ -238,7 +259,7 @@
             <div class="card-desc">Selecione as mídias (Feed + Stories). Configurações globais são herdadas no momento
                 do envio.</div>
 
-            <!-- NOVO: Importação via Pasta do Drive -->
+            <!-- Importação via Pasta do Drive -->
             <div class="drive-folder-import">
                 <div class="form-group">
                     <label>🔗 link da Pasta do Google Drive (Pública)</label>
@@ -251,6 +272,28 @@
                     <div class="card-desc" style="margin-top: 5px; font-size: 0.8em;">
                         Arquivos devem ter o mesmo nome inicial, terminando em <b>_FEED</b> ou <b>_REELS</b> (Ex:
                         <i>Ad01_FEED.mp4</i> e <i>Ad01_REELS.mp4</i>).
+                    </div>
+                </div>
+            </div>
+
+            <!-- Importação via Pasta Local -->
+            <div class="drive-folder-import" style="margin-top: 12px;">
+                <div class="form-group">
+                    <label>📁 Importar Pasta Local (com subpastas)</label>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <input type="file" id="local-folder-input" webkitdirectory directory multiple
+                            style="display:none;" onchange="processarPastaLocal(this)">
+                        <button type="button" class="btn-history"
+                            onclick="document.getElementById('local-folder-input').click()">
+                            📂 Selecionar Pasta
+                        </button>
+                        <span id="local-folder-status" class="card-desc" style="margin:0;">Nenhuma pasta
+                            selecionada</span>
+                    </div>
+                    <div class="card-desc" style="margin-top: 5px; font-size: 0.8em;">
+                        Selecione a pasta raiz. Cada subpasta deve conter 2 arquivos:
+                        um com <b>FEED</b> e outro com <b>IG</b> no nome (Ex: <i>Ad01_FEED.mp4</i> e
+                        <i>Ad01_IG.mp4</i>).
                     </div>
                 </div>
             </div>
@@ -525,8 +568,9 @@
             document.getElementById('opt-' + tipo).classList.add('selected');
             document.querySelector(`input[name="estrategia"][value="${tipo}"]`).checked = true;
             document.getElementById('sub-agrupado').classList.toggle('visible', tipo === 'agrupado');
+            document.getElementById('sub-novo').classList.toggle('visible', tipo === 'novo');
             document.getElementById('sub-garimpo').classList.toggle('visible', tipo === 'garimpo');
-            if (tipo === 'garimpo') {
+            if (tipo !== 'agrupado') {
                 document.querySelectorAll('.sub-radio').forEach(el => el.classList.remove('selected'));
                 document.getElementById('select-existente').classList.add('hidden-select');
                 document.getElementById('select-duplicar').classList.add('hidden-select');
@@ -700,6 +744,116 @@
             } catch (e) {
                 console.error('❌ Erro drive:', e);
                 logConsole(`❌ Erro de conexão ao capturar pasta.`, 'log-error');
+            }
+        }
+
+        // ======================== LOCAL FOLDER IMPORT ========================
+        function processarPastaLocal(input) {
+            const files = Array.from(input.files);
+            const statusEl = document.getElementById('local-folder-status');
+
+            if (files.length === 0) {
+                statusEl.textContent = 'Nenhuma pasta selecionada';
+                return;
+            }
+
+            statusEl.textContent = `⏳ Processando ${files.length} arquivo(s)...`;
+
+            // Agrupa por subpasta (2º nível do path)
+            // webkitRelativePath: "PastaRaiz/SubPasta/arquivo.mp4"
+            const folders = {};
+            const mediaExts = ['mp4', 'mov', 'avi', 'mkv', 'webm', 'm4v', 'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'];
+
+            files.forEach(file => {
+                const parts = file.webkitRelativePath.split('/');
+                if (parts.length < 2) return; // ignora arquivos soltos na raiz
+
+                const ext = file.name.split('.').pop().toLowerCase();
+                if (!mediaExts.includes(ext)) return; // ignora não-mídia
+
+                // A subpasta é o 2º nível (índice 1)
+                const subFolder = parts.length >= 3 ? parts[1] : '__root__';
+
+                if (!folders[subFolder]) folders[subFolder] = [];
+                folders[subFolder].push(file);
+            });
+
+            // Pareia FEED / IG dentro de cada subpasta
+            let pares = 0;
+            let soloCount = 0;
+            const folderNames = Object.keys(folders).filter(k => k !== '__root__').sort();
+
+            // Se não tem subpastas, tenta agrupar por prefixo do nome
+            if (folderNames.length === 0 && folders['__root__']) {
+                const rootFiles = folders['__root__'];
+                const prefixMap = {};
+
+                rootFiles.forEach(file => {
+                    const baseName = file.name.replace(/\.[^/.]+$/, ''); // remove extensão
+                    // Remove sufixos FEED/IG para achar o prefixo
+                    const prefix = baseName.replace(/[_\- ]?(FEED|IG|REELS|STORY|STORIES)$/i, '');
+                    if (!prefixMap[prefix]) prefixMap[prefix] = [];
+                    prefixMap[prefix].push(file);
+                });
+
+                Object.entries(prefixMap).forEach(([prefix, groupFiles]) => {
+                    const feedFile = groupFiles.find(f => /[_\- ]?FEED\b/i.test(f.name.replace(/\.[^/.]+$/, '')));
+                    const igFile = groupFiles.find(f => /[_\- ]?(IG|REELS|STORY|STORIES)\b/i.test(f.name.replace(/\.[^/.]+$/, '')));
+
+                    const item = {
+                        id: Date.now() + Math.random(),
+                        adName: prefix || `Anúncio ${filaAnuncios.length + 1}`,
+                        mediaType: feedFile ? (feedFile.type.startsWith('video') ? 'video' : 'image') : (igFile?.type.startsWith('video') ? 'video' : 'image'),
+                        feedFile: feedFile || null,
+                        storiesFile: igFile || null,
+                        feedFileName: feedFile?.name || null,
+                        storiesFileName: igFile?.name || null,
+                        urlFeed: '',
+                        urlStories: '',
+                    };
+                    filaAnuncios.push(item);
+                    pares++;
+                });
+            } else {
+                // Processa cada subpasta
+                folderNames.forEach(folderName => {
+                    const groupFiles = folders[folderName];
+
+                    const feedFile = groupFiles.find(f => /[_\- ]?FEED\b/i.test(f.name.replace(/\.[^/.]+$/, '')));
+                    const igFile = groupFiles.find(f => /[_\- ]?(IG|REELS|STORY|STORIES)\b/i.test(f.name.replace(/\.[^/.]+$/, '')));
+
+                    if (!feedFile && !igFile) {
+                        soloCount++;
+                        return;
+                    }
+
+                    const item = {
+                        id: Date.now() + Math.random(),
+                        adName: folderName,
+                        mediaType: feedFile ? (feedFile.type.startsWith('video') ? 'video' : 'image') : (igFile?.type.startsWith('video') ? 'video' : 'image'),
+                        feedFile: feedFile || null,
+                        storiesFile: igFile || null,
+                        feedFileName: feedFile?.name || null,
+                        storiesFileName: igFile?.name || null,
+                        urlFeed: '',
+                        urlStories: '',
+                    };
+                    filaAnuncios.push(item);
+                    pares++;
+                });
+            }
+
+            renderizarFila();
+            input.value = ''; // reset para poder re-selecionar
+
+            if (pares > 0) {
+                statusEl.textContent = `✅ ${pares} anúncio(s) importado(s)${soloCount > 0 ? ` (${soloCount} pasta(s) sem par FEED/IG ignorada(s))` : ''}`;
+                logConsole(`📁 Pasta local: ${pares} anúncio(s) importado(s) com sucesso!`, 'log-success');
+                mostrarToast(`🎉 ${pares} criativos da pasta local adicionados à fila!`);
+            } else {
+                statusEl.textContent = '⚠️ Nenhum par FEED/IG encontrado';
+                logConsole('⚠️ Nenhum par FEED/IG encontrado na pasta selecionada.', 'log-warning');
+                mostrarToast('⚠️ Nenhum par compatível encontrado');
             }
         }
         function lerConfigGlobal() {
@@ -943,42 +1097,52 @@
             const destino = document.querySelector('input[name="destino_conjunto"]:checked')?.value;
             const adsetExistente = document.getElementById('adset_existente')?.value;
             const adsetModelo = document.getElementById('adset_modelo')?.value;
+            const adsetModeloNovo = document.getElementById('adset_modelo_novo')?.value;
             const adsetModeloGarimpo = document.getElementById('adset_modelo_garimpo')?.value;
-            const adsetNewName = document.getElementById('adset_new_name')?.value || document.getElementById('adset_new_name_garimpo')?.value || '';
+            const adsetNewName = document.getElementById('adset_new_name')?.value || '';
+            const adsetNewNameNovo = document.getElementById('adset_new_name_novo')?.value || '';
 
             // Start log console
             logConsole(`🚀 Lote iniciado — ${filaAnuncios.length} anúncio(s) na fila`, 'log-info');
 
-            // ===== BUG FIX: Duplicar ad set 1x ANTES do loop =====
+            // ===== DUPLICAÇÃO PRÉ-LOOP: para Agrupado+Duplicar OU Novo Conjunto =====
             let duplicatedAdsetId = null;
-            if (destino === 'duplicar' || estrategia.value === 'garimpo') {
-                const modelo = adsetModelo || adsetModeloGarimpo;
+            const needsPreDup = (estrategia.value === 'agrupado' && destino === 'duplicar') || estrategia.value === 'novo';
+            if (needsPreDup) {
+                const modelo = estrategia.value === 'novo' ? adsetModeloNovo : adsetModelo;
+                const nome = estrategia.value === 'novo' ? adsetNewNameNovo : adsetNewName;
                 if (!modelo) { mostrarToast('❌ Selecione um conjunto modelo para duplicar'); btn.disabled = false; return; }
 
                 logConsole('📋 Duplicando conjunto de anúncios (1x para todo o lote)...', 'log-info');
                 try {
                     const dupFd = new FormData();
                     dupFd.append('adset_modelo', modelo);
-                    dupFd.append('adset_name', adsetNewName);
+                    dupFd.append('adset_name', nome);
                     const dupResp = await fetch(`/campanha/${CAMPAIGN_ID}/duplicate-adset`, { method: 'POST', body: dupFd });
                     const dupResult = await dupResp.json();
 
                     if (dupResult.success && dupResult.adset_id) {
                         duplicatedAdsetId = dupResult.adset_id;
-                        logConsole(`✅ Conjunto duplicado: ${duplicatedAdsetId}${adsetNewName ? ' — "' + adsetNewName + '"' : ''}`, 'log-success');
+                        logConsole(`✅ Conjunto duplicado: ${duplicatedAdsetId}${nome ? ' — "' + nome + '"' : ''}`, 'log-success');
                         if (dupResult.logs) dupResult.logs.forEach(l => logConsole(`   ${l}`, 'log-info'));
                     } else {
                         logConsole(`❌ Falha ao duplicar conjunto: ${dupResult.error}`, 'log-error');
                         btn.disabled = false;
-                        btn.textContent = '🚀 Subir Todos';
+                        btn.textContent = '🚀 Subir Todos os Anúncios';
                         return;
                     }
                 } catch (e) {
                     logConsole(`❌ Erro de rede ao duplicar conjunto: ${e.message}`, 'log-error');
                     btn.disabled = false;
-                    btn.textContent = '🚀 Subir Todos';
+                    btn.textContent = '🚀 Subir Todos os Anúncios';
                     return;
                 }
+            }
+
+            // Validação Garimpo: precisa de modelo
+            if (estrategia.value === 'garimpo') {
+                const modelo = adsetModeloGarimpo;
+                if (!modelo) { mostrarToast('❌ Selecione um conjunto modelo para garimpo'); btn.disabled = false; return; }
             }
 
             let enviados = 0, erros = 0;
@@ -989,11 +1153,46 @@
 
                 logConsole(`📦 Processando ${i + 1}/${filaAnuncios.length}: "${item.adName}"`, 'log-info');
 
+                // ===== GARIMPO: Duplicar conjunto POR CRIATIVO =====
+                let adsetIdParaEsteAnuncio = null;
+                if (estrategia.value === 'garimpo') {
+                    const modelo = adsetModeloGarimpo;
+                    const nomeConjunto = item.adName; // Nome do anúncio = nome do conjunto!
+
+                    logConsole(`📋 Duplicando conjunto para "${nomeConjunto}"...`, 'log-info');
+                    try {
+                        const dupFd = new FormData();
+                        dupFd.append('adset_modelo', modelo);
+                        dupFd.append('adset_name', nomeConjunto);
+                        const dupResp = await fetch(`/campanha/${CAMPAIGN_ID}/duplicate-adset`, { method: 'POST', body: dupFd });
+                        const dupResult = await dupResp.json();
+
+                        if (dupResult.success && dupResult.adset_id) {
+                            adsetIdParaEsteAnuncio = dupResult.adset_id;
+                            logConsole(`✅ Conjunto "${nomeConjunto}" criado: ${adsetIdParaEsteAnuncio}`, 'log-success');
+                        } else {
+                            logConsole(`❌ Falha ao duplicar para "${nomeConjunto}": ${dupResult.error}`, 'log-error');
+                            erros++;
+                            continue; // Pula este anúncio
+                        }
+                    } catch (e) {
+                        logConsole(`❌ Erro de rede ao duplicar para "${nomeConjunto}": ${e.message}`, 'log-error');
+                        erros++;
+                        continue;
+                    }
+                }
+
                 const fd = new FormData();
                 fd.append('estrategia', estrategia.value);
 
-                // Se já duplicou, enviar como 'existente' com o ID duplicado
-                if (duplicatedAdsetId) {
+                // Determinar adsetId a usar
+                if (adsetIdParaEsteAnuncio) {
+                    // Garimpo: cada anúncio tem seu próprio conjunto
+                    fd.append('destino_conjunto', 'existente');
+                    fd.append('adset_existente', adsetIdParaEsteAnuncio);
+                    fd.append('adset_modelo', '');
+                } else if (duplicatedAdsetId) {
+                    // Agrupado+Duplicar: todos no mesmo conjunto duplicado
                     fd.append('destino_conjunto', 'existente');
                     fd.append('adset_existente', duplicatedAdsetId);
                     fd.append('adset_modelo', '');
