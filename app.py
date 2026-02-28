@@ -565,13 +565,20 @@ def upload_single(campaign_id):
              return jsonify({'success': False, 'error': 'Página do Facebook Obrigatória'}), 400
 
         # Handle strategy: duplicate adset if needed
+        # NOTA: Garimpo e Novo duplicam no FRONTEND (subirTodos), não aqui.
         actual_adset_id = target_adset_id
-        if estrategia == 'garimpo' or destino == 'duplicar':
+        if destino == 'duplicar' and estrategia == 'agrupado':
             actual_adset_id = uploader.duplicate_adset(target_adset_id)
             uploader.smart_delay()
 
         # Build full URL (UTMs vão apenas no url_tags, não na URL do link)
         full_url = url_destino
+
+        # Aguardar processamento dos vídeos ANTES de criar o creative
+        if feed_media and feed_media.get('video_id'):
+            uploader.wait_for_video_ready(feed_media['video_id'])
+        if stories_media and stories_media.get('video_id'):
+            uploader.wait_for_video_ready(stories_media['video_id'])
 
         # Create creative with placement rules
         try:
