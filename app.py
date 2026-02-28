@@ -30,7 +30,7 @@ app.secret_key = 'chave-secreta-optimizer-2024'
 from modules.optimization import optimization_bp
 app.register_blueprint(optimization_bp)
 
-VERSION = "v1.8.2"
+VERSION = "v1.9.0"
 
 @app.context_processor
 def inject_version():
@@ -575,10 +575,10 @@ def upload_single(campaign_id):
         full_url = url_destino
 
         # Aguardar processamento dos vídeos ANTES de criar o creative
-        if feed_media and feed_media.get('video_id'):
-            uploader.wait_for_video_ready(feed_media['video_id'])
-        if stories_media and stories_media.get('video_id'):
-            uploader.wait_for_video_ready(stories_media['video_id'])
+        if feed_media and feed_media.get('type') == 'video' and feed_media.get('id'):
+            uploader.wait_for_video_ready(feed_media['id'])
+        if stories_media and stories_media.get('type') == 'video' and stories_media.get('id'):
+            uploader.wait_for_video_ready(stories_media['id'])
 
         # Create creative with placement rules
         try:

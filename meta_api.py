@@ -1400,18 +1400,29 @@ class MetaUploader:
             # Detectar vídeos e imagens no payload
             id_str = str(payload_dict)
             
-            # Polling de Vídeos
+            # Polling de Vídeos — buscar em todas as estruturas possíveis
             if 'videos' in payload_dict:
                 video_ids = [v.get('video_id') for v in payload_dict['videos'] if v.get('video_id')]
-            elif 'object_story_spec' in payload_dict:
+            
+            # asset_feed_spec contém videos[] dentro dele (try_complex_creative)
+            afs = payload_dict.get('asset_feed_spec', {})
+            if isinstance(afs, dict) and 'videos' in afs:
+                video_ids += [v.get('video_id') for v in afs['videos'] if v.get('video_id')]
+            
+            if not video_ids and 'object_story_spec' in payload_dict:
                 vd = payload_dict['object_story_spec'].get('video_data', {})
                 if vd.get('video_id'):
                     video_ids = [vd['video_id']]
 
-            # Polling de Imagens
+            # Polling de Imagens — buscar em todas as estruturas possíveis
             if 'images' in payload_dict:
                 image_hashes = [img.get('hash') for img in payload_dict['images'] if img.get('hash')]
-            elif 'object_story_spec' in payload_dict:
+            
+            # asset_feed_spec contém images[] dentro dele
+            if isinstance(afs, dict) and 'images' in afs:
+                image_hashes += [img.get('hash') for img in afs['images'] if img.get('hash')]
+            
+            if not image_hashes and 'object_story_spec' in payload_dict:
                 ld = payload_dict['object_story_spec'].get('link_data', {})
                 if ld.get('image_hash'):
                     image_hashes = [ld['image_hash']]
