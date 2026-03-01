@@ -110,6 +110,180 @@ class MetaUploader:
                 checkouts_generic = val
         return (compras_specific or compras_generic, checkouts_specific or checkouts_generic)
 
+    # ======================== TURBINADA — MULTI-PERIOD INSIGHTS ========================
+
+    def get_turbinada_data(self, level='campaign', parent_ids=None):
+        """
+        Busca dados multi-período (7d, 3d, ontem, hoje) para a tela Turbinada.
+        level: 'campaign', 'adset' ou 'ad'
+        parent_ids: lista de IDs pai (campaign_ids para adsets, adset_ids para ads). None para campaigns.
+        Retorna lista de items com métricas por período + dados estruturais.
+        """
+        import json
+        from datetime import date, timedelta
+
+        today = date.today()
+        yesterday = today - timedelta(days=1)
+
+        # 4 períodos: 7d sem hoje, 3d sem hoje, ontem, hoje
+        periods = {
+            'p7d':   {'since': (today - timedelta(days=7)).isoformat(), 'until': yesterday.isoformat()},
+            'p3d':   {'since': (today - timedelta(days=3)).isoformat(), 'until': yesterday.isoformat()},
+            'ontem': {'since': yesterday.isoformat(), 'until': yesterday.isoformat()},
+            'hoje':  {'since': today.isoformat(), 'until': today.isoformat()},
+        }
+
+        # Mapear level para campos da API
+        level_config = {
+            'campaign': {
+                'id_field': 'campaign_id',
+                'name_field': 'campaign_name',
+                'struct_endpoint': f'{self.account_id}/campaigns',
+                'struct_fields': 'id,name,status,effective_status,daily_budget,lifetime_budget,objective',
+                'filtering': '[{"field":"effective_status","operator":"IN","value":["ACTIVE","PAUSED"]}]',
+            },
+            'adset': {
+                'id_field': 'adset_id',
+                'name_field': 'adset_name',
+                'struct_endpoint': f'{self.account_id}/adsets',
+                'struct_fields': 'id,name,status,effective_status,daily_budget,lifetime_budget,campaign_id',
+                'filtering': None,  # filtrado por parent_ids
+            },
+            'ad': {
+                'id_field': 'ad_id',
+                'name_field': 'ad_name',
+                'struct_endpoint': f'{self.account_id}/ads',
+                'struct_fields': 'id,name,status,effective_status,adset_id',
+                'filtering': None,
+            },
+        }
+
+        cfg = level_config[level]
+
+        # 1. Buscar dados estruturais
+        struct_map = {}
+        struct_url = f"https://graph.facebook.com/v22.0/{cfg['struct_endpoint']}"
+        struct_params = {
+            'access_token': self.access_token,
+            'fields': cfg['struct_fields'],
+            'limit': 500,
+        }
+        if cfg['filtering']:
+            struct_params['filtering'] = cfg['filtering']
+        if parent_ids and level == 'adset':
+            # Filtrar por campaign_ids
+            filter_list = [{"field": "campaign.id", "operator": "IN", "value": parent_ids}]
+            struct_params['filtering'] = json.dumps(filter_list)
+        elif parent_ids and level == 'ad':
+            filter_list = [{"field": "adset.id", "operator": "IN", "value": parent_ids}]
+            struct_params['filtering'] = json.dumps(filter_list)
+
+        resp = requests.get(struct_url, params=struct_params, timeout=60)
+        for item in resp.json().get('data', []):
+            struct_map[item['id']] = item
+
+        # Paginação de estrutura
+        next_url = resp.json().get('paging', {}).get('next')
+        while next_url:
+            resp = requests.get(next_url, timeout=60)
+            for item in resp.json().get('data', []):
+                struct_map[item['id']] = item
+            next_url = resp.json().get('paging', {}).get('next')
+
+        print(f"📊 [turbinada] {len(struct_map)} {level}s carregados (estrutura)")
+
+        # 2. Buscar insights para cada período
+        insights_by_id = {}  # {entity_id: {p7d: {...}, p3d: {...}, ...}}
+
+        for period_key, time_range in periods.items():
+            url = f"https://graph.facebook.com/v22.0/{self.account_id}/insights"
+            params = {
+                'access_token': self.access_token,
+                'level': level,
+                'fields': f'{cfg["id_field"]},{cfg["name_field"]},spend,actions',
+                'time_range': json.dumps(time_range),
+                'filtering': '[{"field":"spend","operator":"GREATER_THAN","value":"0"}]',
+                'limit': 500,
+            }
+
+            try:
+                resp = requests.get(url, params=params, timeout=60)
+                data = resp.json().get('data', [])
+
+                # Paginação de insights
+                next_url = resp.json().get('paging', {}).get('next')
+                while next_url:
+                    resp2 = requests.get(next_url, timeout=60)
+                    data.extend(resp2.json().get('data', []))
+                    next_url = resp2.json().get('paging', {}).get('next')
+
+                for ins in data:
+                    entity_id = ins.get(cfg['id_field'])
+                    if not entity_id:
+                        continue
+                    if entity_id not in insights_by_id:
+                        insights_by_id[entity_id] = {}
+
+                    spend = float(ins.get('spend', 0))
+                    compras, _ = self._extract_conversions(ins.get('actions', []))
+                    cac = round(spend / compras, 2) if compras > 0 else None
+
+                    insights_by_id[entity_id][period_key] = {
+                        'spend': round(spend, 2),
+                        'purchases': compras,
+                        'cac': cac,
+                    }
+
+                print(f"   → {period_key}: {len(data)} linhas de insight")
+            except Exception as e:
+                print(f"   ⚠️ {period_key} falhou: {e}")
+
+        # 3. Merge: struct + insights → retorno consolidado
+        empty_period = {'spend': 0, 'purchases': 0, 'cac': None}
+        results = []
+
+        # IDs que tiveram algum insight OU estão na estrutura
+        all_ids = set(struct_map.keys()) | set(insights_by_id.keys())
+
+        for entity_id in all_ids:
+            struct = struct_map.get(entity_id, {})
+            periods_data = insights_by_id.get(entity_id, {})
+
+            # Só incluir se teve gasto em algum período
+            if not periods_data:
+                continue
+
+            daily_raw = struct.get('daily_budget')
+            lifetime_raw = struct.get('lifetime_budget')
+
+            item = {
+                'id': entity_id,
+                'name': struct.get('name', '?'),
+                'status': struct.get('effective_status', struct.get('status', '?')),
+                'daily_budget': round(float(daily_raw) / 100, 2) if daily_raw else None,
+                'lifetime_budget': round(float(lifetime_raw) / 100, 2) if lifetime_raw else None,
+                'p7d': periods_data.get('p7d', empty_period),
+                'p3d': periods_data.get('p3d', empty_period),
+                'ontem': periods_data.get('ontem', empty_period),
+                'hoje': periods_data.get('hoje', empty_period),
+            }
+
+            # Campos extras por nível
+            if level == 'campaign':
+                item['objective'] = struct.get('objective', '')
+            elif level == 'adset':
+                item['campaign_id'] = struct.get('campaign_id', '')
+            elif level == 'ad':
+                item['adset_id'] = struct.get('adset_id', '')
+
+            results.append(item)
+
+        # Ordenar por gasto 7d decrescente
+        results.sort(key=lambda x: x['p7d'].get('spend', 0), reverse=True)
+
+        print(f"📊 [turbinada] {len(results)} {level}s com dados retornados")
+        return results
+
     # ======================== PERFORMANCE & INSIGHTS ========================
 
     def get_campaign_insights(self, date_preset='today', since=None, until=None):

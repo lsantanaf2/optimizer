@@ -31,6 +31,13 @@
                     title="Otimizar">
                     <span class="nav-icon">📊</span>
                 </a>
+
+                <!-- Turbinada Flow -->
+                <a href="{{ url_for('optimization.turbinada_page', account_id=session.get('account_id')) if session.get('account_id') else url_for('listar_contas') }}"
+                    class="nav-item {% if request.endpoint == 'optimization.turbinada_page' %}active{% endif %}"
+                    title="Otimização Turbinada">
+                    <span class="nav-icon">🚀</span>
+                </a>
             </nav>
             <div class="sidebar-footer">
                 <a href="{{ url_for('logout') }}" class="nav-item" title="Sair">

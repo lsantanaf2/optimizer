@@ -150,3 +150,37 @@ def api_entity_budget(account_id):
     except Exception as e:
         import traceback; traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
+
+# ======================== TURBINADA ========================
+
+@optimization_bp.route('/account/<account_id>/turbinada')
+def turbinada_page(account_id):
+    from app import obter_token
+    token = obter_token()
+    if not token:
+        return redirect(url_for('pagina_login'))
+    session['account_id'] = account_id
+    return render_template('turbinada.html', account_id=account_id)
+
+@optimization_bp.route('/api/account/<account_id>/turbinada/<level>')
+def api_turbinada(account_id, level):
+    from app import obter_token
+    from meta_api import MetaUploader
+
+    token = obter_token()
+    if not token:
+        return jsonify({"success": False, "error": "Não autenticado"}), 401
+
+    if level not in ('campaign', 'adset', 'ad'):
+        return jsonify({"success": False, "error": f"Nível inválido: {level}"}), 400
+
+    parent_ids = request.args.get('parent_ids', '')
+    parent_list = [pid.strip() for pid in parent_ids.split(',') if pid.strip()] if parent_ids else None
+
+    try:
+        uploader = MetaUploader(account_id, token, APP_ID, APP_SECRET)
+        data = uploader.get_turbinada_data(level=level, parent_ids=parent_list)
+        return jsonify({"success": True, "data": data})
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500

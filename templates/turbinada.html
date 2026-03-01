@@ -1,0 +1,606 @@
+{% extends "base.html" %}
+
+{% block title %}Turbinada — OPTIMIZER{% endblock %}
+
+{% block breadcrumb %}
+<a href="{{ url_for('listar_contas', next='optimize') }}">Trocar Conta</a> / <span>Otimização Turbinada</span>
+{% endblock %}
+
+{% block content %}
+<style>
+    .container {
+        max-width: 100% !important;
+        padding: 0 20px !important;
+        margin: 16px auto !important;
+    }
+
+    /* ==== Controls ==== */
+    .turb-controls {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-bottom: 16px;
+    }
+
+    .turb-tabs {
+        display: flex;
+        gap: 4px;
+    }
+
+    .turb-tab {
+        padding: 8px 18px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        background: var(--bg-card);
+        color: var(--text-secondary);
+        cursor: pointer;
+        font-weight: 600;
+        font-size: 13px;
+        transition: all .15s;
+    }
+
+    .turb-tab.active {
+        background: var(--accent);
+        color: #fff;
+        border-color: var(--accent);
+    }
+
+    .turb-tab:hover:not(.active) {
+        background: var(--bg-hover);
+    }
+
+    .turb-cac-inputs {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+    }
+
+    .turb-cac-inputs label {
+        font-size: 12px;
+        color: var(--text-muted);
+        font-weight: 600;
+    }
+
+    .turb-cac-inputs input {
+        width: 80px;
+        padding: 5px 8px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        background: var(--bg-card);
+        color: var(--text-primary);
+        font-size: 13px;
+        text-align: center;
+    }
+
+    .turb-breadcrumb {
+        font-size: 12px;
+        color: var(--text-muted);
+        margin-bottom: 8px;
+    }
+
+    .turb-breadcrumb a {
+        color: var(--accent);
+        cursor: pointer;
+        text-decoration: none;
+    }
+
+    .turb-breadcrumb a:hover {
+        text-decoration: underline;
+    }
+
+    /* ==== Table ==== */
+    .turb-table-wrap {
+        overflow-x: auto;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+    }
+
+    .turb-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+        font-family: 'Lexend', sans-serif;
+    }
+
+    .turb-table th {
+        background: var(--bg-deep);
+        color: var(--text-muted);
+        font-weight: 700;
+        padding: 8px 10px;
+        text-align: left;
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        border-bottom: 2px solid var(--border);
+        white-space: nowrap;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .turb-table th.group-header {
+        text-align: center;
+        border-left: 2px solid var(--border);
+        background: var(--bg-card);
+    }
+
+    .turb-table th.sub-header {
+        font-weight: 500;
+        text-transform: none;
+        font-size: 10px;
+        text-align: right;
+        border-left: 1px solid var(--border-light, #2a2a2a);
+        padding: 4px 8px;
+    }
+
+    .turb-table th.sub-header:first-of-type {
+        border-left: 2px solid var(--border);
+    }
+
+    .turb-table td {
+        padding: 7px 10px;
+        border-bottom: 1px solid var(--border-light, #1e1e1e);
+        color: var(--text-primary);
+        vertical-align: middle;
+    }
+
+    .turb-table tr:nth-child(even) td {
+        background: rgba(255, 255, 255, 0.015);
+    }
+
+    .turb-table tr:hover td {
+        background: rgba(255, 255, 255, 0.04);
+    }
+
+    .turb-table td.metric {
+        text-align: right;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 11px;
+    }
+
+    .turb-table td.period-cell {
+        border-left: 1px solid var(--border-light, #2a2a2a);
+    }
+
+    .turb-table td.period-start {
+        border-left: 2px solid var(--border);
+    }
+
+    /* Period group coloring */
+    .cac-green td.p-group {
+        background: rgba(34, 197, 94, 0.15) !important;
+    }
+
+    .cac-red td.p-group {
+        background: rgba(239, 68, 68, 0.15) !important;
+    }
+
+    /* Per-period coloring */
+    .pg-green {
+        background: rgba(34, 197, 94, 0.15) !important;
+    }
+
+    .pg-red {
+        background: rgba(239, 68, 68, 0.15) !important;
+    }
+
+    /* Toggle */
+    .toggle-status {
+        width: 36px;
+        height: 20px;
+        border-radius: 10px;
+        border: none;
+        cursor: pointer;
+        position: relative;
+        transition: background .2s;
+    }
+
+    .toggle-status.active {
+        background: #22c55e;
+    }
+
+    .toggle-status.paused {
+        background: #6b7280;
+    }
+
+    .toggle-status::after {
+        content: '';
+        position: absolute;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: #fff;
+        top: 2px;
+        transition: left .2s;
+    }
+
+    .toggle-status.active::after {
+        left: 18px;
+    }
+
+    .toggle-status.paused::after {
+        left: 2px;
+    }
+
+    /* Budget */
+    .budget-cell {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+
+    .budget-input {
+        width: 70px;
+        padding: 3px 6px;
+        border: 1px solid transparent;
+        background: transparent;
+        color: var(--text-primary);
+        font-size: 12px;
+        border-radius: 4px;
+        text-align: right;
+        font-family: 'JetBrains Mono', monospace;
+    }
+
+    .budget-input:focus {
+        border-color: var(--accent);
+        background: var(--bg-deep);
+        outline: none;
+    }
+
+    .btn-multiply {
+        padding: 2px 6px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        background: var(--bg-card);
+        color: var(--text-secondary);
+        font-size: 10px;
+        cursor: pointer;
+        font-weight: 700;
+        white-space: nowrap;
+    }
+
+    .btn-multiply:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+    }
+
+    .btn-save-budget {
+        padding: 2px 8px;
+        border: none;
+        border-radius: 4px;
+        background: #22c55e;
+        color: #fff;
+        font-size: 10px;
+        cursor: pointer;
+        font-weight: 700;
+        display: none;
+    }
+
+    /* Name clickable */
+    .entity-name {
+        cursor: pointer;
+        color: var(--accent);
+    }
+
+    .entity-name:hover {
+        text-decoration: underline;
+    }
+
+    /* Loading */
+    .turb-loading {
+        text-align: center;
+        padding: 40px;
+        color: var(--text-muted);
+        font-size: 14px;
+    }
+
+    /* Checkbox */
+    .turb-table input[type="checkbox"] {
+        cursor: pointer;
+    }
+</style>
+
+<!-- Header -->
+<div class="turb-controls">
+    <div style="display:flex; align-items:center; gap:16px;">
+        <h2 style="font-size:16px; font-weight:700; color:var(--text-primary); margin:0;">🚀 Otimização Turbinada</h2>
+        <div class="turb-tabs">
+            <button class="turb-tab active" data-level="campaign" onclick="switchTab('campaign', this)">📊
+                Campanhas</button>
+            <button class="turb-tab" data-level="adset" onclick="switchTab('adset', this)">📦 Conjuntos</button>
+            <button class="turb-tab" data-level="ad" onclick="switchTab('ad', this)">🎨 Anúncios</button>
+        </div>
+    </div>
+    <div class="turb-cac-inputs">
+        <div>
+            <label>CAC Ideal (≤)</label>
+            <input type="number" id="cac-x" value="50" step="1" onchange="applyCAC()">
+        </div>
+        <div>
+            <label>Teto CAC (≥)</label>
+            <input type="number" id="cac-y" value="150" step="1" onchange="applyCAC()">
+        </div>
+        <button
+            style="padding:6px 14px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--bg-card); color:var(--text-primary); cursor:pointer; font-size:12px; font-weight:600;"
+            onclick="loadData()">🔄 Atualizar</button>
+    </div>
+</div>
+
+<!-- Breadcrumb -->
+<div class="turb-breadcrumb" id="turb-breadcrumb"></div>
+
+<!-- Table -->
+<div class="turb-table-wrap">
+    <div class="turb-loading" id="turb-loading">Carregando dados...</div>
+    <table class="turb-table" id="turb-table" style="display:none;">
+        <thead id="turb-thead"></thead>
+        <tbody id="turb-tbody"></tbody>
+    </table>
+</div>
+
+<script>
+    const ACCOUNT_ID = "{{ account_id }}";
+    let currentLevel = 'campaign';
+    let navStack = []; // [{level, parentIds, parentName}]
+    let allData = [];
+    let lastCheckboxIdx = -1;
+
+    function switchTab(level, btn) {
+        document.querySelectorAll('.turb-tab').forEach(t => t.classList.remove('active'));
+        btn.classList.add('active');
+        currentLevel = level;
+        navStack = [];
+        loadData();
+    }
+
+    function drillDown(entityId, entityName, nextLevel) {
+        navStack.push({ level: currentLevel, parentIds: null, parentName: entityName, entityId });
+        currentLevel = nextLevel;
+        document.querySelectorAll('.turb-tab').forEach(t => {
+            t.classList.toggle('active', t.dataset.level === nextLevel);
+        });
+        loadData([entityId]);
+    }
+
+    function navTo(idx) {
+        if (idx < 0) { navStack = []; currentLevel = 'campaign'; loadData(); return; }
+        navStack = navStack.slice(0, idx + 1);
+        const entry = navStack[idx];
+        currentLevel = entry.level === 'campaign' ? 'adset' : 'ad';
+        loadData([entry.entityId]);
+    }
+
+    function renderBreadcrumb() {
+        const el = document.getElementById('turb-breadcrumb');
+        if (navStack.length === 0) { el.innerHTML = ''; return; }
+        let html = `<a onclick="navTo(-1)">Campanhas</a>`;
+        navStack.forEach((entry, i) => {
+            if (i < navStack.length - 1) {
+                html += ` › <a onclick="navTo(${i})">${entry.parentName}</a>`;
+            } else {
+                html += ` › <strong>${entry.parentName}</strong>`;
+            }
+        });
+        el.innerHTML = html;
+    }
+
+    async function loadData(parentIds) {
+        const loading = document.getElementById('turb-loading');
+        const table = document.getElementById('turb-table');
+        loading.style.display = 'block';
+        table.style.display = 'none';
+
+        let url = `/api/account/${ACCOUNT_ID}/turbinada/${currentLevel}`;
+        if (parentIds && parentIds.length) {
+            url += `?parent_ids=${parentIds.join(',')}`;
+        }
+
+        try {
+            const resp = await fetch(url);
+            const json = await resp.json();
+            if (!json.success) { mostrarToast('❌ ' + json.error); loading.textContent = json.error; return; }
+            allData = json.data;
+            renderTable();
+            renderBreadcrumb();
+        } catch (e) {
+            loading.textContent = '❌ Erro de conexão';
+            mostrarToast('❌ Erro ao carregar dados');
+        }
+    }
+
+    function renderTable() {
+        const loading = document.getElementById('turb-loading');
+        const table = document.getElementById('turb-table');
+        const thead = document.getElementById('turb-thead');
+        const tbody = document.getElementById('turb-tbody');
+
+        const showBudget = currentLevel !== 'ad';
+        const periods = [
+            { key: 'p7d', label: '7 DIAS' },
+            { key: 'p3d', label: '3 DIAS' },
+            { key: 'ontem', label: 'ONTEM' },
+            { key: 'hoje', label: 'HOJE' },
+        ];
+
+        // Header row 1
+        let h1 = `<tr>
+        <th rowspan="2" style="width:30px;"><input type="checkbox" id="select-all" onchange="toggleAll(this)"></th>
+        <th rowspan="2">Status</th>
+        <th rowspan="2">Nome</th>`;
+        if (showBudget) h1 += `<th rowspan="2">Verba/Dia</th>`;
+        periods.forEach(p => {
+            h1 += `<th colspan="3" class="group-header">${p.label}</th>`;
+        });
+        h1 += `</tr>`;
+
+        // Header row 2 (subcolunas)
+        let h2 = `<tr>`;
+        periods.forEach((p, pi) => {
+            h2 += `<th class="sub-header ${pi === 0 ? 'period-start' : ''}" style="${pi === 0 ? 'border-left:2px solid var(--border);' : ''}">Gasto</th>`;
+            h2 += `<th class="sub-header">Vendas</th>`;
+            h2 += `<th class="sub-header">CAC</th>`;
+        });
+        h2 += `</tr>`;
+        thead.innerHTML = h1 + h2;
+
+        // Body
+        let rows = '';
+        allData.forEach((item, idx) => {
+            const isActive = item.status === 'ACTIVE';
+            const nextLevel = currentLevel === 'campaign' ? 'adset' : currentLevel === 'adset' ? 'ad' : null;
+
+            rows += `<tr data-idx="${idx}">`;
+            rows += `<td><input type="checkbox" class="row-cb" data-idx="${idx}" onclick="handleShiftClick(event, ${idx})"></td>`;
+            rows += `<td><button class="toggle-status ${isActive ? 'active' : 'paused'}" data-id="${item.id}" onclick="toggleStatus(this, '${item.id}', '${currentLevel}')"></button></td>`;
+
+            if (nextLevel) {
+                rows += `<td class="entity-name" onclick="drillDown('${item.id}', '${item.name.replace(/'/g, "\\'")}', '${nextLevel}')">${item.name}</td>`;
+            } else {
+                rows += `<td>${item.name}</td>`;
+            }
+
+            if (showBudget) {
+                const budget = item.daily_budget != null ? item.daily_budget.toFixed(2) : '—';
+                rows += `<td>
+                <div class="budget-cell">
+                    <input type="text" class="budget-input" value="${budget}" data-original="${budget}" data-id="${item.id}" data-type="${currentLevel}" oninput="onBudgetEdit(this)">
+                    <button class="btn-multiply" onclick="multiply12(this)">1.2×</button>
+                    <button class="btn-save-budget" data-id="${item.id}" data-type="${currentLevel}" onclick="saveBudget(this)">✓</button>
+                </div>
+            </td>`;
+            }
+
+            periods.forEach((p, pi) => {
+                const pd = item[p.key] || { spend: 0, purchases: 0, cac: null };
+                const cacX = parseFloat(document.getElementById('cac-x').value) || 0;
+                const cacY = parseFloat(document.getElementById('cac-y').value) || 999999;
+                let colorClass = '';
+                if (pd.cac !== null && pd.cac > 0) {
+                    if (pd.cac <= cacX) colorClass = 'pg-green';
+                    else if (pd.cac >= cacY) colorClass = 'pg-red';
+                }
+
+                const spend = pd.spend > 0 ? `R$ ${pd.spend.toFixed(2)}` : '—';
+                const purch = pd.purchases > 0 ? pd.purchases : '—';
+                const cac = pd.cac !== null ? `R$ ${pd.cac.toFixed(2)}` : '—';
+
+                rows += `<td class="metric period-cell period-start ${colorClass}" data-period="${p.key}">${spend}</td>`;
+                rows += `<td class="metric period-cell ${colorClass}" data-period="${p.key}">${purch}</td>`;
+                rows += `<td class="metric period-cell ${colorClass}" data-period="${p.key}">${cac}</td>`;
+            });
+
+            rows += `</tr>`;
+        });
+
+        tbody.innerHTML = rows;
+        loading.style.display = 'none';
+        table.style.display = 'table';
+        lastCheckboxIdx = -1;
+    }
+
+    function applyCAC() {
+        // Re-render to apply new CAC colors
+        if (allData.length) renderTable();
+    }
+
+    // ===== Shift+Click Checkbox =====
+    function handleShiftClick(e, idx) {
+        if (e.shiftKey && lastCheckboxIdx >= 0) {
+            const cbs = document.querySelectorAll('.row-cb');
+            const start = Math.min(lastCheckboxIdx, idx);
+            const end = Math.max(lastCheckboxIdx, idx);
+            const checked = cbs[idx].checked;
+            for (let i = start; i <= end; i++) {
+                cbs[i].checked = checked;
+            }
+        }
+        lastCheckboxIdx = idx;
+    }
+
+    function toggleAll(master) {
+        document.querySelectorAll('.row-cb').forEach(cb => cb.checked = master.checked);
+    }
+
+    // ===== Toggle Status =====
+    async function toggleStatus(btn, entityId, entityType) {
+        const isActive = btn.classList.contains('active');
+        const newStatus = isActive ? 'PAUSED' : 'ACTIVE';
+        btn.disabled = true;
+        try {
+            const resp = await fetch(`/api/account/${ACCOUNT_ID}/entity/status`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ entity_id: entityId, entity_type: entityType, status: newStatus })
+            });
+            const json = await resp.json();
+            if (json.success) {
+                btn.classList.toggle('active');
+                btn.classList.toggle('paused');
+                mostrarToast(`✅ ${newStatus === 'ACTIVE' ? 'Ativado' : 'Pausado'}`);
+            } else {
+                mostrarToast('❌ ' + json.error);
+            }
+        } catch (e) {
+            mostrarToast('❌ Erro de rede');
+        }
+        btn.disabled = false;
+    }
+
+    // ===== Budget Editing =====
+    function onBudgetEdit(input) {
+        const saveBtn = input.parentElement.querySelector('.btn-save-budget');
+        saveBtn.style.display = input.value !== input.dataset.original ? 'inline-block' : 'none';
+    }
+
+    function multiply12(btn) {
+        const input = btn.parentElement.querySelector('.budget-input');
+        const val = parseFloat(input.value);
+        if (!isNaN(val)) {
+            input.value = (val * 1.2).toFixed(2);
+            onBudgetEdit(input);
+        }
+    }
+
+    async function saveBudget(btn) {
+        const cell = btn.parentElement;
+        const input = cell.querySelector('.budget-input');
+        const entityId = btn.dataset.id;
+        const entityType = btn.dataset.type;
+        const newBudget = parseFloat(input.value);
+
+        if (isNaN(newBudget) || newBudget <= 0) {
+            mostrarToast('❌ Valor inválido');
+            return;
+        }
+
+        btn.disabled = true;
+        btn.textContent = '⏳';
+        try {
+            const resp = await fetch(`/api/account/${ACCOUNT_ID}/entity/budget`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ entity_id: entityId, entity_type: entityType, daily_budget: newBudget })
+            });
+            const json = await resp.json();
+            if (json.success) {
+                input.dataset.original = newBudget.toFixed(2);
+                btn.style.display = 'none';
+                btn.textContent = '✓';
+                mostrarToast(`✅ Verba atualizada: R$ ${newBudget.toFixed(2)}/dia`);
+            } else {
+                mostrarToast('❌ ' + json.error);
+                btn.textContent = '✓';
+            }
+        } catch (e) {
+            mostrarToast('❌ Erro de rede');
+            btn.textContent = '✓';
+        }
+        btn.disabled = false;
+    }
+
+    // ===== Init =====
+    document.addEventListener('DOMContentLoaded', () => loadData());
+</script>
+{% endblock %}
