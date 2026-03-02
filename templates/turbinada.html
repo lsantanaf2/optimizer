@@ -21,7 +21,7 @@
         justify-content: space-between;
         flex-wrap: wrap;
         gap: 12px;
-        margin-bottom: 16px;
+        margin-bottom: 10px;
     }
 
     .turb-tabs {
@@ -90,9 +90,88 @@
         text-decoration: underline;
     }
 
+    /* ==== Period Pills ==== */
+    .turb-period-bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 12px;
+        padding: 8px 12px;
+        background: var(--bg-card, #16161a);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+    }
+
+    .turb-period-bar .period-label {
+        font-size: 11px;
+        color: var(--text-muted);
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-right: 4px;
+        flex-shrink: 0;
+    }
+
+    .period-pill {
+        padding: 4px 12px;
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        background: transparent;
+        color: var(--text-secondary);
+        cursor: pointer;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.3px;
+        transition: all .15s;
+        user-select: none;
+    }
+
+    .period-pill.active {
+        background: var(--accent);
+        color: #000;
+        border-color: var(--accent);
+    }
+
+    .period-pill:hover:not(.active) {
+        border-color: var(--accent);
+        color: var(--accent);
+    }
+
+    .period-pill-actions {
+        display: flex;
+        gap: 4px;
+        margin-left: auto;
+        flex-shrink: 0;
+    }
+
+    .btn-period-action {
+        padding: 3px 10px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        background: transparent;
+        color: var(--text-muted);
+        cursor: pointer;
+        font-size: 10px;
+        font-weight: 600;
+        transition: all .15s;
+    }
+
+    .btn-period-action:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+    }
+
+    .btn-period-action.danger:hover {
+        border-color: var(--danger, #ef4444);
+        color: var(--danger, #ef4444);
+    }
+
     /* ==== Table ==== */
     .turb-table-wrap {
         overflow-x: auto;
+        overflow-y: auto;
+        max-height: calc(100vh - 210px);
         border: 1px solid var(--border);
         border-radius: var(--radius);
     }
@@ -113,7 +192,7 @@
         position: sticky;
         top: 0;
         z-index: 2;
-        border-bottom: 2px solid var(--border);
+        border-bottom: 1px solid var(--border);
         white-space: nowrap;
         font-size: 11px;
         text-transform: uppercase;
@@ -124,6 +203,7 @@
         text-align: center;
         border-left: 2px solid var(--border);
         background: var(--bg-card);
+        border-bottom: none;
     }
 
     .turb-table th.sub-header {
@@ -133,10 +213,33 @@
         text-align: right;
         border-left: 1px solid var(--border-light, #2a2a2a);
         padding: 4px 8px;
+        top: 37px;
+        /* altura da primeira row de headers */
+        border-top: 1px solid var(--border-light, #2a2a2a);
+        border-bottom: 2px solid var(--border);
+        cursor: pointer;
+        transition: color .15s, background .15s;
+    }
+
+    .turb-table th.sub-header:hover {
+        color: var(--accent);
+        background: rgba(0, 242, 255, 0.05);
+    }
+
+    .turb-table th.sub-header.sort-active {
+        color: var(--accent);
     }
 
     .turb-table th.sub-header:first-of-type {
         border-left: 2px solid var(--border);
+    }
+
+    /* Fixa as primeiras colunas (fixed-left) na fila de headers */
+    .turb-table thead tr:first-child th.fixed-left {
+        top: 0;
+        z-index: 3;
+        background: var(--bg-deep);
+        border-bottom: none;
     }
 
     .turb-table td {
@@ -184,6 +287,24 @@
 
     .pg-red {
         background: rgba(239, 68, 68, 0.15) !important;
+    }
+
+    /* Amarelo: gasto > 0 AND vendas == 0 */
+    .pg-yellow {
+        background: rgba(245, 158, 11, 0.28) !important;
+    }
+
+    /* Sort indicator */
+    .sort-arrow {
+        display: inline-block;
+        margin-left: 3px;
+        font-size: 9px;
+        opacity: 0.5;
+    }
+
+    .sort-active .sort-arrow {
+        opacity: 1;
+        color: var(--accent);
     }
 
     /* Toggle */
@@ -300,6 +421,14 @@
     .turb-table input[type="checkbox"] {
         cursor: pointer;
     }
+
+    /* Nenhum período selecionado */
+    .turb-no-periods {
+        text-align: center;
+        padding: 40px;
+        color: var(--text-muted);
+        font-size: 13px;
+    }
 </style>
 
 <!-- Header -->
@@ -328,6 +457,21 @@
     </div>
 </div>
 
+<!-- Period Pills Bar -->
+<div class="turb-period-bar">
+    <span class="period-label">Períodos:</span>
+    <button id="pill-p30d" class="period-pill" onclick="togglePeriod('p30d', this)">30 DIAS</button>
+    <button id="pill-p14d" class="period-pill" onclick="togglePeriod('p14d', this)">14 DIAS</button>
+    <button id="pill-p7d" class="period-pill active" onclick="togglePeriod('p7d', this)">7 DIAS</button>
+    <button id="pill-p3d" class="period-pill active" onclick="togglePeriod('p3d', this)">3 DIAS</button>
+    <button id="pill-ontem" class="period-pill active" onclick="togglePeriod('ontem', this)">ONTEM</button>
+    <button id="pill-hoje" class="period-pill active" onclick="togglePeriod('hoje', this)">HOJE</button>
+    <div class="period-pill-actions">
+        <button class="btn-period-action" onclick="resetPeriods()" title="Restaurar padrão">↺ Reset</button>
+        <button class="btn-period-action danger" onclick="clearPeriods()" title="Remover todos">✕ Limpar</button>
+    </div>
+</div>
+
 <!-- Breadcrumb -->
 <div class="turb-breadcrumb" id="turb-breadcrumb"></div>
 
@@ -338,6 +482,9 @@
         <thead id="turb-thead"></thead>
         <tbody id="turb-tbody"></tbody>
     </table>
+    <div class="turb-no-periods" id="turb-no-periods" style="display:none;">
+        ⚠️ Selecione ao menos um período para exibir a tabela.
+    </div>
 </div>
 
 <script>
@@ -347,11 +494,65 @@
     let allData = [];
     let lastCheckboxIdx = -1;
 
+    // Ordem canônica dos períodos disponíveis
+    const PERIOD_DEFS = [
+        { key: 'p30d', label: '30 DIAS' },
+        { key: 'p14d', label: '14 DIAS' },
+        { key: 'p7d', label: '7 DIAS' },
+        { key: 'p3d', label: '3 DIAS' },
+        { key: 'ontem', label: 'ONTEM' },
+        { key: 'hoje', label: 'HOJE' },
+    ];
+    const DEFAULT_ACTIVE = ['p7d', 'p3d', 'ontem', 'hoje'];
+
+    // Períodos ativos (set para verificação rápida)
+    let activePeriods = new Set(DEFAULT_ACTIVE);
+
+    // Estado de ordenação: { key: 'p7d.spend' | null, asc: true }
+    let currentSort = { key: null, asc: true };
+
+    // ===== Period Management =====
+    function togglePeriod(key, btn) {
+        if (activePeriods.has(key)) {
+            activePeriods.delete(key);
+            btn.classList.remove('active');
+        } else {
+            activePeriods.add(key);
+            btn.classList.add('active');
+        }
+        renderTable();
+    }
+
+    function resetPeriods() {
+        activePeriods = new Set(DEFAULT_ACTIVE);
+        PERIOD_DEFS.forEach(p => {
+            const pill = document.getElementById('pill-' + p.key);
+            if (pill) pill.classList.toggle('active', DEFAULT_ACTIVE.includes(p.key));
+        });
+        renderTable();
+    }
+
+    function clearPeriods() {
+        activePeriods = new Set();
+        PERIOD_DEFS.forEach(p => {
+            const pill = document.getElementById('pill-' + p.key);
+            if (pill) pill.classList.remove('active');
+        });
+        renderTable();
+    }
+
+    // Retorna lista de períodos ativos na ordem canônica
+    function getActivePeriods() {
+        return PERIOD_DEFS.filter(p => activePeriods.has(p.key));
+    }
+
+    // ===== Tabs / Navigation =====
     function switchTab(level, btn) {
         document.querySelectorAll('.turb-tab').forEach(t => t.classList.remove('active'));
         btn.classList.add('active');
         currentLevel = level;
         navStack = [];
+        currentSort = { key: null, asc: true };
         loadData();
     }
 
@@ -361,6 +562,7 @@
         document.querySelectorAll('.turb-tab').forEach(t => {
             t.classList.toggle('active', t.dataset.level === nextLevel);
         });
+        currentSort = { key: null, asc: true };
         loadData([entityId]);
     }
 
@@ -369,6 +571,7 @@
         navStack = navStack.slice(0, idx + 1);
         const entry = navStack[idx];
         currentLevel = entry.level === 'campaign' ? 'adset' : 'ad';
+        currentSort = { key: null, asc: true };
         loadData([entry.entityId]);
     }
 
@@ -386,11 +589,14 @@
         el.innerHTML = html;
     }
 
+    // ===== Data Loading =====
     async function loadData(parentIds) {
         const loading = document.getElementById('turb-loading');
         const table = document.getElementById('turb-table');
+        const noPeriods = document.getElementById('turb-no-periods');
         loading.style.display = 'block';
         table.style.display = 'none';
+        noPeriods.style.display = 'none';
 
         let url = `/api/account/${ACCOUNT_ID}/turbinada/${currentLevel}`;
         if (parentIds && parentIds.length) {
@@ -402,6 +608,7 @@
             const json = await resp.json();
             if (!json.success) { mostrarToast('❌ ' + json.error); loading.textContent = json.error; return; }
             allData = json.data;
+            loading.style.display = 'none';
             renderTable();
             renderBreadcrumb();
         } catch (e) {
@@ -410,44 +617,92 @@
         }
     }
 
+    // ===== Sorting =====
+    function sortTable(sortKey) {
+        if (currentSort.key === sortKey) {
+            currentSort.asc = !currentSort.asc;
+        } else {
+            currentSort.key = sortKey;
+            currentSort.asc = false; // padrão: maior primeiro
+        }
+        renderTable();
+    }
+
+    function getSortValue(item, sortKey) {
+        // sortKey formato: "p7d.spend" | "ontem.purchases" | "hoje.cac"
+        const [periodKey, metric] = sortKey.split('.');
+        const pd = item[periodKey];
+        if (!pd) return -Infinity;
+        if (metric === 'spend') return pd.spend || 0;
+        if (metric === 'purchases') return pd.purchases || 0;
+        if (metric === 'cac') return pd.cac !== null ? pd.cac : Infinity;
+        return 0;
+    }
+
+    // ===== Table Rendering =====
     function renderTable() {
-        const loading = document.getElementById('turb-loading');
         const table = document.getElementById('turb-table');
         const thead = document.getElementById('turb-thead');
         const tbody = document.getElementById('turb-tbody');
+        const noPeriods = document.getElementById('turb-no-periods');
+
+        const periods = getActivePeriods();
+
+        if (periods.length === 0) {
+            table.style.display = 'none';
+            noPeriods.style.display = 'block';
+            return;
+        }
+
+        noPeriods.style.display = 'none';
 
         const showBudget = currentLevel !== 'ad';
-        const periods = [
-            { key: 'p7d', label: '7 DIAS' },
-            { key: 'p3d', label: '3 DIAS' },
-            { key: 'ontem', label: 'ONTEM' },
-            { key: 'hoje', label: 'HOJE' },
-        ];
+        const cacX = parseFloat(document.getElementById('cac-x').value) || 0;
+        const cacY = parseFloat(document.getElementById('cac-y').value) || 999999;
 
-        // Header row 1
+        // Ordenar dados
+        let data = [...allData];
+        if (currentSort.key) {
+            data.sort((a, b) => {
+                const va = getSortValue(a, currentSort.key);
+                const vb = getSortValue(b, currentSort.key);
+                return currentSort.asc ? va - vb : vb - va;
+            });
+        }
+
+        // ---- Header row 1 ----
         let h1 = `<tr>
-        <th rowspan="2" style="width:30px;"><input type="checkbox" id="select-all" onchange="toggleAll(this)"></th>
-        <th rowspan="2">Status</th>
-        <th rowspan="2">Nome</th>`;
-        if (showBudget) h1 += `<th rowspan="2">Verba/Dia</th>`;
+        <th rowspan="2" class="fixed-left" style="width:30px;"><input type="checkbox" id="select-all" onchange="toggleAll(this)"></th>
+        <th rowspan="2" class="fixed-left">Status</th>
+        <th rowspan="2" class="fixed-left">Nome</th>`;
+        if (showBudget) h1 += `<th rowspan="2" class="fixed-left">Verba/Dia</th>`;
         periods.forEach(p => {
             h1 += `<th colspan="3" class="group-header">${p.label}</th>`;
         });
         h1 += `</tr>`;
 
-        // Header row 2 (subcolunas)
+        // ---- Header row 2 (sub-colunas clicáveis) ----
         let h2 = `<tr>`;
         periods.forEach((p, pi) => {
-            h2 += `<th class="sub-header ${pi === 0 ? 'period-start' : ''}" style="${pi === 0 ? 'border-left:2px solid var(--border);' : ''}">Gasto</th>`;
-            h2 += `<th class="sub-header">Vendas</th>`;
-            h2 += `<th class="sub-header">CAC</th>`;
+            const metrics = [
+                { field: 'spend', label: 'Gasto' },
+                { field: 'purchases', label: 'Vendas' },
+                { field: 'cac', label: 'CAC' },
+            ];
+            metrics.forEach((m, mi) => {
+                const sKey = `${p.key}.${m.field}`;
+                const isActive = currentSort.key === sKey;
+                const arrow = isActive ? (currentSort.asc ? '▲' : '▼') : '▲▼';
+                const borderStyle = (pi === 0 && mi === 0) ? 'border-left:2px solid var(--border);' : '';
+                h2 += `<th class="sub-header${isActive ? ' sort-active' : ''}" style="${borderStyle}" onclick="sortTable('${sKey}')">${m.label}<span class="sort-arrow">${arrow}</span></th>`;
+            });
         });
         h2 += `</tr>`;
         thead.innerHTML = h1 + h2;
 
-        // Body
+        // ---- Body ----
         let rows = '';
-        allData.forEach((item, idx) => {
+        data.forEach((item, idx) => {
             const isActive = item.status === 'ACTIVE';
             const nextLevel = currentLevel === 'campaign' ? 'adset' : currentLevel === 'adset' ? 'ad' : null;
 
@@ -474,10 +729,12 @@
 
             periods.forEach((p, pi) => {
                 const pd = item[p.key] || { spend: 0, purchases: 0, cac: null };
-                const cacX = parseFloat(document.getElementById('cac-x').value) || 0;
-                const cacY = parseFloat(document.getElementById('cac-y').value) || 999999;
+
+                // Prioridade de cor: amarelo (gasto sem venda) > verde/vermelho CAC
                 let colorClass = '';
-                if (pd.cac !== null && pd.cac > 0) {
+                if (pd.spend > 0 && pd.purchases === 0) {
+                    colorClass = 'pg-yellow';
+                } else if (pd.cac !== null && pd.cac > 0) {
                     if (pd.cac <= cacX) colorClass = 'pg-green';
                     else if (pd.cac >= cacY) colorClass = 'pg-red';
                 }
@@ -486,7 +743,7 @@
                 const purch = pd.purchases > 0 ? pd.purchases : '—';
                 const cac = pd.cac !== null ? `R$ ${pd.cac.toFixed(2)}` : '—';
 
-                rows += `<td class="metric period-cell period-start ${colorClass}" data-period="${p.key}">${spend}</td>`;
+                rows += `<td class="metric period-cell${pi === 0 ? ' period-start' : ''} ${colorClass}" data-period="${p.key}">${spend}</td>`;
                 rows += `<td class="metric period-cell ${colorClass}" data-period="${p.key}">${purch}</td>`;
                 rows += `<td class="metric period-cell ${colorClass}" data-period="${p.key}">${cac}</td>`;
             });
@@ -495,13 +752,11 @@
         });
 
         tbody.innerHTML = rows;
-        loading.style.display = 'none';
         table.style.display = 'table';
         lastCheckboxIdx = -1;
     }
 
     function applyCAC() {
-        // Re-render to apply new CAC colors
         if (allData.length) renderTable();
     }
 
