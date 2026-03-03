@@ -10,7 +10,7 @@
 <div class="card border-purple">
     <div class="card-title">
         🚀 Campanhas
-        <span class="badge badge-purple" id="campaign-count">{{ campaigns|length }} Encontradas</span>
+        <span class="badge badge-purple" id="campaign-count">Carregando...</span>
         <a href="{{ url_for('listar_contas', next='upload') }}"
             style="margin-left: auto; color: var(--text-muted); text-decoration: none; font-size: 12px;">←
             Trocar Conta</a>
@@ -32,47 +32,94 @@
         </label>
     </div>
 
-    {% if not campaigns %}
-    <div class="queue-empty">Nenhuma campanha encontrada nesta conta.</div>
-    {% else %}
-    <div class="queue-list" id="campaign-list">
-        {% for campaign in campaigns %}
-        <a href="/campanha/{{ campaign.id }}/setup" style="text-decoration: none; color: inherit;" class="campaign-item"
-            data-name="{{ campaign.name|lower }}" data-status="{{ campaign.status }}">
-            <div class="queue-item" style="cursor: pointer;">
-                <div class="queue-item-number"
-                    style="background: {% if campaign.status == 'ACTIVE' %}var(--success){% else %}var(--bg-surface){% endif %}; color: {% if campaign.status == 'ACTIVE' %}#fff{% else %}var(--text-muted){% endif %}; font-size: 10px; min-width: 30px; text-align: center;">
-                    {{ loop.index }}
-                </div>
-                <div class="queue-item-body">
-                    <div class="queue-item-name"
-                        style="background: transparent; border: none; padding: 0; font-size: 14px;">
-                        {{ campaign.name }}
-                    </div>
-                    <div class="queue-item-files">
-                        <span class="queue-file-tag">ID: {{ campaign.id }}</span>
-                        <span class="queue-file-tag" style="color: var(--text-muted); border-color: var(--border);">{{
-                            campaign.objective }}</span>
-                        {% if campaign.status == 'ACTIVE' %}
-                        <span class="config-status active" style="font-size: 11px;">🟢 Ativa</span>
-                        {% else %}
-                        <span class="config-status" style="font-size: 11px; color: var(--text-muted);">⏸️ Pausada</span>
-                        {% endif %}
-                    </div>
-                </div>
-                <div class="btn-queue-remove" style="border: none; color: var(--accent); font-size: 18px;">
-                    ⚙️ Setup
-                </div>
-            </div>
-        </a>
-        {% endfor %}
+    <!-- Loading state -->
+    <div id="campaign-loading" style="text-align:center; padding:40px; color:var(--text-muted);">
+        <div style="font-size:28px; margin-bottom:8px;">⏳</div>
+        <div style="font-size:13px;">Carregando campanhas...</div>
     </div>
-    {% endif %}
+
+    <!-- Error state -->
+    <div id="campaign-error"
+        style="display:none; text-align:center; padding:30px; color:var(--danger); font-size:13px;"></div>
+
+    <!-- Campaign list -->
+    <div class="queue-list" id="campaign-list" style="display:none;"></div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
+    const ACCOUNT_ID = "{{ account_id }}";
+
+    async function carregarCampanhas() {
+        try {
+            const resp = await fetch(`/api/conta/${ACCOUNT_ID}/campanhas`);
+            const data = await resp.json();
+
+            const loading = document.getElementById('campaign-loading');
+            const errorEl = document.getElementById('campaign-error');
+            const listEl = document.getElementById('campaign-list');
+            const countBadge = document.getElementById('campaign-count');
+
+            if (data.error) {
+                loading.style.display = 'none';
+                errorEl.textContent = '❌ ' + data.error;
+                errorEl.style.display = 'block';
+                return;
+            }
+
+            const campaigns = data.campaigns || [];
+
+            // Renderizar lista
+            let html = '';
+            campaigns.forEach((c, i) => {
+                const isActive = c.status === 'ACTIVE';
+                html += `
+                <a href="/campanha/${c.id}/setup" style="text-decoration: none; color: inherit;" class="campaign-item"
+                    data-name="${(c.name || '').toLowerCase()}" data-status="${c.status}">
+                    <div class="queue-item" style="cursor: pointer;">
+                        <div class="queue-item-number"
+                            style="background: ${isActive ? 'var(--success)' : 'var(--bg-surface)'}; color: ${isActive ? '#fff' : 'var(--text-muted)'}; font-size: 10px; min-width: 30px; text-align: center;">
+                            ${i + 1}
+                        </div>
+                        <div class="queue-item-body">
+                            <div class="queue-item-name"
+                                style="background: transparent; border: none; padding: 0; font-size: 14px;">
+                                ${c.name}
+                            </div>
+                            <div class="queue-item-files">
+                                <span class="queue-file-tag">ID: ${c.id}</span>
+                                <span class="queue-file-tag" style="color: var(--text-muted); border-color: var(--border);">${c.objective || ''}</span>
+                                ${isActive
+                        ? '<span class="config-status active" style="font-size: 11px;">🟢 Ativa</span>'
+                        : '<span class="config-status" style="font-size: 11px; color: var(--text-muted);">⏸️ Pausada</span>'
+                    }
+                            </div>
+                        </div>
+                        <div class="btn-queue-remove" style="border: none; color: var(--accent); font-size: 18px;">
+                            ⚙️ Setup
+                        </div>
+                    </div>
+                </a>`;
+            });
+
+            if (campaigns.length === 0) {
+                html = '<div class="queue-empty">Nenhuma campanha encontrada nesta conta.</div>';
+            }
+
+            listEl.innerHTML = html;
+            loading.style.display = 'none';
+            listEl.style.display = 'block';
+            countBadge.textContent = `${campaigns.length} Encontradas`;
+
+        } catch (e) {
+            document.getElementById('campaign-loading').style.display = 'none';
+            const errorEl = document.getElementById('campaign-error');
+            errorEl.textContent = '❌ Erro de conexão: ' + e.message;
+            errorEl.style.display = 'block';
+        }
+    }
+
     const searchInput = document.getElementById('campaign-search');
     const activeToggle = document.getElementById('filter-active-only');
     const countBadge = document.getElementById('campaign-count');
@@ -103,5 +150,8 @@
 
     searchInput.addEventListener('input', filtrarCampanhas);
     activeToggle.addEventListener('change', filtrarCampanhas);
+
+    // Carregar campanhas ao entrar na página
+    document.addEventListener('DOMContentLoaded', carregarCampanhas);
 </script>
 {% endblock %}

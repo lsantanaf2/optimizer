@@ -136,7 +136,7 @@ def logout():
 
 @app.route('/set_account/<account_id>')
 def set_account(account_id):
-    """Define a conta globalmente na sessão e redireciona para a página principal."""
+    """Define a conta globalmente na sessão e redireciona para a página de campanhas."""
     access_token = obter_token()
     if not access_token:
         return redirect(url_for('pagina_login'))
@@ -145,17 +145,13 @@ def set_account(account_id):
         account_id = f"act_{account_id}"
 
     session['account_id'] = account_id
+    # Nome da conta será carregado via AJAX na página de campanhas
+    # Não fazemos chamada à API aqui para não atrasar o redirecionamento
+    session.pop('account_name', None)
 
-    # Busca o nome da conta para exibir no Top Bar
-    try:
-        inicializar_api(access_token)
-        conta = AdAccount(account_id)
-        info = conta.api_get(fields=['name'])
-        session['account_name'] = info.get('name', 'Conta de Anúncios')
-    except Exception as e:
-        print(f"❌ Erro ao buscar nome da conta {account_id}: {e}")
-        session['account_name'] = account_id
-
+    next_page = request.args.get('next', 'upload')
+    if next_page == 'optimize':
+        return redirect(url_for('optimization.turbinada_page', account_id=account_id))
     return redirect(url_for('listar_campanhas', account_id=account_id))
 
 @app.route('/api/accounts')
@@ -234,36 +230,51 @@ def api_businesses():
 
 @app.route('/conta/<account_id>')
 def listar_campanhas(account_id):
+    """Renderiza a página de campanhas. Dados carregados via AJAX (lazy)."""
     if not account_id.startswith('act_'):
         account_id = f"act_{account_id}"
     access_token = obter_token()
     if not access_token:
         return redirect(url_for('index'))
+    session['account_id'] = account_id
+    return render_template('campaigns.html', campaigns=[], account_id=account_id)
 
+@app.route('/api/conta/<account_id>/campanhas')
+def api_campanhas(account_id):
+    """API: lista campanhas ATIVO+PAUSADO da conta (chamada pelo frontend via AJAX)."""
+    if not account_id.startswith('act_'):
+        account_id = f"act_{account_id}"
+    access_token = obter_token()
+    if not access_token:
+        return jsonify({'error': 'Não autenticado'}), 401
     try:
         inicializar_api(access_token)
-        session['account_id'] = account_id
+
+        # Aproveita para setar o nome da conta na sessão se ainda não foi feito
+        if not session.get('account_name'):
+            try:
+                info = AdAccount(account_id).api_get(fields=['name'])
+                session['account_name'] = info.get('name', account_id)
+            except Exception:
+                pass
 
         conta = AdAccount(account_id)
         campanhas_data = conta.get_campaigns(
             fields=['id', 'name', 'objective', 'effective_status'],
             params={'filtering': [{'field': 'effective_status', 'operator': 'IN', 'value': ['ACTIVE', 'PAUSED']}]}
         )
-
         campanhas = []
-        if campanhas_data:
-            for c in campanhas_data:
-                campanhas.append({
-                    'id': c.get('id'),
-                    'name': c.get('name'),
-                    'objective': c.get('objective'),
-                    'status': c.get('effective_status', 'UNKNOWN')
-                })
-
-        return render_template('campaigns.html', campaigns=campanhas, account_id=account_id)
-
+        for c in campanhas_data:
+            campanhas.append({
+                'id': c.get('id'),
+                'name': c.get('name'),
+                'objective': c.get('objective'),
+                'status': c.get('effective_status', 'UNKNOWN')
+            })
+        return jsonify({'campaigns': campanhas, 'account_name': session.get('account_name', '')})
     except Exception as e:
-        return f"Erro ao listar campanhas: {e}<br><a href='/'>Voltar</a>"
+        import traceback; traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/campanha/<campaign_id>/setup', methods=['GET'])
 def setup_campanha(campaign_id):
