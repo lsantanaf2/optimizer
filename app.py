@@ -145,9 +145,16 @@ def set_account(account_id):
         account_id = f"act_{account_id}"
 
     session['account_id'] = account_id
-    # Nome da conta será carregado via AJAX na página de campanhas
-    # Não fazemos chamada à API aqui para não atrasar o redirecionamento
-    session.pop('account_name', None)
+
+    # Busca o nome da conta para exibir no Top Bar
+    try:
+        inicializar_api(access_token)
+        conta = AdAccount(account_id)
+        info = conta.api_get(fields=['name'])
+        session['account_name'] = info.get('name', 'Conta de Anúncios')
+    except Exception as e:
+        print(f"❌ Erro ao buscar nome da conta {account_id}: {e}")
+        session['account_name'] = account_id
 
     next_page = request.args.get('next', 'upload')
     if next_page == 'optimize':
