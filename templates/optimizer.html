@@ -21,7 +21,7 @@
     <div style="display: flex; align-items: center; gap: 12px;">
         <h2 style="font-size: 16px; font-weight: 700; color: var(--text-primary); margin: 0;">📊 Otimização</h2>
         <span
-            style="font-size: 10px; padding: 2px 8px; border-radius: 10px; background: linear-gradient(135deg, #0891b2, #06b6d4); color: #fff; font-weight: 700;">v1.8</span>
+            style="font-size: 10px; padding: 2px 8px; border-radius: 10px; background: linear-gradient(135deg, #0891b2, #06b6d4); color: #fff; font-weight: 700;">v1.9.1</span>
     </div>
 
     <!-- Date Range Picker Trigger -->
@@ -1096,11 +1096,35 @@
 
     // ======================== NAVIGATION ========================
     function navigateTo(level) {
+        // Capturar seleções do nível atual antes de trocar
+        const checkedIds = Array.from(selectedIds);
+
         currentLevel = level;
         selectedIds.clear();
         lastCheckedIndex = -1;
+
+        // Filtragem em cascata: usar IDs selecionados do nível anterior
+        if (level === 'adsets' && checkedIds.length > 0) {
+            const names = checkedIds.map(id => { const i = currentData.find(d => d.id === id); return i ? i.name : id; });
+            filterContext = {
+                type: 'campaign',
+                ids: checkedIds,
+                label: checkedIds.length === 1 ? `📦 Conjuntos: "${names[0]}"` : `📦 Conjuntos de ${checkedIds.length} campanhas selecionadas`
+            };
+        } else if (level === 'ads' && checkedIds.length > 0) {
+            const names = checkedIds.map(id => { const i = currentData.find(d => d.id === id); return i ? i.name : id; });
+            filterContext = {
+                type: 'adset',
+                ids: checkedIds,
+                label: checkedIds.length === 1 ? `🎨 Anúncios: "${names[0]}"` : `🎨 Anúncios de ${checkedIds.length} conjuntos selecionados`
+            };
+        } else if (level === 'campaigns') {
+            filterContext = null;
+        }
+        // Se não há seleção e não há filterContext prévio, mantém filterContext como null (carrega tudo)
+
         updateTabsUI();
-        if (level === 'campaigns') filterContext = null;
+        updateContextBar();
         loadCurrentLevel();
     }
 
@@ -1173,12 +1197,20 @@
             url = `/api/account/${ACCOUNT_ID}/campaigns?${dp}`;
         } else if (currentLevel === 'adsets') {
             const ids = filterContext?.ids?.join(',') || '';
-            if (!ids) { loading.style.display = 'none'; empty.textContent = 'Selecione ou clique em uma campanha.'; empty.style.display = 'block'; btn.disabled = false; btn.textContent = '🔄'; return; }
-            url = `/api/account/${ACCOUNT_ID}/adsets?campaign_ids=${ids}&${dp}`;
+            if (ids) {
+                url = `/api/account/${ACCOUNT_ID}/adsets?campaign_ids=${ids}&${dp}`;
+            } else {
+                // Sem filtro: carrega todos os conjuntos da conta
+                url = `/api/account/${ACCOUNT_ID}/adsets?${dp}`;
+            }
         } else if (currentLevel === 'ads') {
             const ids = filterContext?.ids?.join(',') || '';
-            if (!ids) { loading.style.display = 'none'; empty.textContent = 'Selecione ou clique em um conjunto.'; empty.style.display = 'block'; btn.disabled = false; btn.textContent = '🔄'; return; }
-            url = `/api/account/${ACCOUNT_ID}/ads?adset_ids=${ids}&${dp}`;
+            if (ids) {
+                url = `/api/account/${ACCOUNT_ID}/ads?adset_ids=${ids}&${dp}`;
+            } else {
+                // Sem filtro: carrega todos os anúncios da conta
+                url = `/api/account/${ACCOUNT_ID}/ads?${dp}`;
+            }
         }
 
         try {
