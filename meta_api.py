@@ -255,8 +255,12 @@ class MetaUploader:
         empty_period = {'spend': 0, 'purchases': 0, 'cac': None}
         results = []
 
-        # IDs que tiveram algum insight OU estão na estrutura
-        all_ids = set(struct_map.keys()) | set(insights_by_id.keys())
+        # Quando há filtro (parent_ids), usar apenas entidades da estrutura filtrada
+        # Sem filtro, usar a união de struct + insights para pegar tudo com gasto
+        if parent_ids:
+            all_ids = set(struct_map.keys())
+        else:
+            all_ids = set(struct_map.keys()) | set(insights_by_id.keys())
 
         for entity_id in all_ids:
             struct = struct_map.get(entity_id, {})
