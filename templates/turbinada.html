@@ -659,14 +659,20 @@
         try {
             const resp = await fetch(url);
             const json = await resp.json();
-            if (!json.success) { mostrarToast('❌ ' + json.error); loading.style.display = 'none'; if (welcome) welcome.style.display = 'block'; return; }
+            if (!json.success) {
+                mostrarToast('❌ ' + json.error);
+                loading.style.display = 'none';
+                console.error('[turbinada] Erro:', json.error, json.traceback || '');
+                return;
+            }
             allData = json.data;
             loading.style.display = 'none';
             renderTable();
             renderBreadcrumb();
         } catch (e) {
             loading.style.display = 'none';
-            mostrarToast('❌ Erro ao carregar dados');
+            mostrarToast('❌ Erro ao carregar dados: ' + e.message);
+            console.error('[turbinada] Fetch error:', e);
         }
     }
 

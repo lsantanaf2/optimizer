@@ -185,6 +185,9 @@ def api_turbinada(account_id, level):
     if level not in ('campaign', 'adset', 'ad'):
         return jsonify({"success": False, "error": f"Nível inválido: {level}"}), 400
 
+    if not APP_ID or not APP_SECRET:
+        return jsonify({"success": False, "error": "APP_ID ou APP_SECRET não configurados"}), 500
+
     parent_ids = request.args.get('parent_ids', '')
     parent_list = [pid.strip() for pid in parent_ids.split(',') if pid.strip()] if parent_ids else None
 
@@ -196,5 +199,8 @@ def api_turbinada(account_id, level):
         data = uploader.get_turbinada_data(level=level, parent_ids=parent_list, status_filter=status_filter)
         return jsonify({"success": True, "data": data})
     except Exception as e:
-        import traceback; traceback.print_exc()
-        return jsonify({"success": False, "error": str(e)}), 500
+        import traceback
+        tb = traceback.format_exc()
+        print(f"❌ [turbinada] Erro: {tb}")
+        return jsonify({"success": False, "error": str(e), "traceback": tb}), 500
+
