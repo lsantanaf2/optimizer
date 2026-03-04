@@ -55,15 +55,18 @@ def api_adsets(account_id):
         return jsonify({"success": False, "error": "Não autenticado"}), 401
 
     campaign_ids = request.args.get('campaign_ids', '')
-    if not campaign_ids:
-        return jsonify({"success": False, "error": "campaign_ids é obrigatório"}), 400
-
-    ids_list = [cid.strip() for cid in campaign_ids.split(',') if cid.strip()]
+    ids_list = [cid.strip() for cid in campaign_ids.split(',') if cid.strip()] if campaign_ids else []
     date_preset, since, until = _get_date_params()
 
     try:
         uploader = MetaUploader(account_id, token, APP_ID, APP_SECRET)
-        data = uploader.get_adsets_list(ids_list, date_preset=date_preset, since=since, until=until)
+        if ids_list:
+            data = uploader.get_adsets_list(ids_list, date_preset=date_preset, since=since, until=until)
+        else:
+            # Sem filtro: buscar todas as campanhas ativas primeiro, depois adsets
+            camps = uploader.get_campaigns_list(date_preset=date_preset, since=since, until=until)
+            camp_ids = [c['id'] for c in camps]
+            data = uploader.get_adsets_list(camp_ids, date_preset=date_preset, since=since, until=until) if camp_ids else []
         return jsonify({"success": True, "data": data})
     except Exception as e:
         import traceback; traceback.print_exc()
@@ -79,15 +82,23 @@ def api_ads(account_id):
         return jsonify({"success": False, "error": "Não autenticado"}), 401
 
     adset_ids = request.args.get('adset_ids', '')
-    if not adset_ids:
-        return jsonify({"success": False, "error": "adset_ids é obrigatório"}), 400
-
-    ids_list = [aid.strip() for aid in adset_ids.split(',') if aid.strip()]
+    ids_list = [aid.strip() for aid in adset_ids.split(',') if aid.strip()] if adset_ids else []
     date_preset, since, until = _get_date_params()
 
     try:
         uploader = MetaUploader(account_id, token, APP_ID, APP_SECRET)
-        data = uploader.get_ads_list(ids_list, date_preset=date_preset, since=since, until=until)
+        if ids_list:
+            data = uploader.get_ads_list(ids_list, date_preset=date_preset, since=since, until=until)
+        else:
+            # Sem filtro: buscar campanhas -> adsets -> ads
+            camps = uploader.get_campaigns_list(date_preset=date_preset, since=since, until=until)
+            camp_ids = [c['id'] for c in camps]
+            if camp_ids:
+                adsets = uploader.get_adsets_list(camp_ids, date_preset=date_preset, since=since, until=until)
+                adset_id_list = [a['id'] for a in adsets]
+                data = uploader.get_ads_list(adset_id_list, date_preset=date_preset, since=since, until=until) if adset_id_list else []
+            else:
+                data = []
         return jsonify({"success": True, "data": data})
     except Exception as e:
         import traceback; traceback.print_exc()
@@ -177,9 +188,12 @@ def api_turbinada(account_id, level):
     parent_ids = request.args.get('parent_ids', '')
     parent_list = [pid.strip() for pid in parent_ids.split(',') if pid.strip()] if parent_ids else None
 
+    # status_filter=ACTIVE para trazer só ativas (padrão selecionado na UI)
+    status_filter = request.args.get('status_filter', None)  # ex: "ACTIVE"
+
     try:
         uploader = MetaUploader(account_id, token, APP_ID, APP_SECRET)
-        data = uploader.get_turbinada_data(level=level, parent_ids=parent_list)
+        data = uploader.get_turbinada_data(level=level, parent_ids=parent_list, status_filter=status_filter)
         return jsonify({"success": True, "data": data})
     except Exception as e:
         import traceback; traceback.print_exc()

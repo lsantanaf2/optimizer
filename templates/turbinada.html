@@ -454,6 +454,13 @@
         <button
             style="padding:6px 14px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--bg-card); color:var(--text-primary); cursor:pointer; font-size:12px; font-weight:600;"
             onclick="loadData()">🔄 Atualizar</button>
+        <!-- Toggle status filter -->
+        <label id="status-toggle-wrap"
+            style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:12px; color:var(--text-secondary); font-weight:600; user-select:none;">
+            <input type="checkbox" id="only-active" checked onchange="loadData()"
+                style="cursor:pointer; accent-color:var(--accent); width:14px; height:14px;">
+            Somente ativas
+        </label>
     </div>
 </div>
 
@@ -477,7 +484,14 @@
 
 <!-- Table -->
 <div class="turb-table-wrap">
-    <div class="turb-loading" id="turb-loading">Carregando dados...</div>
+    <div class="turb-loading" id="turb-loading" style="display:none;">Carregando dados...</div>
+    <!-- Welcome state -->
+    <div id="turb-welcome" style="text-align:center; padding:60px 20px; color:var(--text-muted);">
+        <div style="font-size:40px; margin-bottom:12px;">🚀</div>
+        <div style="font-size:15px; font-weight:700; color:var(--text-secondary); margin-bottom:6px;">Selecione uma aba
+            e clique em <strong style="color:var(--accent);">🔄 Atualizar</strong></div>
+        <div style="font-size:12px;">Os dados são carregados sob demanda para maior velocidade.</div>
+    </div>
     <table class="turb-table" id="turb-table" style="display:none;">
         <thead id="turb-thead"></thead>
         <tbody id="turb-tbody"></tbody>
@@ -493,6 +507,10 @@
     let navStack = []; // [{level, parentIds, parentName}]
     let allData = [];
     let lastCheckboxIdx = -1;
+
+    // Estado de seleção hierárquica em cascata
+    let selectedCampaigns = [];  // IDs de campanhas selecionadas (checkboxes)
+    let selectedAdsets = [];     // IDs de conjuntos selecionados
 
     // Ordem canônica dos períodos disponíveis
     const PERIOD_DEFS = [
@@ -550,10 +568,38 @@
     function switchTab(level, btn) {
         document.querySelectorAll('.turb-tab').forEach(t => t.classList.remove('active'));
         btn.classList.add('active');
+
+        // Capturar seleções do nível atual antes de trocar
+        captureSelections();
+
+        const prevLevel = currentLevel;
         currentLevel = level;
         navStack = [];
         currentSort = { key: null, asc: true };
-        loadData();
+
+        // Filtragem em cascata: usar IDs selecionados do nível anterior
+        let parentIds = null;
+        if (level === 'adset' && selectedCampaigns.length > 0) {
+            parentIds = [...selectedCampaigns];
+        } else if (level === 'ad' && selectedAdsets.length > 0) {
+            parentIds = [...selectedAdsets];
+        }
+
+        console.log(`[cascata] ${prevLevel} → ${level} | selectedCampaigns=${JSON.stringify(selectedCampaigns)} | selectedAdsets=${JSON.stringify(selectedAdsets)} | parentIds=${JSON.stringify(parentIds)}`);
+
+        loadData(parentIds);
+    }
+
+    // Captura IDs dos checkboxes marcados no nível atual
+    function captureSelections() {
+        const checked = document.querySelectorAll('.row-cb:checked');
+        const ids = Array.from(checked).map(cb => cb.dataset.id).filter(Boolean);
+
+        if (currentLevel === 'campaign') {
+            selectedCampaigns = ids;
+        } else if (currentLevel === 'adset') {
+            selectedAdsets = ids;
+        }
     }
 
     function drillDown(entityId, entityName, nextLevel) {
@@ -577,7 +623,17 @@
 
     function renderBreadcrumb() {
         const el = document.getElementById('turb-breadcrumb');
-        if (navStack.length === 0) { el.innerHTML = ''; return; }
+        if (navStack.length === 0) {
+            // Mostrar contexto de cascata se aplicável
+            if (currentLevel === 'adset' && selectedCampaigns.length > 0) {
+                el.innerHTML = `<a onclick="switchTab('campaign', document.querySelector('[data-level=campaign]'))">Campanhas</a> › <strong>Conjuntos de ${selectedCampaigns.length} campanha(s) selecionada(s)</strong>`;
+            } else if (currentLevel === 'ad' && selectedAdsets.length > 0) {
+                el.innerHTML = `<a onclick="switchTab('campaign', document.querySelector('[data-level=campaign]'))">Campanhas</a> › <a onclick="switchTab('adset', document.querySelector('[data-level=adset]'))">Conjuntos</a> › <strong>Anúncios de ${selectedAdsets.length} conjunto(s) selecionado(s)</strong>`;
+            } else {
+                el.innerHTML = '';
+            }
+            return;
+        }
         let html = `<a onclick="navTo(-1)">Campanhas</a>`;
         navStack.forEach((entry, i) => {
             if (i < navStack.length - 1) {
@@ -594,25 +650,32 @@
         const loading = document.getElementById('turb-loading');
         const table = document.getElementById('turb-table');
         const noPeriods = document.getElementById('turb-no-periods');
+        const welcome = document.getElementById('turb-welcome');
         loading.style.display = 'block';
         table.style.display = 'none';
         noPeriods.style.display = 'none';
+        if (welcome) welcome.style.display = 'none';
 
+        const onlyActive = document.getElementById('only-active').checked;
         let url = `/api/account/${ACCOUNT_ID}/turbinada/${currentLevel}`;
-        if (parentIds && parentIds.length) {
-            url += `?parent_ids=${parentIds.join(',')}`;
-        }
+        const params = [];
+        if (parentIds && parentIds.length) params.push(`parent_ids=${parentIds.join(',')}`);
+        if (onlyActive) params.push(`status_filter=ACTIVE`);
+        if (params.length) url += '?' + params.join('&');
+
+        console.log(`[loadData] URL: ${url}`);
 
         try {
             const resp = await fetch(url);
             const json = await resp.json();
-            if (!json.success) { mostrarToast('❌ ' + json.error); loading.textContent = json.error; return; }
+            if (!json.success) { mostrarToast('❌ ' + json.error); loading.style.display = 'none'; if (welcome) welcome.style.display = 'block'; return; }
             allData = json.data;
             loading.style.display = 'none';
             renderTable();
             renderBreadcrumb();
         } catch (e) {
-            loading.textContent = '❌ Erro de conexão';
+            loading.style.display = 'none';
+            if (welcome) welcome.style.display = 'block';
             mostrarToast('❌ Erro ao carregar dados');
         }
     }
@@ -707,7 +770,7 @@
             const nextLevel = currentLevel === 'campaign' ? 'adset' : currentLevel === 'adset' ? 'ad' : null;
 
             rows += `<tr data-idx="${idx}">`;
-            rows += `<td><input type="checkbox" class="row-cb" data-idx="${idx}" onclick="handleShiftClick(event, ${idx})"></td>`;
+            rows += `<td><input type="checkbox" class="row-cb" data-idx="${idx}" data-id="${item.id}" onclick="handleShiftClick(event, ${idx})"></td>`;
             rows += `<td><button class="toggle-status ${isActive ? 'active' : 'paused'}" data-id="${item.id}" onclick="toggleStatus(this, '${item.id}', '${currentLevel}')"></button></td>`;
 
             if (nextLevel) {
@@ -772,10 +835,22 @@
             }
         }
         lastCheckboxIdx = idx;
+        updateSelectAll();
     }
 
     function toggleAll(master) {
         document.querySelectorAll('.row-cb').forEach(cb => cb.checked = master.checked);
+    }
+
+    // Atualiza o checkbox "selecionar todos" baseado nos individuais
+    function updateSelectAll() {
+        const all = document.querySelectorAll('.row-cb');
+        const checked = document.querySelectorAll('.row-cb:checked');
+        const master = document.getElementById('select-all');
+        if (master) {
+            master.checked = all.length > 0 && all.length === checked.length;
+            master.indeterminate = checked.length > 0 && checked.length < all.length;
+        }
     }
 
     // ===== Toggle Status =====
@@ -856,6 +931,7 @@
     }
 
     // ===== Init =====
-    document.addEventListener('DOMContentLoaded', () => loadData());
+    // Lazy load: não carrega dados automaticamente ao abrir a página.
+    // O usuário deve clicar em "Atualizar" ou trocar de aba.
 </script>
 {% endblock %}

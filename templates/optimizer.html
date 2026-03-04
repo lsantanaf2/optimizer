@@ -1349,6 +1349,7 @@
         }
         lastCheckedIndex = idx;
         updateSelectionBar();
+        updateSelectAllCheckbox();
     }
 
     function getSortedData() {
@@ -1367,6 +1368,15 @@
         if (checked) currentData.forEach(d => selectedIds.add(d.id)); else selectedIds.clear();
         lastCheckedIndex = -1;
         renderTable(); updateSelectionBar();
+    }
+
+    // Atualiza o checkbox "selecionar todos" baseado nos individuais
+    function updateSelectAllCheckbox() {
+        const master = document.querySelector('#table-head .opt-check');
+        if (master) {
+            master.checked = currentData.length > 0 && selectedIds.size === currentData.length;
+            master.indeterminate = selectedIds.size > 0 && selectedIds.size < currentData.length;
+        }
     }
 
     // ======================== ACTIONS ========================
