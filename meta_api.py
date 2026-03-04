@@ -112,11 +112,12 @@ class MetaUploader:
 
     # ======================== TURBINADA — MULTI-PERIOD INSIGHTS ========================
 
-    def get_turbinada_data(self, level='campaign', parent_ids=None):
+    def get_turbinada_data(self, level='campaign', parent_ids=None, status_filter=None):
         """
         Busca dados multi-período (7d, 3d, ontem, hoje) para a tela Turbinada.
         level: 'campaign', 'adset' ou 'ad'
         parent_ids: lista de IDs pai (campaign_ids para adsets, adset_ids para ads). None para campaigns.
+        status_filter: 'ACTIVE' para trazer só ativas, None para ACTIVE+PAUSED.
         Retorna lista de items com métricas por período + dados estruturais.
         """
         import json
@@ -133,6 +134,14 @@ class MetaUploader:
             'hoje':  {'since': today.isoformat(), 'until': today.isoformat()},
         }
 
+        # Determinar quais statuses incluir
+        if status_filter and status_filter.upper() == 'ACTIVE':
+            status_values = ["ACTIVE"]
+        else:
+            status_values = ["ACTIVE", "PAUSED"]
+
+        status_filter_json = json.dumps([{"field": "effective_status", "operator": "IN", "value": status_values}])
+
         # Mapear level para campos da API
         level_config = {
             'campaign': {
@@ -140,14 +149,14 @@ class MetaUploader:
                 'name_field': 'campaign_name',
                 'struct_endpoint': f'{self.account_id}/campaigns',
                 'struct_fields': 'id,name,status,effective_status,daily_budget,lifetime_budget,objective',
-                'filtering': '[{"field":"effective_status","operator":"IN","value":["ACTIVE","PAUSED"]}]',
+                'filtering': status_filter_json,
             },
             'adset': {
                 'id_field': 'adset_id',
                 'name_field': 'adset_name',
                 'struct_endpoint': f'{self.account_id}/adsets',
                 'struct_fields': 'id,name,status,effective_status,daily_budget,lifetime_budget,campaign_id',
-                'filtering': None,  # filtrado por parent_ids
+                'filtering': None,  # filtrado por parent_ids; status aplicado abaixo
             },
             'ad': {
                 'id_field': 'ad_id',
@@ -171,11 +180,15 @@ class MetaUploader:
         if cfg['filtering']:
             struct_params['filtering'] = cfg['filtering']
         if parent_ids and level == 'adset':
-            # Filtrar por campaign_ids
+            # Filtrar por campaign_ids + status opcional
             filter_list = [{"field": "campaign.id", "operator": "IN", "value": parent_ids}]
+            if status_filter:
+                filter_list.append({"field": "effective_status", "operator": "IN", "value": status_values})
             struct_params['filtering'] = json.dumps(filter_list)
         elif parent_ids and level == 'ad':
             filter_list = [{"field": "adset.id", "operator": "IN", "value": parent_ids}]
+            if status_filter:
+                filter_list.append({"field": "effective_status", "operator": "IN", "value": status_values})
             struct_params['filtering'] = json.dumps(filter_list)
 
         resp = requests.get(struct_url, params=struct_params, timeout=60)
