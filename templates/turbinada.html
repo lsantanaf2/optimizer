@@ -484,14 +484,7 @@
 
 <!-- Table -->
 <div class="turb-table-wrap">
-    <div class="turb-loading" id="turb-loading" style="display:none;">Carregando dados...</div>
-    <!-- Welcome state -->
-    <div id="turb-welcome" style="text-align:center; padding:60px 20px; color:var(--text-muted);">
-        <div style="font-size:40px; margin-bottom:12px;">🚀</div>
-        <div style="font-size:15px; font-weight:700; color:var(--text-secondary); margin-bottom:6px;">Selecione uma aba
-            e clique em <strong style="color:var(--accent);">🔄 Atualizar</strong></div>
-        <div style="font-size:12px;">Os dados são carregados sob demanda para maior velocidade.</div>
-    </div>
+    <div class="turb-loading" id="turb-loading">Carregando dados...</div>
     <table class="turb-table" id="turb-table" style="display:none;">
         <thead id="turb-thead"></thead>
         <tbody id="turb-tbody"></tbody>
@@ -650,11 +643,9 @@
         const loading = document.getElementById('turb-loading');
         const table = document.getElementById('turb-table');
         const noPeriods = document.getElementById('turb-no-periods');
-        const welcome = document.getElementById('turb-welcome');
         loading.style.display = 'block';
         table.style.display = 'none';
         noPeriods.style.display = 'none';
-        if (welcome) welcome.style.display = 'none';
 
         const onlyActive = document.getElementById('only-active').checked;
         let url = `/api/account/${ACCOUNT_ID}/turbinada/${currentLevel}`;
@@ -675,7 +666,6 @@
             renderBreadcrumb();
         } catch (e) {
             loading.style.display = 'none';
-            if (welcome) welcome.style.display = 'block';
             mostrarToast('❌ Erro ao carregar dados');
         }
     }
@@ -931,7 +921,7 @@
     }
 
     // ===== Init =====
-    // Lazy load: não carrega dados automaticamente ao abrir a página.
-    // O usuário deve clicar em "Atualizar" ou trocar de aba.
+    // Carrega dados automaticamente ao abrir a página
+    loadData();
 </script>
 {% endblock %}
