@@ -122,9 +122,15 @@ class MetaUploader:
                  Se None, usa 4 períodos padrão (7d, 3d, ontem, hoje).
         """
         import json
-        from datetime import date, timedelta
+        from datetime import date, timedelta, datetime, timezone
+        try:
+            from zoneinfo import ZoneInfo
+        except ImportError:
+            from backports.zoneinfo import ZoneInfo
 
-        today = date.today()
+        # Usar timezone de São Paulo para evitar que UTC adiante o dia
+        br_tz = ZoneInfo('America/Sao_Paulo')
+        today = datetime.now(br_tz).date()
         yesterday = today - timedelta(days=1)
 
         # Períodos: aceitar dinâmicos do frontend ou usar padrão
