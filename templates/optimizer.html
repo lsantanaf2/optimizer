@@ -21,7 +21,7 @@
     <div style="display: flex; align-items: center; gap: 12px;">
         <h2 style="font-size: 16px; font-weight: 700; color: var(--text-primary); margin: 0;">📊 Otimização</h2>
         <span
-            style="font-size: 10px; padding: 2px 8px; border-radius: 10px; background: linear-gradient(135deg, #0891b2, #06b6d4); color: #fff; font-weight: 700;">v1.9.1</span>
+            style="font-size: 10px; padding: 2px 8px; border-radius: 10px; background: linear-gradient(135deg, #0891b2, #06b6d4); color: #fff; font-weight: 700;">v1.9.2</span>
     </div>
 
     <!-- Date Range Picker Trigger -->
@@ -112,6 +112,11 @@
 <div class="opt-selection-bar" id="selection-bar" style="display: none;">
     <span id="selection-count">0</span>
     <button class="btn-action" onclick="viewChildrenOfSelected()" id="btn-view-children">📂 Ver conjuntos</button>
+    <button class="btn-action" id="btn-opt-filter-selected" onclick="toggleOptFilterSelected()">🔍 Filtrar
+        selecionados</button>
+    <span id="opt-filter-token"
+        style="display:none; padding:3px 10px; border-radius:12px; background:var(--accent); color:#fff; font-size:10px; font-weight:700; cursor:pointer; user-select:none;"
+        onclick="toggleOptFilterSelected()">✕ Apenas selecionados</span>
 </div>
 
 <!-- Totals row -->
@@ -1051,6 +1056,7 @@
     let currentLevel = 'campaigns';
     let currentData = [];
     let selectedIds = new Set();
+    let optFiltrarApenasSelecionados = false;
     let sortColumn = 'spend';
     let sortDir = 'desc';
     let filterContext = null;
@@ -1247,6 +1253,12 @@
         h += '</tr>'; head.innerHTML = h;
 
         let sorted = [...currentData];
+
+        // Filtro: apenas selecionados
+        if (optFiltrarApenasSelecionados && selectedIds.size > 0) {
+            sorted = sorted.filter(item => selectedIds.has(item.id));
+        }
+
         if (sortColumn) {
             sorted.sort((a, b) => {
                 let va = a[sortColumn], vb = b[sortColumn];
@@ -1377,6 +1389,21 @@
             master.checked = currentData.length > 0 && selectedIds.size === currentData.length;
             master.indeterminate = selectedIds.size > 0 && selectedIds.size < currentData.length;
         }
+    }
+
+    // Toggle filtro de selecionados
+    function toggleOptFilterSelected() {
+        optFiltrarApenasSelecionados = !optFiltrarApenasSelecionados;
+        const btn = document.getElementById('btn-opt-filter-selected');
+        const token = document.getElementById('opt-filter-token');
+        if (optFiltrarApenasSelecionados) {
+            btn.style.display = 'none';
+            token.style.display = 'inline-block';
+        } else {
+            btn.style.display = 'inline-block';
+            token.style.display = 'none';
+        }
+        renderTable();
     }
 
     // ======================== ACTIONS ========================

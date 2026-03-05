@@ -103,6 +103,25 @@
         border-radius: var(--radius-sm);
     }
 
+    .period-menu-item {
+        display: block;
+        width: 100%;
+        padding: 6px 12px;
+        border: none;
+        background: transparent;
+        color: var(--text-secondary);
+        font-size: 12px;
+        text-align: left;
+        cursor: pointer;
+        border-radius: 4px;
+        transition: all .1s;
+    }
+
+    .period-menu-item:hover {
+        background: var(--accent);
+        color: #fff;
+    }
+
     .turb-period-bar .period-label {
         font-size: 11px;
         color: var(--text-muted);
@@ -449,7 +468,7 @@
         </div>
         <div>
             <label>Teto CAC (≥)</label>
-            <input type="number" id="cac-y" value="150" step="1" onchange="applyCAC()">
+            <input type="number" id="cac-y" value="150" step="1" onchange="onTetoCACChange()">
         </div>
         <button
             style="padding:6px 14px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--bg-card); color:var(--text-primary); cursor:pointer; font-size:12px; font-weight:600;"
@@ -461,18 +480,51 @@
                 style="cursor:pointer; accent-color:var(--accent); width:14px; height:14px;">
             Somente ativas
         </label>
+        <span style="width:1px; height:20px; background:var(--border); margin:0 4px;"></span>
+        <!-- Filtro selecionados -->
+        <button id="btn-filter-selected"
+            style="padding:5px 12px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--bg-card); color:var(--text-secondary); cursor:pointer; font-size:11px; font-weight:600; transition:all .15s;"
+            onclick="toggleFilterSelected()">🔍 Filtrar selecionados</button>
+        <span id="filter-token"
+            style="display:none; padding:3px 10px; border-radius:12px; background:var(--accent); color:#fff; font-size:10px; font-weight:700; cursor:pointer; user-select:none;"
+            onclick="toggleFilterSelected()">✕ Apenas selecionados</span>
     </div>
 </div>
 
-<!-- Period Pills Bar -->
+<!-- Period Columns Bar (Dynamic) -->
 <div class="turb-period-bar">
     <span class="period-label">Períodos:</span>
-    <button id="pill-p30d" class="period-pill" onclick="togglePeriod('p30d', this)">30 DIAS</button>
-    <button id="pill-p14d" class="period-pill" onclick="togglePeriod('p14d', this)">14 DIAS</button>
-    <button id="pill-p7d" class="period-pill active" onclick="togglePeriod('p7d', this)">7 DIAS</button>
-    <button id="pill-p3d" class="period-pill active" onclick="togglePeriod('p3d', this)">3 DIAS</button>
-    <button id="pill-ontem" class="period-pill active" onclick="togglePeriod('ontem', this)">ONTEM</button>
-    <button id="pill-hoje" class="period-pill active" onclick="togglePeriod('hoje', this)">HOJE</button>
+    <div id="period-pills-container" style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;"></div>
+    <div style="position:relative; display:inline-block;">
+        <button class="btn-period-action" id="btn-add-period" onclick="togglePeriodMenu()" title="Adicionar período">+
+            Adicionar</button>
+        <div id="period-menu"
+            style="display:none; position:absolute; top:100%; left:0; z-index:100; background:var(--card-bg); border:1px solid var(--border); border-radius:8px; padding:6px; min-width:180px; box-shadow:0 4px 16px rgba(0,0,0,0.3); margin-top:4px;">
+            <div
+                style="font-size:10px; color:var(--text-muted); padding:4px 8px; text-transform:uppercase; font-weight:700;">
+                Presets</div>
+            <button class="period-menu-item" onclick="addPresetPeriod('hoje')">Hoje</button>
+            <button class="period-menu-item" onclick="addPresetPeriod('ontem')">Ontem</button>
+            <button class="period-menu-item" onclick="addPresetPeriod('p3d')">3 Dias</button>
+            <button class="period-menu-item" onclick="addPresetPeriod('p7d')">7 Dias</button>
+            <button class="period-menu-item" onclick="addPresetPeriod('p14d')">14 Dias</button>
+            <button class="period-menu-item" onclick="addPresetPeriod('p30d')">30 Dias</button>
+            <div style="border-top:1px solid var(--border); margin:4px 0;"></div>
+            <div
+                style="font-size:10px; color:var(--text-muted); padding:4px 8px; text-transform:uppercase; font-weight:700;">
+                Customizado</div>
+            <div style="padding:4px 8px;">
+                <label style="font-size:11px; color:var(--text-secondary);">De:</label>
+                <input type="date" id="custom-period-start"
+                    style="width:100%; font-size:11px; padding:3px; border-radius:4px; border:1px solid var(--border); background:var(--bg); color:var(--text-primary); margin-bottom:4px;">
+                <label style="font-size:11px; color:var(--text-secondary);">Até:</label>
+                <input type="date" id="custom-period-end"
+                    style="width:100%; font-size:11px; padding:3px; border-radius:4px; border:1px solid var(--border); background:var(--bg); color:var(--text-primary); margin-bottom:6px;">
+                <button class="btn-period-action" onclick="addCustomPeriod()" style="width:100%; font-size:11px;">✓
+                    Adicionar</button>
+            </div>
+        </div>
+    </div>
     <div class="period-pill-actions">
         <button class="btn-period-action" onclick="resetPeriods()" title="Restaurar padrão">↺ Reset</button>
         <button class="btn-period-action danger" onclick="clearPeriods()" title="Remover todos">✕ Limpar</button>
@@ -505,57 +557,193 @@
     let selectedCampaigns = [];  // IDs de campanhas selecionadas (checkboxes)
     let selectedAdsets = [];     // IDs de conjuntos selecionados
 
-    // Ordem canônica dos períodos disponíveis
-    const PERIOD_DEFS = [
-        { key: 'p30d', label: '30 DIAS' },
-        { key: 'p14d', label: '14 DIAS' },
-        { key: 'p7d', label: '7 DIAS' },
-        { key: 'p3d', label: '3 DIAS' },
-        { key: 'ontem', label: 'ONTEM' },
-        { key: 'hoje', label: 'HOJE' },
-    ];
-    const DEFAULT_ACTIVE = ['p7d', 'p3d', 'ontem', 'hoje'];
-
-    // Períodos ativos (set para verificação rápida)
-    let activePeriods = new Set(DEFAULT_ACTIVE);
-
     // Estado de ordenação: { key: 'p7d.spend' | null, asc: true }
     let currentSort = { key: null, asc: true };
 
-    // ===== Period Management =====
-    function togglePeriod(key, btn) {
-        if (activePeriods.has(key)) {
-            activePeriods.delete(key);
-            btn.classList.remove('active');
-        } else {
-            activePeriods.add(key);
-            btn.classList.add('active');
+    // Estado de filtro de selecionados
+    let filtrarApenasSelecionados = false;
+
+    // Presets de períodos disponíveis
+    const PRESET_DEFS = {
+        'hoje': { label: 'HOJE', days: 0, isToday: true },
+        'ontem': { label: 'ONTEM', days: 1, isYesterday: true },
+        'p3d': { label: '3 DIAS', days: 3 },
+        'p7d': { label: '7 DIAS', days: 7 },
+        'p14d': { label: '14 DIAS', days: 14 },
+        'p30d': { label: '30 DIAS', days: 30 },
+    };
+
+    // Array dinâmico de colunas de período ativas
+    // Cada item: { id, type: 'preset'|'custom', key, label, since, until }
+    let columnPeriods = [];
+    let nextPeriodId = 1;
+
+    // Calcula datas de um preset
+    function calcPresetDates(presetKey) {
+        const today = new Date();
+        const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+        const fmt = d => d.toISOString().split('T')[0];
+        const def = PRESET_DEFS[presetKey];
+        if (!def) return null;
+        if (def.isToday) return { since: fmt(today), until: fmt(today) };
+        if (def.isYesterday) return { since: fmt(yesterday), until: fmt(yesterday) };
+        const start = new Date(today); start.setDate(today.getDate() - def.days);
+        return { since: fmt(start), until: fmt(yesterday) };
+    }
+
+    // Inicializar com padrões
+    function initDefaultPeriods() {
+        columnPeriods = [];
+        nextPeriodId = 1;
+        ['p7d', 'p3d', 'ontem', 'hoje'].forEach(key => {
+            const dates = calcPresetDates(key);
+            columnPeriods.push({
+                id: nextPeriodId++,
+                type: 'preset',
+                key: key,
+                label: PRESET_DEFS[key].label,
+                since: dates.since,
+                until: dates.until,
+            });
+        });
+        sortPeriods();
+        renderPills();
+    }
+
+    // Ordena períodos: mais longo (mais antigo) à esquerda
+    function sortPeriods() {
+        columnPeriods.sort((a, b) => {
+            // Comparar por since: mais antigo primeiro
+            if (a.since < b.since) return -1;
+            if (a.since > b.since) return 1;
+            // Desempate por until: mais recente depois
+            if (a.until > b.until) return 1;
+            if (a.until < b.until) return -1;
+            return 0;
+        });
+    }
+
+    // Renderiza as pills no container
+    function renderPills() {
+        const container = document.getElementById('period-pills-container');
+        container.innerHTML = columnPeriods.map(p => {
+            return `<button class="period-pill active" style="position:relative; padding-right:22px;">
+                ${p.label}
+                <span onclick="event.stopPropagation(); removePeriod(${p.id})" style="position:absolute; right:4px; top:50%; transform:translateY(-50%); font-size:10px; cursor:pointer; opacity:0.6; font-weight:700;">✕</span>
+            </button>`;
+        }).join('');
+    }
+
+    // Adicionar preset
+    function addPresetPeriod(presetKey) {
+        // Checar duplicata
+        if (columnPeriods.find(p => p.type === 'preset' && p.key === presetKey)) {
+            mostrarToast('⚠️ Período já adicionado');
+            closePeriodMenu();
+            return;
         }
+        const dates = calcPresetDates(presetKey);
+        if (!dates) return;
+        columnPeriods.push({
+            id: nextPeriodId++,
+            type: 'preset',
+            key: presetKey,
+            label: PRESET_DEFS[presetKey].label,
+            since: dates.since,
+            until: dates.until,
+        });
+        sortPeriods();
+        renderPills();
+        closePeriodMenu();
+        loadData();
+    }
+
+    // Adicionar período customizado
+    function addCustomPeriod() {
+        const startEl = document.getElementById('custom-period-start');
+        const endEl = document.getElementById('custom-period-end');
+        const since = startEl.value;
+        const until = endEl.value;
+        if (!since || !until) { mostrarToast('⚠️ Selecione as duas datas'); return; }
+        if (since > until) { mostrarToast('⚠️ Data inicial deve ser anterior à final'); return; }
+
+        // Label formatado: DD/MM - DD/MM
+        const fmtDate = d => { const [y, m, dd] = d.split('-'); return `${dd}/${m}`; };
+        const label = `${fmtDate(since)} - ${fmtDate(until)}`;
+        const key = `custom_${since}_${until}`;
+
+        if (columnPeriods.find(p => p.key === key)) {
+            mostrarToast('⚠️ Período já adicionado');
+            closePeriodMenu();
+            return;
+        }
+
+        columnPeriods.push({
+            id: nextPeriodId++,
+            type: 'custom',
+            key: key,
+            label: label,
+            since: since,
+            until: until,
+        });
+        sortPeriods();
+        renderPills();
+        closePeriodMenu();
+        startEl.value = '';
+        endEl.value = '';
+        loadData();
+    }
+
+    // Remover período
+    function removePeriod(id) {
+        columnPeriods = columnPeriods.filter(p => p.id !== id);
+        renderPills();
         renderTable();
     }
 
+    // Reset para padrão
     function resetPeriods() {
-        activePeriods = new Set(DEFAULT_ACTIVE);
-        PERIOD_DEFS.forEach(p => {
-            const pill = document.getElementById('pill-' + p.key);
-            if (pill) pill.classList.toggle('active', DEFAULT_ACTIVE.includes(p.key));
-        });
-        renderTable();
+        initDefaultPeriods();
+        loadData();
     }
 
+    // Limpar todos
     function clearPeriods() {
-        activePeriods = new Set();
-        PERIOD_DEFS.forEach(p => {
-            const pill = document.getElementById('pill-' + p.key);
-            if (pill) pill.classList.remove('active');
-        });
+        columnPeriods = [];
+        renderPills();
         renderTable();
     }
 
-    // Retorna lista de períodos ativos na ordem canônica
+    // Retorna as colunas ativas (já ordenadas)
     function getActivePeriods() {
-        return PERIOD_DEFS.filter(p => activePeriods.has(p.key));
+        return columnPeriods;
     }
+
+    // Gera o dict de períodos para enviar ao backend
+    function buildPeriodsParam() {
+        const obj = {};
+        columnPeriods.forEach(p => {
+            obj[p.key] = { since: p.since, until: p.until };
+        });
+        return JSON.stringify(obj);
+    }
+
+    // Toggle menu de adicionar
+    function togglePeriodMenu() {
+        const menu = document.getElementById('period-menu');
+        menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+    }
+    function closePeriodMenu() {
+        document.getElementById('period-menu').style.display = 'none';
+    }
+    // Fechar ao clicar fora
+    document.addEventListener('click', e => {
+        const menu = document.getElementById('period-menu');
+        const btn = document.getElementById('btn-add-period');
+        if (menu && !menu.contains(e.target) && e.target !== btn) {
+            menu.style.display = 'none';
+        }
+    });
 
     // ===== Tabs / Navigation =====
     function switchTab(level, btn) {
@@ -577,8 +765,6 @@
         } else if (level === 'ad' && selectedAdsets.length > 0) {
             parentIds = [...selectedAdsets];
         }
-
-        console.log(`[cascata] ${prevLevel} → ${level} | selectedCampaigns=${JSON.stringify(selectedCampaigns)} | selectedAdsets=${JSON.stringify(selectedAdsets)} | parentIds=${JSON.stringify(parentIds)}`);
 
         loadData(parentIds);
     }
@@ -652,9 +838,8 @@
         const params = [];
         if (parentIds && parentIds.length) params.push(`parent_ids=${parentIds.join(',')}`);
         if (onlyActive) params.push(`status_filter=ACTIVE`);
+        if (columnPeriods.length > 0) params.push(`periods=${encodeURIComponent(buildPeriodsParam())}`);
         if (params.length) url += '?' + params.join('&');
-
-        console.log(`[loadData] URL: ${url}`);
 
         try {
             const resp = await fetch(url);
@@ -721,6 +906,15 @@
 
         // Ordenar dados
         let data = [...allData];
+
+        // Filtro: apenas selecionados
+        if (filtrarApenasSelecionados) {
+            const checkedIds = new Set(Array.from(document.querySelectorAll('.row-cb:checked')).map(cb => cb.dataset.id).filter(Boolean));
+            if (checkedIds.size > 0) {
+                data = data.filter(item => checkedIds.has(item.id));
+            }
+        }
+
         if (currentSort.key) {
             data.sort((a, b) => {
                 const va = getSortValue(a, currentSort.key);
@@ -817,6 +1011,32 @@
 
     function applyCAC() {
         if (allData.length) renderTable();
+    }
+
+    // Auto-cálculo: ao preencher Teto CAC, calcula CAC Ideal = 80% do teto
+    function onTetoCACChange() {
+        const tetoInput = document.getElementById('cac-y');
+        const idealInput = document.getElementById('cac-x');
+        const teto = parseFloat(tetoInput.value);
+        if (!isNaN(teto) && teto > 0) {
+            idealInput.value = Math.round(teto * 0.8);
+        }
+        applyCAC();
+    }
+
+    // Toggle filtro de selecionados
+    function toggleFilterSelected() {
+        filtrarApenasSelecionados = !filtrarApenasSelecionados;
+        const btn = document.getElementById('btn-filter-selected');
+        const token = document.getElementById('filter-token');
+        if (filtrarApenasSelecionados) {
+            btn.style.display = 'none';
+            token.style.display = 'inline-block';
+        } else {
+            btn.style.display = 'inline-block';
+            token.style.display = 'none';
+        }
+        renderTable();
     }
 
     // ===== Shift+Click Checkbox =====
@@ -927,7 +1147,8 @@
     }
 
     // ===== Init =====
-    // Carrega dados automaticamente ao abrir a página
+    // Inicializar períodos padrão e carregar dados
+    initDefaultPeriods();
     loadData();
 </script>
 {% endblock %}

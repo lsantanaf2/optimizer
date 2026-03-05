@@ -194,9 +194,19 @@ def api_turbinada(account_id, level):
     # status_filter=ACTIVE para trazer só ativas (padrão selecionado na UI)
     status_filter = request.args.get('status_filter', None)  # ex: "ACTIVE"
 
+    # Períodos dinâmicos enviados pelo frontend como JSON
+    periods_json = request.args.get('periods', None)
+    periods_dict = None
+    if periods_json:
+        try:
+            import json
+            periods_dict = json.loads(periods_json)
+        except Exception:
+            periods_dict = None
+
     try:
         uploader = MetaUploader(account_id, token, APP_ID, APP_SECRET)
-        data = uploader.get_turbinada_data(level=level, parent_ids=parent_list, status_filter=status_filter)
+        data = uploader.get_turbinada_data(level=level, parent_ids=parent_list, status_filter=status_filter, periods=periods_dict)
         return jsonify({"success": True, "data": data})
     except Exception as e:
         import traceback

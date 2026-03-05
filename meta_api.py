@@ -112,13 +112,14 @@ class MetaUploader:
 
     # ======================== TURBINADA — MULTI-PERIOD INSIGHTS ========================
 
-    def get_turbinada_data(self, level='campaign', parent_ids=None, status_filter=None):
+    def get_turbinada_data(self, level='campaign', parent_ids=None, status_filter=None, periods=None):
         """
-        Busca dados multi-período (7d, 3d, ontem, hoje) para a tela Turbinada.
+        Busca dados multi-período para a tela Turbinada.
         level: 'campaign', 'adset' ou 'ad'
-        parent_ids: lista de IDs pai (campaign_ids para adsets, adset_ids para ads). None para campaigns.
+        parent_ids: lista de IDs pai. None para campaigns.
         status_filter: 'ACTIVE' para trazer só ativas, None para ACTIVE+PAUSED.
-        Retorna lista de items com métricas por período + dados estruturais.
+        periods: dict {key: {'since': 'YYYY-MM-DD', 'until': 'YYYY-MM-DD'}} — períodos dinâmicos.
+                 Se None, usa 4 períodos padrão (7d, 3d, ontem, hoje).
         """
         import json
         from datetime import date, timedelta
@@ -126,13 +127,14 @@ class MetaUploader:
         today = date.today()
         yesterday = today - timedelta(days=1)
 
-        # 4 períodos: 7d sem hoje, 3d sem hoje, ontem, hoje
-        periods = {
-            'p7d':   {'since': (today - timedelta(days=7)).isoformat(), 'until': yesterday.isoformat()},
-            'p3d':   {'since': (today - timedelta(days=3)).isoformat(), 'until': yesterday.isoformat()},
-            'ontem': {'since': yesterday.isoformat(), 'until': yesterday.isoformat()},
-            'hoje':  {'since': today.isoformat(), 'until': today.isoformat()},
-        }
+        # Períodos: aceitar dinâmicos do frontend ou usar padrão
+        if not periods:
+            periods = {
+                'p7d':   {'since': (today - timedelta(days=7)).isoformat(), 'until': yesterday.isoformat()},
+                'p3d':   {'since': (today - timedelta(days=3)).isoformat(), 'until': yesterday.isoformat()},
+                'ontem': {'since': yesterday.isoformat(), 'until': yesterday.isoformat()},
+                'hoje':  {'since': today.isoformat(), 'until': today.isoformat()},
+            }
 
         # Determinar quais statuses incluir
         if status_filter and status_filter.upper() == 'ACTIVE':
@@ -279,11 +281,11 @@ class MetaUploader:
                 'status': struct.get('effective_status', struct.get('status', '?')),
                 'daily_budget': round(float(daily_raw) / 100, 2) if daily_raw else None,
                 'lifetime_budget': round(float(lifetime_raw) / 100, 2) if lifetime_raw else None,
-                'p7d': periods_data.get('p7d', empty_period),
-                'p3d': periods_data.get('p3d', empty_period),
-                'ontem': periods_data.get('ontem', empty_period),
-                'hoje': periods_data.get('hoje', empty_period),
             }
+
+            # Adicionar dados de cada período dinamicamente
+            for period_key in periods.keys():
+                item[period_key] = periods_data.get(period_key, empty_period)
 
             # Campos extras por nível
             if level == 'campaign':
@@ -295,8 +297,9 @@ class MetaUploader:
 
             results.append(item)
 
-        # Ordenar por gasto 7d decrescente
-        results.sort(key=lambda x: x['p7d'].get('spend', 0), reverse=True)
+        # Ordenar por gasto do primeiro período (decrescente)
+        first_period_key = list(periods.keys())[0] if periods else 'p7d'
+        results.sort(key=lambda x: x.get(first_period_key, {}).get('spend', 0), reverse=True)
 
         print(f"📊 [turbinada] {len(results)} {level}s com dados retornados")
         return results
