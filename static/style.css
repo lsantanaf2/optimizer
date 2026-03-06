@@ -52,6 +52,17 @@
     box-sizing: border-box;
 }
 
+/* Forçar herança de font — table/th/td/button/input não herdam do body por padrão */
+table,
+th,
+td,
+button,
+input,
+select,
+textarea {
+    font-family: inherit;
+}
+
 body {
     font-family: var(--font-sans);
     background: var(--bg-deep);
