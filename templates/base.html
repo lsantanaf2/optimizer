@@ -38,6 +38,13 @@
                     title="Otimização Turbinada">
                     <span class="nav-icon">🚀</span>
                 </a>
+
+                <!-- Cruzamento FB × Sheets -->
+                <a href="{{ url_for('cruzamento.cruzamento_page') }}"
+                    class="nav-item {% if 'cruzamento' in (request.endpoint or '') %}active{% endif %}"
+                    title="FB Ads × Google Sheets">
+                    <span class="nav-icon">🔀</span>
+                </a>
             </nav>
             <div class="sidebar-footer">
                 <a href="{{ url_for('logout') }}" class="nav-item" title="Sair">

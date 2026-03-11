@@ -30,7 +30,10 @@ app.secret_key = 'chave-secreta-optimizer-2024'
 from modules.optimization import optimization_bp
 app.register_blueprint(optimization_bp)
 
-VERSION = "v1.9.3"
+from modules.cruzamento import cruzamento_bp
+app.register_blueprint(cruzamento_bp)
+
+VERSION = "v2.0.0"
 
 @app.context_processor
 def inject_version():

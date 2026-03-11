@@ -53,3 +53,7 @@ TEST_PRACTICAL.md
 
 # Test Results
 test-results.json
+
+# Google Service Account credentials (NUNCA commitar!)
+google_credentials.json
+
