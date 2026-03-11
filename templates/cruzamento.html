@@ -338,7 +338,37 @@
         text-align: right;
         margin-top: 8px;
     }
+
+    /* ── Charts ── */
+    .charts-section {
+        display: none;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 14px;
+        margin-bottom: 14px;
+    }
+
+    .chart-card {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        padding: 16px;
+    }
+
+    .chart-card-title {
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 12px;
+    }
+
+    .chart-wrap {
+        position: relative;
+        height: 220px;
+    }
 </style>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 
 <!-- Controls -->
 <div class="crz-controls">
@@ -383,6 +413,22 @@
     <div class="kpi-card">
         <div class="kpi-label">🧮 CPL Médio</div>
         <div class="kpi-value" id="kpi-cpl">—</div>
+    </div>
+</div>
+
+<!-- Charts -->
+<div class="charts-section" id="charts-section">
+    <div class="chart-card">
+        <div class="chart-card-title">💸 Spend por Campanha</div>
+        <div class="chart-wrap"><canvas id="chart-spend"></canvas></div>
+    </div>
+    <div class="chart-card">
+        <div class="chart-card-title">🎯 Leads (MQLs) por Campanha</div>
+        <div class="chart-wrap"><canvas id="chart-leads"></canvas></div>
+    </div>
+    <div class="chart-card">
+        <div class="chart-card-title">🧮 Custo por Lead (CPL) por Campanha</div>
+        <div class="chart-wrap"><canvas id="chart-cpl"></canvas></div>
     </div>
 </div>
 
@@ -590,6 +636,87 @@
         ads.forEach(row => row.style.display = isOpen ? '' : 'none');
     }
 
+    // Chart.js instances (para destruir e recriar ao atualizar)
+    let chartSpend = null, chartLeads = null, chartCpl = null;
+
+    const CHART_DEFAULTS = {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { display: false },
+            tooltip: {
+                backgroundColor: '#1a1a1f',
+                borderColor: '#2d2d30',
+                borderWidth: 1,
+                titleColor: '#a0a0b0',
+                bodyColor: '#f0f0f5',
+                padding: 10,
+            }
+        },
+        scales: {
+            x: {
+                ticks: { color: '#5a5a6e', font: { size: 10, family: 'Lexend' }, maxRotation: 35 },
+                grid: { color: 'rgba(255,255,255,0.04)' }
+            },
+            y: {
+                ticks: { color: '#5a5a6e', font: { size: 10, family: 'Lexend' } },
+                grid: { color: 'rgba(255,255,255,0.04)' },
+                beginAtZero: true
+            }
+        }
+    };
+
+    function shortName(name, max = 22) {
+        return name && name.length > max ? name.slice(0, max) + '…' : (name || '?');
+    }
+
+    function renderCharts(data) {
+        const camps = (data.campaigns || []).slice(0, 12); // máx 12 campanhas
+        const labels = camps.map(c => shortName(c.campaign_name));
+        const spends = camps.map(c => c.spend || 0);
+        const leads = camps.map(c => c.leads_total || 0);
+        const cpls = camps.map(c => c.cpl != null ? c.cpl : 0);
+
+        // Cores degradê por barra
+        const colorCyan = 'rgba(0, 242, 255, 0.75)';
+        const colorPurple = 'rgba(139, 92, 246, 0.75)';
+        const colorAmber = 'rgba(245, 158, 11, 0.75)';
+
+        const mkChart = (id, label, vals, color, fmt) => {
+            const ctx = document.getElementById(id).getContext('2d');
+            return new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels,
+                    datasets: [{
+                        label, data: vals, backgroundColor: color,
+                        borderRadius: 4, borderSkipped: false
+                    }]
+                },
+                options: {
+                    ...CHART_DEFAULTS,
+                    plugins: {
+                        ...CHART_DEFAULTS.plugins,
+                        tooltip: {
+                            ...CHART_DEFAULTS.plugins.tooltip,
+                            callbacks: { label: ctx => fmt(ctx.parsed.y) }
+                        }
+                    }
+                }
+            });
+        };
+
+        if (chartSpend) chartSpend.destroy();
+        if (chartLeads) chartLeads.destroy();
+        if (chartCpl) chartCpl.destroy();
+
+        chartSpend = mkChart('chart-spend', 'Spend', spends, colorCyan, v => fmtR(v));
+        chartLeads = mkChart('chart-leads', 'Leads', leads, colorPurple, v => v + ' leads');
+        chartCpl = mkChart('chart-cpl', 'CPL', cpls, colorAmber, v => fmtR(v));
+
+        document.getElementById('charts-section').style.display = 'grid';
+    }
+
     function updateKPIs(data) {
         let totSpend = 0, totLeads = 0, totVendas = 0, totFat = 0;
         for (const camp of (data.campaigns || [])) {
@@ -630,6 +757,7 @@
 
             buildTable(json.data);
             updateKPIs(json.data);
+            renderCharts(json.data);
 
             document.getElementById('crz-loading').style.display = 'none';
             document.getElementById('crz-table').style.display = '';
