@@ -319,18 +319,38 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows):
         if uc2:
             leads_by_campaign.setdefault(uc2, []).append(lead)
 
-    # ── Passo 2: Cruzar com FB Ads ────────────────────────────────────────────
+    # ── Passo 2: Consolidar FB Ads por ad_id (evitar duplicação diária) ───────
+    fb_ads_consolidated = {}
+    for ad in fb_ads:
+        aid = ad['ad_id']
+        if aid not in fb_ads_consolidated:
+            fb_ads_consolidated[aid] = {
+                'campaign_id':   ad['campaign_id'],
+                'campaign_name': ad['campaign_name'],
+                'adset_id':      ad['adset_id'],
+                'adset_name':    ad['adset_name'],
+                'ad_id':         aid,
+                'ad_name':       ad['ad_name'],
+                'spend':         0.0,
+                'impressions':   0,
+                'clicks':        0,
+            }
+        fb_ads_consolidated[aid]['spend']       += ad.get('spend', 0.0)
+        fb_ads_consolidated[aid]['impressions'] += ad.get('impressions', 0)
+        fb_ads_consolidated[aid]['clicks']      += ad.get('clicks', 0)
+
+    # ── Passo 3: Cruzar FB Ads consolidados com Leads ─────────────────────────
     # Hierarquia: campanha → conjunto → ad
     campaigns = {}   # campaign_id → {...}
     adsets    = {}   # adset_id    → {...}
     ads_map   = {}   # ad_id       → {...}
 
-    for ad in fb_ads:
+    for ad in fb_ads_consolidated.values():
         cid = ad['campaign_id']
         sid = ad['adset_id']
         aid = ad['ad_id']
 
-        ad_name_norm      = _norm(ad['ad_name'])
+        ad_name_norm       = _norm(ad['ad_name'])
         campaign_name_norm = _norm(ad['campaign_name'])
 
         # Tentar match por utm_content → ad_name (principal)
