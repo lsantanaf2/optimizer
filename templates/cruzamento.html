@@ -870,29 +870,11 @@
     let currentSortCol = 'spend';
     let currentSortDesc = true;
 
-    function renderAdsTable(campaigns) {
+    function renderAdsTable(ads) {
         const adsContainer = document.getElementById('crz-ads-container');
-        if (!campaigns || campaigns.length === 0) return;
+        if (!ads || ads.length === 0) return;
 
-        // Extrair e consolidar ads pelo nome do criativo (ad_name)
-        const adsMap = {};
-        for (const camp of campaigns) {
-            for (const adset of (camp.adsets || [])) {
-                for (const ad of (adset.ads || [])) {
-                    if (ad.spend > 0 || ad.leads_total > 0) {
-                        const name = ad.ad_name || 'Desconhecido';
-                        if (!adsMap[name]) {
-                            adsMap[name] = { ad_name: name, spend: 0, mqls: 0, nc: 0 };
-                        }
-                        adsMap[name].spend += (ad.spend || 0);
-                        adsMap[name].mqls += (ad.leads_total || 0);
-                        adsMap[name].nc += (ad.leads_a || 0);
-                    }
-                }
-            }
-        }
-
-        currentAdsData = Object.values(adsMap).map(ad => {
+        currentAdsData = ads.map(ad => {
             ad.cpl = ad.mqls > 0 ? ad.spend / ad.mqls : 0;
             ad.pct_nc = ad.mqls > 0 ? (ad.nc / ad.mqls) * 100 : 0;
             ad.custo_nc = ad.nc > 0 ? ad.spend / ad.nc : 0;
@@ -984,8 +966,8 @@
     // KPIs usa total_mqls, total_wons e fat_total_sheets do Sheets
     function updateKPIs(data) {
         let totSpend = 0;
-        for (const camp of (data.campaigns || [])) {
-            totSpend += camp.spend || 0;
+        for (const ad of (data.ads_consolidated || [])) {
+            totSpend += ad.spend || 0;
         }
 
         const totLeads = data.total_mqls || 0;
@@ -1021,7 +1003,16 @@
             updateKPIs(json.data);
             renderDonut(json.data.by_produto || {});
             renderDayTable(json.data.by_date || []);
-            renderAdsTable(json.data.campaigns || []);
+
+            // Adaptar campos do backend (flat) para o frontend ler certinho!
+            const mappedAds = (json.data.ads_consolidated || []).map(ad => ({
+                ad_name: ad.ad_name,
+                spend: ad.spend,
+                mqls: ad.leads_total,
+                nc: ad.leads_a
+            }));
+
+            renderAdsTable(mappedAds);
             document.getElementById('crz-main-grid').style.display = 'grid';
 
             document.getElementById('crz-loading').style.display = 'none';
