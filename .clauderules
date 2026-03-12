@@ -18,4 +18,5 @@
 - **Read COMPLETE schema**: Before suggesting DB changes, understand the full existing schema.
 - **Investigate root cause**: Don't just patch symptoms; find the root cause of persistent errors.
 - **Commit frequently**: Commit your changes before moving to the next task.
+- **Provide Deploy Commands**: ALWAYS output the local Git commands (add, commit, push) and the exact VPS Docker commands (pull, build, run) whenever you finish making a code change.
 - **Create handoff**: Generate a handoff file in `docs/sessions/YYYY-MM/` at the end of every session.

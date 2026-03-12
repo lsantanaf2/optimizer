@@ -211,7 +211,7 @@ def fetch_fb_insights(account_id, access_token, date_preset='last_30d', since=No
     params = {
         'access_token': access_token,
         'level': 'ad',
-        'fields': 'campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions,clicks,date_start',
+        'fields': 'campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions,clicks,date_start,ad_status',
         'limit': 500,
         'time_increment': 1,  # dados diarios
     }
@@ -240,6 +240,7 @@ def fetch_fb_insights(account_id, access_token, date_preset='last_30d', since=No
                 'impressions':   int(item.get('impressions', 0) or 0),
                 'clicks':        int(item.get('clicks', 0) or 0),
                 'date_start':    item.get('date_start', ''),
+                'ad_status':     item.get('ad_status', 'UNKNOWN'),
             })
 
         # Paginação cursor
@@ -332,6 +333,7 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows):
                 'campaign_name': ad.get('campaign_name', ''),
                 'adset_id':      ad.get('adset_id', ''),
                 'adset_name':    ad.get('adset_name', ''),
+                'ad_status':     ad.get('ad_status', 'UNKNOWN'),
                 'spend':         0.0,
                 'impressions':   0,
                 'clicks':        0,
@@ -353,15 +355,13 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows):
             'ad_name':       ad_data['ad_name'],
             'campaign_name': ad_data['campaign_name'],
             'adset_name':    ad_data['adset_name'],
+            'ad_status':     ad_data['ad_status'],
             **metrics
         })
 
     # Como mudamos a lógica para focar na tabela consolidada por Anúncio,
     # não recriaremos a hierarquia complexa de 'campaigns -> adsets -> ads' 
     # apenas o flat array de criativos, já que o frontend já trabalha assim na Tabela de Ads.
-
-    # Ordenar por spend desc
-    ads_consolidated.sort(key=lambda x: x['spend'], reverse=True)
 
     # Leads sem match (sem UTM ou UTM não encontrada no FB)
     matched_deal_ids = set()
@@ -376,6 +376,30 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows):
 
     organicos = [l for l in leads_enriquecidos if l['deal_id'] not in matched_deal_ids]
     organico_metrics = _calc_organic_metrics(organicos)
+
+    # ── Adiciona os Orgânicos e Não-Encontrados na Tabela ─────────────────────
+    organicos_by_term = {}
+    for l in organicos:
+        ut = l.get('utm_term', '')
+        if not ut or ut == 'null':
+            key = '🌿 Orgânico / Sem UTM'
+        else:
+            key = f"⚠️ {ut} (Fora do FB)"
+        
+        organicos_by_term.setdefault(key, []).append(l)
+
+    for nome_exibicao, m_leads in organicos_by_term.items():
+        metrics = _calc_metrics(_empty_metrics(), m_leads)
+        ads_consolidated.append({
+            'ad_name':       nome_exibicao,
+            'campaign_name': '-',
+            'adset_name':    '-',
+            'ad_status':     'ORGANIC',
+            **metrics
+        })
+
+    # Ordenar primeiro por Spend (anúncios reais no topo) e depois por desc de MQLs
+    ads_consolidated.sort(key=lambda x: (x.get('spend', 0), x.get('leads_total', 0)), reverse=True)
 
     # ── Faturamento total do Sheets (Wons filtradas) ───────────────────────────
     fat_total_sheets = sum(_parse_valor(row.get('Valor', 0)) for row in wons_rows)

@@ -469,6 +469,57 @@
         color: var(--text-muted);
         font-size: 11px;
     }
+    /* Toggle Switch */
+    .switch {
+        position: relative;
+        display: inline-block;
+        width: 32px;
+        height: 18px;
+        margin-right: 8px;
+        vertical-align: middle;
+    }
+
+    .switch input { 
+        opacity: 0;
+        width: 0;
+        height: 0;
+    }
+
+    .slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: var(--card-bg);
+        border: 1px solid var(--border);
+        transition: .2s;
+        border-radius: 18px;
+    }
+
+    .slider:before {
+        position: absolute;
+        content: "";
+        height: 12px;
+        width: 12px;
+        left: 2px;
+        bottom: 2px;
+        background-color: var(--text-muted);
+        transition: .2s;
+        border-radius: 50%;
+    }
+
+    input:checked + .slider {
+        background-color: var(--accent);
+        border-color: var(--accent);
+    }
+
+    input:checked + .slider:before {
+        transform: translateX(14px);
+        background-color: #000;
+    }
+
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 
@@ -559,8 +610,15 @@
 <!-- Ads Consolidados -->
 <div class="chart-card crz-ads-container" id="crz-ads-container"
     style="display:none; margin-bottom: 14px; overflow:hidden; padding:0;">
-    <div class="chart-card-title" style="padding:14px 16px 10px; border-bottom:1px solid var(--border);">
-        📈 MQLs e Custos por Anúncio (Top 100 Investimentos)
+    <div class="chart-card-title" style="padding:14px 16px 10px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
+        <span>📈 MQLs e Custos por Anúncio (Top 100 Investimentos)</span>
+        <label style="display:flex; align-items:center; cursor:pointer; font-weight:600; font-size:11px; color:var(--text-main); text-transform:none;">
+            <label class="switch">
+                <input type="checkbox" id="toggle-active-ads" onchange="renderAdsTableBody()">
+                <span class="slider"></span>
+            </label>
+            Somente ads Ativos
+        </label>
     </div>
     <div style="overflow-x:auto; overflow-y:auto; max-height:500px;">
         <table class="day-table" id="ads-table">
@@ -898,6 +956,7 @@
 
     function renderAdsTableBody() {
         const tbody = document.getElementById('ads-tbody');
+        const showOnlyActive = document.getElementById('toggle-active-ads').checked;
 
         // Atualiza indicadores de ordenação
         const cols = ['ad_name', 'spend', 'mqls', 'cpl', 'nc', 'pct_nc', 'custo_nc'];
@@ -906,7 +965,10 @@
             if (ind) ind.textContent = (c === currentSortCol) ? (currentSortDesc ? '▼' : '▲') : '';
         });
 
-        const data = [...currentAdsData];
+        // Aplica o filtro Ativo
+        let data = showOnlyActive 
+            ? currentAdsData.filter(ad => ad.ad_status === 'ACTIVE')
+            : [...currentAdsData];
         data.sort((a, b) => {
             let valA = a[currentSortCol];
             let valB = b[currentSortCol];
@@ -1010,7 +1072,8 @@
                 ad_name: ad.ad_name,
                 spend: ad.spend,
                 mqls: ad.leads_total,
-                nc: ad.leads_a
+                nc: ad.leads_a,
+                ad_status: ad.ad_status
             }));
 
             renderAdsTable(mappedAds);
