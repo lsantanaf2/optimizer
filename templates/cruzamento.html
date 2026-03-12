@@ -611,13 +611,13 @@
 <div class="chart-card crz-ads-container" id="crz-ads-container"
     style="display:none; margin-bottom: 14px; overflow:hidden; padding:0;">
     <div class="chart-card-title" style="padding:14px 16px 10px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
-        <span>📈 MQLs e Custos por Anúncio (Top 100 Investimentos)</span>
+        <span>📈 MQLs e Custos por Anúncio</span>
         <label style="display:flex; align-items:center; cursor:pointer; font-weight:600; font-size:11px; color:var(--text-main); text-transform:none;">
             <label class="switch">
                 <input type="checkbox" id="toggle-active-ads" onchange="renderAdsTableBody()">
                 <span class="slider"></span>
             </label>
-            Somente ads Ativos
+            Somente ativos
         </label>
     </div>
     <div style="overflow-x:auto; overflow-y:auto; max-height:500px;">
@@ -641,6 +641,82 @@
             </thead>
             <tbody id="ads-tbody"></tbody>
             <tfoot id="ads-tfoot"></tfoot>
+        </table>
+    </div>
+</div>
+
+<!-- AdSets Consolidados -->
+<div class="chart-card crz-ads-container" id="crz-adsets-container"
+    style="display:none; margin-bottom: 14px; overflow:hidden; padding:0;">
+    <div class="chart-card-title" style="padding:14px 16px 10px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
+        <span>📂 MQLs e Custos por Conjunto de Anúncios</span>
+        <label style="display:flex; align-items:center; cursor:pointer; font-weight:600; font-size:11px; color:var(--text-main); text-transform:none;">
+            <label class="switch">
+                <input type="checkbox" id="toggle-active-adsets" onchange="renderAdSetsTableBody()">
+                <span class="slider"></span>
+            </label>
+            Somente ativos
+        </label>
+    </div>
+    <div style="overflow-x:auto; overflow-y:auto; max-height:350px;">
+        <table class="day-table" id="adsets-table">
+            <thead>
+                <tr>
+                    <th class="sortable" onclick="sortAdSets('adset_name')">Conjunto <span id="sort-ind-set-adset_name"></span></th>
+                    <th class="sortable" style="text-align:right;" onclick="sortAdSets('spend')">Investimento <span
+                            id="sort-ind-set-spend">▼</span></th>
+                    <th class="sortable" style="text-align:right;" onclick="sortAdSets('mqls')">MQLs <span
+                            id="sort-ind-set-mqls"></span></th>
+                    <th class="sortable" style="text-align:right;" onclick="sortAdSets('cpl')">Custo / MQL <span
+                            id="sort-ind-set-cpl"></span></th>
+                    <th class="sortable" style="text-align:right;" onclick="sortAdSets('nc')">NC <span
+                            id="sort-ind-set-nc"></span></th>
+                    <th class="sortable" style="text-align:right;" onclick="sortAdSets('pct_nc')">%&nbsp;NC <span
+                            id="sort-ind-set-pct_nc"></span></th>
+                    <th class="sortable" style="text-align:right;" onclick="sortAdSets('custo_nc')">Custo / NC <span
+                            id="sort-ind-set-custo_nc"></span></th>
+                </tr>
+            </thead>
+            <tbody id="adsets-tbody"></tbody>
+            <tfoot id="adsets-tfoot"></tfoot>
+        </table>
+    </div>
+</div>
+
+<!-- Campaigns Consolidadas -->
+<div class="chart-card crz-ads-container" id="crz-campaigns-container"
+    style="display:none; margin-bottom: 14px; overflow:hidden; padding:0;">
+    <div class="chart-card-title" style="padding:14px 16px 10px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
+        <span>🎯 MQLs e Custos por Campanha</span>
+        <label style="display:flex; align-items:center; cursor:pointer; font-weight:600; font-size:11px; color:var(--text-main); text-transform:none;">
+            <label class="switch">
+                <input type="checkbox" id="toggle-active-campaigns" onchange="renderCampaignsTableBody()">
+                <span class="slider"></span>
+            </label>
+            Somente ativas
+        </label>
+    </div>
+    <div style="overflow-x:auto; overflow-y:auto; max-height:350px;">
+        <table class="day-table" id="campaigns-table">
+            <thead>
+                <tr>
+                    <th class="sortable" onclick="sortCampaigns('campaign_name')">Campanha <span id="sort-ind-camp-campaign_name"></span></th>
+                    <th class="sortable" style="text-align:right;" onclick="sortCampaigns('spend')">Investimento <span
+                            id="sort-ind-camp-spend">▼</span></th>
+                    <th class="sortable" style="text-align:right;" onclick="sortCampaigns('mqls')">MQLs <span
+                            id="sort-ind-camp-mqls"></span></th>
+                    <th class="sortable" style="text-align:right;" onclick="sortCampaigns('cpl')">Custo / MQL <span
+                            id="sort-ind-camp-cpl"></span></th>
+                    <th class="sortable" style="text-align:right;" onclick="sortCampaigns('nc')">NC <span
+                            id="sort-ind-camp-nc"></span></th>
+                    <th class="sortable" style="text-align:right;" onclick="sortCampaigns('pct_nc')">%&nbsp;NC <span
+                            id="sort-ind-camp-pct_nc"></span></th>
+                    <th class="sortable" style="text-align:right;" onclick="sortCampaigns('custo_nc')">Custo / NC <span
+                            id="sort-ind-camp-custo_nc"></span></th>
+                </tr>
+            </thead>
+            <tbody id="campaigns-tbody"></tbody>
+            <tfoot id="campaigns-tfoot"></tfoot>
         </table>
     </div>
 </div>
@@ -979,7 +1055,6 @@
             return currentSortDesc ? (valB - valA) : (valA - valB);
         });
 
-        // Pega top 100
         const topAds = data.slice(0, 100);
 
         tbody.innerHTML = topAds.map(ad => {
@@ -1022,6 +1097,192 @@
             <td style="color:var(--accent); font-weight:600;">${totNcAds || '—'}</td>
             <td class="pct">${pctNcTotAds}</td>
             <td>${custoNcTotAds}</td>
+        </tr>`;
+    }
+
+    // ── AdSets Table ──
+    let currentAdSetsData = [];
+    let currentAdSetSortCol = 'spend';
+    let currentAdSetSortDesc = true;
+
+    function renderAdSetsTable(adsets) {
+        const adsetsCont = document.getElementById('crz-adsets-container');
+        if (!adsets || adsets.length === 0) return;
+
+        currentAdSetsData = adsets.map(se => {
+            se.cpl = se.mqls > 0 ? se.spend / se.mqls : 0;
+            se.pct_nc = se.mqls > 0 ? (se.nc / se.mqls) * 100 : 0;
+            se.custo_nc = se.nc > 0 ? se.spend / se.nc : 0;
+            return se;
+        });
+
+        renderAdSetsTableBody();
+        adsetsCont.style.display = 'block';
+    }
+
+    function sortAdSets(col) {
+        if (currentAdSetSortCol === col) {
+            currentAdSetSortDesc = !currentAdSetSortDesc;
+        } else {
+            currentAdSetSortCol = col;
+            currentAdSetSortDesc = col !== 'adset_name';
+        }
+        renderAdSetsTableBody();
+    }
+
+    function renderAdSetsTableBody() {
+        const tbody = document.getElementById('adsets-tbody');
+        const showOnlyActive = document.getElementById('toggle-active-adsets').checked;
+
+        const cols = ['adset_name', 'spend', 'mqls', 'cpl', 'nc', 'pct_nc', 'custo_nc'];
+        cols.forEach(c => {
+            const ind = document.getElementById('sort-ind-set-' + c);
+            if (ind) ind.textContent = (c === currentAdSetSortCol) ? (currentAdSetSortDesc ? '▼' : '▲') : '';
+        });
+
+        let data = showOnlyActive 
+            ? currentAdSetsData.filter(s => s.ad_status === 'ACTIVE')
+            : [...currentAdSetsData];
+
+        data.sort((a, b) => {
+            let valA = a[currentAdSetSortCol];
+            let valB = b[currentAdSetSortCol];
+
+            if (typeof valA === 'string') {
+                return currentAdSetSortDesc ? valB.localeCompare(valA) : valA.localeCompare(valB);
+            }
+            return currentAdSetSortDesc ? (valB - valA) : (valA - valB);
+        });
+
+        const top = data.slice(0, 50);
+
+        tbody.innerHTML = top.map(adset => {
+            const cplStr = adset.mqls > 0 ? fmtR(adset.cpl) : '<span style="color:var(--text-muted)">—</span>';
+            const pctNcStr = adset.mqls > 0 ? adset.pct_nc.toFixed(1) + '%' : '—';
+            const custoNcStr = adset.nc > 0 ? fmtR(adset.custo_nc) : '<span style="color:var(--text-muted)">—</span>';
+
+            return `<tr>
+                <td style="text-align:left; max-width: 300px;">
+                    <div style="font-size:12px;color:var(--text-main);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:sans-serif;" title="${adset.adset_name}">
+                        ${adset.adset_name}
+                    </div>
+                </td>
+                <td style="color:var(--text-main); font-weight:600;">${fmtR(adset.spend)}</td>
+                <td><b>${adset.mqls}</b></td>
+                <td>${cplStr}</td>
+                <td style="color:var(--accent); font-weight:600;">${adset.nc || '—'}</td>
+                <td class="pct">${adset.nc > 0 ? pctNcStr : '—'}</td>
+                <td>${custoNcStr}</td>
+            </tr>`;
+        }).join('');
+
+        let totSpend = 0, totMqls = 0, totNc = 0;
+        currentAdSetsData.forEach(s => { totSpend += s.spend || 0; totMqls += s.mqls || 0; totNc += s.nc || 0; });
+        const cplTot = totMqls > 0 ? fmtR(totSpend / totMqls) : '—';
+        const pctNcTot = totMqls > 0 ? ((totNc / totMqls) * 100).toFixed(1) + '%' : '—';
+        const custoNcTot = totNc > 0 ? fmtR(totSpend / totNc) : '—';
+
+        document.getElementById('adsets-tfoot').innerHTML = `<tr>
+            <td>TOTAL (${currentAdSetsData.length} conj)</td>
+            <td style="color:var(--text-main); font-weight:600;">${fmtR(totSpend)}</td>
+            <td><b>${totMqls}</b></td>
+            <td>${cplTot}</td>
+            <td style="color:var(--accent); font-weight:600;">${totNc || '—'}</td>
+            <td class="pct">${pctNcTot}</td>
+            <td>${custoNcTot}</td>
+        </tr>`;
+    }
+
+    // ── Campaigns Table ──
+    let currentCampaignsData = [];
+    let currentCampSortCol = 'spend';
+    let currentCampSortDesc = true;
+
+    function renderCampaignsTable(camps) {
+        const cont = document.getElementById('crz-campaigns-container');
+        if (!camps || camps.length === 0) return;
+
+        currentCampaignsData = camps.map(c => {
+            c.cpl = c.mqls > 0 ? c.spend / c.mqls : 0;
+            c.pct_nc = c.mqls > 0 ? (c.nc / c.mqls) * 100 : 0;
+            c.custo_nc = c.nc > 0 ? c.spend / c.nc : 0;
+            return c;
+        });
+
+        renderCampaignsTableBody();
+        cont.style.display = 'block';
+    }
+
+    function sortCampaigns(col) {
+        if (currentCampSortCol === col) {
+            currentCampSortDesc = !currentCampSortDesc;
+        } else {
+            currentCampSortCol = col;
+            currentCampSortDesc = col !== 'campaign_name';
+        }
+        renderCampaignsTableBody();
+    }
+
+    function renderCampaignsTableBody() {
+        const tbody = document.getElementById('campaigns-tbody');
+        const showOnlyActive = document.getElementById('toggle-active-campaigns').checked;
+
+        const cols = ['campaign_name', 'spend', 'mqls', 'cpl', 'nc', 'pct_nc', 'custo_nc'];
+        cols.forEach(c => {
+            const ind = document.getElementById('sort-ind-camp-' + c);
+            if (ind) ind.textContent = (c === currentCampSortCol) ? (currentCampSortDesc ? '▼' : '▲') : '';
+        });
+
+        let data = showOnlyActive 
+            ? currentCampaignsData.filter(s => s.ad_status === 'ACTIVE')
+            : [...currentCampaignsData];
+
+        data.sort((a, b) => {
+            let valA = a[currentCampSortCol];
+            let valB = b[currentCampSortCol];
+
+            if (typeof valA === 'string') {
+                return currentCampSortDesc ? valB.localeCompare(valA) : valA.localeCompare(valB);
+            }
+            return currentCampSortDesc ? (valB - valA) : (valA - valB);
+        });
+
+        const top = data.slice(0, 50);
+
+        tbody.innerHTML = top.map(camp => {
+            const cplStr = camp.mqls > 0 ? fmtR(camp.cpl) : '<span style="color:var(--text-muted)">—</span>';
+            const pctNcStr = camp.mqls > 0 ? camp.pct_nc.toFixed(1) + '%' : '—';
+            const custoNcStr = camp.nc > 0 ? fmtR(camp.custo_nc) : '<span style="color:var(--text-muted)">—</span>';
+
+            return `<tr>
+                <td style="text-align:left; max-width: 300px;">
+                    <div style="font-size:12px;color:var(--text-main);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:sans-serif;" title="${camp.campaign_name}">
+                        ${camp.campaign_name}
+                    </div>
+                </td>
+                <td style="color:var(--text-main); font-weight:600;">${fmtR(camp.spend)}</td>
+                <td><b>${camp.mqls}</b></td>
+                <td>${cplStr}</td>
+                <td style="color:var(--accent); font-weight:600;">${camp.nc || '—'}</td>
+                <td class="pct">${camp.nc > 0 ? pctNcStr : '—'}</td>
+                <td>${custoNcStr}</td>
+            </tr>`;
+        }).join('');
+
+        let totSpend = 0, totMqls = 0, totNc = 0;
+        currentCampaignsData.forEach(s => { totSpend += s.spend || 0; totMqls += s.mqls || 0; totNc += s.nc || 0; });
+        const cplTot = totMqls > 0 ? fmtR(totSpend / totMqls) : '—';
+        const pctNcTot = totMqls > 0 ? ((totNc / totMqls) * 100).toFixed(1) + '%' : '—';
+        const custoNcTot = totNc > 0 ? fmtR(totSpend / totNc) : '—';
+
+        document.getElementById('campaigns-tfoot').innerHTML = `<tr>
+            <td>TOTAL (${currentCampaignsData.length} camp)</td>
+            <td style="color:var(--text-main); font-weight:600;">${fmtR(totSpend)}</td>
+            <td><b>${totMqls}</b></td>
+            <td>${cplTot}</td>
+            <td style="color:var(--accent); font-weight:600;">${totNc || '—'}</td>
+            <td class="pct">${pctNcTot}</td>
+            <td>${custoNcTot}</td>
         </tr>`;
     }
 
@@ -1076,7 +1337,26 @@
                 ad_status: ad.ad_status
             }));
 
+            const mappedAdSets = (json.data.adsets_consolidated || []).map(s => ({
+                adset_name: s.adset_name,
+                spend: s.spend,
+                mqls: s.leads_total,
+                nc: s.leads_a,
+                ad_status: s.ad_status
+            }));
+
+            const mappedCampaigns = (json.data.campaigns_consolidated || []).map(c => ({
+                campaign_name: c.campaign_name,
+                spend: c.spend,
+                mqls: c.leads_total,
+                nc: c.leads_a,
+                ad_status: c.ad_status
+            }));
+
             renderAdsTable(mappedAds);
+            renderAdSetsTable(mappedAdSets);
+            renderCampaignsTable(mappedCampaigns);
+
             document.getElementById('crz-main-grid').style.display = 'grid';
 
             document.getElementById('crz-loading').style.display = 'none';
