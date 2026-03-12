@@ -36,6 +36,64 @@ ABA_WONS  = 'Wons'
 def _norm(s):
     return str(s).strip().lower() if s else ''
 
+# ── Filtro de Datas ───────────────────────────────────────────────────────────
+from datetime import date as _date
+
+def preset_to_dates(preset, since_str=None, until_str=None):
+    """Converte date_preset do FB em (since: date, until: date)."""
+    today = _date.today()
+    if since_str and until_str:
+        try:
+            return (datetime.strptime(since_str, '%Y-%m-%d').date(),
+                    datetime.strptime(until_str, '%Y-%m-%d').date())
+        except ValueError:
+            pass
+    mapping = {
+        'last_7_days':  (today - timedelta(days=6),  today),
+        'last_14_days': (today - timedelta(days=13), today),
+        'last_30_days': (today - timedelta(days=29), today),
+        'last_90_days': (today - timedelta(days=89), today),
+        'yesterday':    (today - timedelta(days=1),  today - timedelta(days=1)),
+        'today':        (today, today),
+    }
+    if preset in mapping:
+        return mapping[preset]
+    if preset == 'this_month':
+        return (today.replace(day=1), today)
+    if preset == 'last_month':
+        first_this = today.replace(day=1)
+        last_prev  = first_this - timedelta(days=1)
+        return (last_prev.replace(day=1), last_prev)
+    return (None, None)
+
+
+def _parse_date_br(s):
+    """Tenta parsear DD/MM/YYYY, DD/MM/YY ou YYYY-MM-DD."""
+    s = str(s).strip()
+    for fmt in ('%d/%m/%Y', '%d/%m/%y', '%Y-%m-%d', '%Y/%m/%d'):
+        try:
+            return datetime.strptime(s, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def filter_rows_by_date(rows, date_col, since, until):
+    """Filtra linhas mantendo apenas as com date_col entre since e until."""
+    if since is None and until is None:
+        return rows
+    result = []
+    for row in rows:
+        d = _parse_date_br(row.get(date_col, ''))
+        if d is None:
+            continue
+        if since and d < since:
+            continue
+        if until and d > until:
+            continue
+        result.append(row)
+    return result
+
 # ── Google Auth via Service Account ───────────────────────────────────────────
 _google_token_cache = {'token': None, 'expires_at': 0}
 
@@ -474,7 +532,14 @@ def api_cruzamento_data():
             sheets_future = executor.submit(fetch_sheets_data, SPREADSHEET_ID)
 
             fb_ads               = fb_future.result()
-            mqls_rows, wons_rows = sheets_future.result()
+            mqls_rows_all, wons_rows_all = sheets_future.result()
+
+        # ── Aplicar filtro de data nas linhas do Sheets ─────────────────────────────────────
+        since_d, until_d = preset_to_dates(date_preset, since, until)
+        # MQLs: filtra por 'Data do preenchimento'
+        mqls_rows = filter_rows_by_date(mqls_rows_all, 'Data do preenchimento', since_d, until_d)
+        # Wons: filtra por 'Data de fechamento'
+        wons_rows = filter_rows_by_date(wons_rows_all, 'Data de fechamento', since_d, until_d)
 
         resultado = processar_cruzamento(fb_ads, mqls_rows, wons_rows)
         elapsed = round(time.time() - t0, 2)
@@ -484,8 +549,8 @@ def api_cruzamento_data():
             'data':     resultado,
             'meta': {
                 'fb_ads_count':   len(fb_ads),
-                'mqls_count':     len(mqls_rows),
-                'wons_count':     len(wons_rows),
+                'mqls_count':     resultado['total_mqls'],
+                'wons_count':     resultado['total_wons'],
                 'elapsed_sec':    elapsed,
                 'date_preset':    date_preset,
                 'timestamp':      datetime.now().isoformat(),
