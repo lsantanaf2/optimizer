@@ -251,20 +251,24 @@ def fetch_fb_insights(account_id, access_token, date_preset='last_30d', since=No
     return ads
 
 def fetch_ads_status(account_id, access_token):
-    """Busca o status efetivo (ACTIVE, PAUSED, etc) de todos os ads da conta."""
+    """Busca o status (ACTIVE, PAUSED, etc) de todos os ads."""
     base_url = f"https://graph.facebook.com/v22.0/{account_id}/ads"
-    params = {'access_token': access_token, 'fields': 'id,effective_status', 'limit': 1000}
+    params = {'access_token': access_token, 'fields': 'id,status', 'limit': 1000}
     status_map = {}
     url = base_url
-    while url:
-        resp = requests.get(url, params=params if url == base_url else None, timeout=30)
-        if resp.status_code != 200:
-            break
-        body = resp.json()
-        for item in body.get('data', []):
-            status_map[item['id']] = item.get('effective_status', 'UNKNOWN')
-        url = body.get('paging', {}).get('next')
-        params = None
+    try:
+        while url:
+            resp = requests.get(url, params=params if url == base_url else None, timeout=30)
+            if resp.status_code != 200:
+                print(f"⚠️ Aviso: Falha ao buscar status dos ads na URL {url}: {resp.text}")
+                break
+            body = resp.json()
+            for item in body.get('data', []):
+                status_map[item['id']] = item.get('status', 'UNKNOWN')
+            url = body.get('paging', {}).get('next')
+            params = None
+    except Exception as e:
+        print(f"⚠️ Erro ao buscar status dos ads: {e}")
     return status_map
 
 # ── Processamento: Duplo Join em Memória ──────────────────────────────────────
