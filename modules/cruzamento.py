@@ -211,8 +211,9 @@ def fetch_fb_insights(account_id, access_token, date_preset='last_30d', since=No
     params = {
         'access_token': access_token,
         'level': 'ad',
-        'fields': 'campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions,clicks',
+        'fields': 'campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions,clicks,date_start',
         'limit': 500,
+        'time_increment': 1,  # dados diarios
     }
 
     if since and until:
@@ -238,6 +239,7 @@ def fetch_fb_insights(account_id, access_token, date_preset='last_30d', since=No
                 'spend':         float(item.get('spend', 0) or 0),
                 'impressions':   int(item.get('impressions', 0) or 0),
                 'clicks':        int(item.get('clicks', 0) or 0),
+                'date_start':    item.get('date_start', ''),
             })
 
         # Paginação cursor
@@ -400,16 +402,57 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows):
     organicos = [l for l in leads_enriquecidos if l['deal_id'] not in matched_deal_ids]
     organico_metrics = _calc_organic_metrics(organicos)
 
-    # Somar faturamento total do Sheets (Wons filtradas)
+    # ── Faturamento total do Sheets (Wons filtradas) ───────────────────────────
     fat_total_sheets = sum(_parse_valor(row.get('Valor', 0)) for row in wons_rows)
 
+    # ── Spend diário do FB (soma de todos os ads por date_start) ──────────────
+    daily_spend = {}
+    for ad in fb_ads:
+        d = ad.get('date_start', '')
+        if d:
+            daily_spend[d] = daily_spend.get(d, 0.0) + ad['spend']
+
+    # ── MQLs agrupados por data (Data do preenchimento) ───────────────────────
+    by_date_raw = {}
+    for row in mqls_rows:
+        d = _parse_date_br(row.get('Data do preenchimento', ''))
+        if d is None:
+            continue
+        key = d.strftime('%Y-%m-%d')
+        entry = by_date_raw.setdefault(key, {'mqls': 0, 'produtos': {}})
+        entry['mqls'] += 1
+        prod = row.get('Produto indicado', '').strip() or 'Sem produto'
+        entry['produtos'][prod] = entry['produtos'].get(prod, 0) + 1
+
+    # Montar lista de datas ordenada com spend e CPL
+    by_date = []
+    for date_key in sorted(by_date_raw.keys(), reverse=True):
+        entry  = by_date_raw[date_key]
+        spend  = round(daily_spend.get(date_key, 0.0), 2)
+        mqls   = entry['mqls']
+        by_date.append({
+            'date':     date_key,
+            'mqls':     mqls,
+            'spend':    spend,
+            'cpl':      round(spend / mqls, 2) if mqls > 0 and spend > 0 else None,
+            'produtos': entry['produtos'],
+        })
+
+    # ── MQLs totais por Produto indicado ──────────────────────────────────────
+    by_produto = {}
+    for row in mqls_rows:
+        prod = row.get('Produto indicado', '').strip() or 'Sem produto'
+        by_produto[prod] = by_produto.get(prod, 0) + 1
+
     return {
-        'campaigns': result,
-        'organicos': organico_metrics,
-        'total_leads': len(leads_enriquecidos),
-        'total_mqls': len(mqls_rows),
-        'total_wons': len(wons_rows),
+        'campaigns':        result,
+        'organicos':        organico_metrics,
+        'total_leads':      len(leads_enriquecidos),
+        'total_mqls':       len(mqls_rows),
+        'total_wons':       len(wons_rows),
         'fat_total_sheets': round(fat_total_sheets, 2),
+        'by_date':          by_date,
+        'by_produto':       by_produto,
     }
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

@@ -339,10 +339,10 @@
         margin-top: 8px;
     }
 
-    /* ── Charts ── */
-    .charts-section {
-        display: none;
-        grid-template-columns: 1fr 1fr 1fr;
+    /* ── Main content grid: donut + tabela ── */
+    .crz-main-grid {
+        display: grid;
+        grid-template-columns: 280px 1fr;
         gap: 14px;
         margin-bottom: 14px;
     }
@@ -363,9 +363,79 @@
         margin-bottom: 12px;
     }
 
-    .chart-wrap {
-        position: relative;
-        height: 220px;
+    /* Tabela diária */
+    .day-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+    }
+
+    .day-table thead th {
+        position: sticky;
+        top: 0;
+        background: var(--surface);
+        color: var(--text-muted);
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+        padding: 8px 12px;
+        text-align: right;
+        border-bottom: 1px solid var(--border);
+        white-space: nowrap;
+    }
+
+    .day-table thead th:first-child {
+        text-align: left;
+    }
+
+    .day-table tbody tr {
+        border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+        transition: background 0.15s;
+    }
+
+    .day-table tbody tr:hover {
+        background: rgba(255, 255, 255, 0.03);
+    }
+
+    .day-table tbody td {
+        padding: 7px 12px;
+        text-align: right;
+        color: var(--text-main);
+    }
+
+    .day-table tbody td:first-child {
+        text-align: left;
+        font-family: monospace;
+        color: var(--text-muted);
+    }
+
+    .day-table .pct {
+        color: var(--text-muted);
+        font-size: 11px;
+    }
+
+    /* Legenda do donut */
+    .donut-legend-item {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        font-size: 12px;
+        color: var(--text-main);
+        margin-bottom: 6px;
+    }
+
+    .donut-legend-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        flex-shrink: 0;
+    }
+
+    .donut-legend-pct {
+        margin-left: auto;
+        color: var(--text-muted);
+        font-size: 11px;
     }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -416,21 +486,43 @@
     </div>
 </div>
 
-<!-- Charts -->
-<div class="charts-section" id="charts-section">
-    <div class="chart-card">
-        <div class="chart-card-title">💸 Spend por Campanha</div>
-        <div class="chart-wrap"><canvas id="chart-spend"></canvas></div>
+<!-- Donut + Tabela Diária -->
+<div class="crz-main-grid" id="crz-main-grid" style="display:none;">
+
+    <!-- Donut: MQLs por Produto -->
+    <div class="chart-card" style="display:flex;flex-direction:column;align-items:center;">
+        <div class="chart-card-title" style="align-self:flex-start;">🎯 MQLs por Produto</div>
+        <div style="position:relative;height:200px;width:200px;margin:8px auto;">
+            <canvas id="chart-donut"></canvas>
+        </div>
+        <div id="donut-legend" style="width:100%;margin-top:8px;"></div>
     </div>
-    <div class="chart-card">
-        <div class="chart-card-title">🧮 CPL por Campanha</div>
-        <div class="chart-wrap"><canvas id="chart-leads"></canvas></div>
+
+    <!-- Tabela Diária -->
+    <div class="chart-card" style="overflow:hidden;padding:0;">
+        <div class="chart-card-title" style="padding:14px 16px 10px;border-bottom:1px solid var(--border);">
+            📅 Dimensão por Dia
+        </div>
+        <div style="overflow-x:auto;overflow-y:auto;max-height:320px;">
+            <table class="day-table" id="day-table">
+                <thead>
+                    <tr>
+                        <th>Data</th>
+                        <th>MQLs</th>
+                        <th>Negocios Creator</th>
+                        <th>%&nbsp;NC</th>
+                        <th>Vinci Track</th>
+                        <th>%&nbsp;VT</th>
+                        <th>Custo/MQL</th>
+                    </tr>
+                </thead>
+                <tbody id="day-tbody"></tbody>
+            </table>
+        </div>
     </div>
-    <div class="chart-card">
-        <div class="chart-card-title">📊 Faturamento por Campanha</div>
-        <div class="chart-wrap"><canvas id="chart-cpl"></canvas></div>
-    </div>
+
 </div>
+
 
 <!-- Loading / Error states -->
 <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius-md);">
@@ -590,87 +682,97 @@
         ads.forEach(row => row.style.display = isOpen ? '' : 'none');
     }
 
-    // Chart.js instances (para destruir e recriar ao atualizar)
-    let chartSpend = null, chartLeads = null, chartCpl = null;
+    // ── Paleta de cores para o donut ──────────────────────────────────────────
+    const DONUT_COLORS = [
+        '#00f2ff', '#8b5cf6', '#f59e0b', '#10b981', '#ef4444',
+        '#3b82f6', '#ec4899', '#f97316', '#a3e635', '#06b6d4',
+    ];
 
-    const CHART_DEFAULTS = {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-            legend: { display: false },
-            tooltip: {
-                backgroundColor: '#1a1a1f',
-                borderColor: '#2d2d30',
-                borderWidth: 1,
-                titleColor: '#a0a0b0',
-                bodyColor: '#f0f0f5',
-                padding: 10,
-            }
-        },
-        scales: {
-            x: {
-                ticks: { color: '#5a5a6e', font: { size: 10, family: 'Lexend' }, maxRotation: 35 },
-                grid: { color: 'rgba(255,255,255,0.04)' }
-            },
-            y: {
-                ticks: { color: '#5a5a6e', font: { size: 10, family: 'Lexend' } },
-                grid: { color: 'rgba(255,255,255,0.04)' },
-                beginAtZero: true
-            }
-        }
-    };
+    let chartDonut = null;
 
-    function shortName(name, max = 22) {
-        return name && name.length > max ? name.slice(0, max) + '…' : (name || '?');
-    }
+    function renderDonut(byProduto) {
+        const labels = Object.keys(byProduto);
+        const vals = Object.values(byProduto);
+        const total = vals.reduce((a, b) => a + b, 0);
+        const colors = labels.map((_, i) => DONUT_COLORS[i % DONUT_COLORS.length]);
 
-    function renderCharts(data) {
-        const camps = (data.campaigns || []).slice(0, 12); // máx 12 campanhas
-        const labels = camps.map(c => shortName(c.campaign_name));
-        const spends = camps.map(c => c.spend || 0);
-        const leads = camps.map(c => c.leads_total || 0);
-        const cpls = camps.map(c => c.cpl != null ? c.cpl : 0);
+        if (chartDonut) chartDonut.destroy();
 
-        // Cores degradê por barra
-        const colorCyan = 'rgba(0, 242, 255, 0.75)';
-        const colorPurple = 'rgba(139, 92, 246, 0.75)';
-        const colorAmber = 'rgba(245, 158, 11, 0.75)';
-
-        const mkChart = (id, label, vals, color, fmt) => {
-            const ctx = document.getElementById(id).getContext('2d');
-            return new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels,
-                    datasets: [{
-                        label, data: vals, backgroundColor: color,
-                        borderRadius: 4, borderSkipped: false
-                    }]
-                },
-                options: {
-                    ...CHART_DEFAULTS,
-                    plugins: {
-                        ...CHART_DEFAULTS.plugins,
-                        tooltip: {
-                            ...CHART_DEFAULTS.plugins.tooltip,
-                            callbacks: { label: ctx => fmt(ctx.parsed.y) }
+        const ctx = document.getElementById('chart-donut').getContext('2d');
+        chartDonut = new Chart(ctx, {
+            type: 'doughnut',
+            data: { labels, datasets: [{ data: vals, backgroundColor: colors, borderWidth: 0, hoverOffset: 6 }] },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '68%',
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: '#1a1a1f',
+                        borderColor: '#2d2d30',
+                        borderWidth: 1,
+                        callbacks: {
+                            label: ctx => {
+                                const pct = total > 0 ? ((ctx.parsed / total) * 100).toFixed(1) : 0;
+                                return ` ${ctx.parsed} MQLs (${pct}%)`;
+                            }
                         }
                     }
                 }
-            });
-        };
+            }
+        });
 
-        if (chartSpend) chartSpend.destroy();
-        if (chartLeads) chartLeads.destroy();
-        if (chartCpl) chartCpl.destroy();
-
-        chartSpend = mkChart('chart-spend', 'Spend', spends, colorCyan, v => fmtR(v));
-        chartLeads = mkChart('chart-leads', 'CPL', cpls, colorPurple, v => fmtR(v));
-        chartCpl = mkChart('chart-cpl', 'Faturamento',
-            camps.map(c => c.fat_total || 0), colorAmber, v => fmtR(v));
-
-        document.getElementById('charts-section').style.display = 'grid';
+        // Legenda customizada
+        const legend = document.getElementById('donut-legend');
+        legend.innerHTML = labels.map((lbl, i) => {
+            const pct = total > 0 ? ((vals[i] / total) * 100).toFixed(1) : 0;
+            return `<div class="donut-legend-item">
+                <span class="donut-legend-dot" style="background:${colors[i]}"></span>
+                <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${lbl}</span>
+                <span class="donut-legend-pct">${vals[i]} · ${pct}%</span>
+            </div>`;
+        }).join('');
     }
+
+    // Nomes canônicos dos produtos (case-insensitive contains)
+    function matchProd(produtos, keyword) {
+        for (const [k, v] of Object.entries(produtos)) {
+            if (k.toLowerCase().includes(keyword)) return v;
+        }
+        return 0;
+    }
+
+    function renderDayTable(byDate) {
+        const tbody = document.getElementById('day-tbody');
+        if (!byDate || byDate.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--text-muted);">Sem dados para o período.</td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = byDate.map(row => {
+            const nc = matchProd(row.produtos, 'negocio');
+            const vt = matchProd(row.produtos, 'vinci');
+            const mqls = row.mqls || 0;
+            const pctNc = mqls > 0 ? ((nc / mqls) * 100).toFixed(1) : '—';
+            const pctVt = mqls > 0 ? ((vt / mqls) * 100).toFixed(1) : '—';
+            const cpl = row.cpl != null ? fmtR(row.cpl) : '<span style="color:var(--text-muted)">—</span>';
+            // formatar data DD/MM/YYYY
+            const [y, m, d] = row.date.split('-');
+            const dateStr = `${d}/${m}/${y}`;
+            return `<tr>
+                <td>${dateStr}</td>
+                <td>${mqls}</td>
+                <td>${nc || '—'}</td>
+                <td class="pct">${nc && mqls > 0 ? pctNc + '%' : '—'}</td>
+                <td>${vt || '—'}</td>
+                <td class="pct">${vt && mqls > 0 ? pctVt + '%' : '—'}</td>
+                <td>${cpl}</td>
+            </tr>`;
+        }).join('');
+    }
+
+
 
     // KPIs usa total_mqls, total_wons e fat_total_sheets do Sheets
     function updateKPIs(data) {
@@ -700,7 +802,7 @@
         document.getElementById('crz-error').style.display = 'none';
         document.getElementById('kpi-bar').style.display = 'none';
         document.getElementById('crz-meta').style.display = 'none';
-        document.getElementById('charts-section').style.display = 'none';
+        document.getElementById('crz-main-grid').style.display = 'none';
 
         try {
             const resp = await fetch(`/api/cruzamento/data?date_preset=${currentPreset}`);
@@ -709,7 +811,9 @@
             if (!json.success) throw new Error(json.error || 'Erro desconhecido');
 
             updateKPIs(json.data);
-            renderCharts(json.data);
+            renderDonut(json.data.by_produto || {});
+            renderDayTable(json.data.by_date || []);
+            document.getElementById('crz-main-grid').style.display = 'grid';
 
             document.getElementById('crz-loading').style.display = 'none';
 
