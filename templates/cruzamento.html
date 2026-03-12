@@ -419,6 +419,28 @@
         color: var(--text-muted);
     }
 
+    .day-table tfoot {
+        position: sticky;
+        bottom: 0;
+        background: var(--surface);
+        font-weight: bold;
+        border-top: 1px solid var(--border);
+    }
+
+    .day-table tfoot td {
+        padding: 8px 12px;
+        text-align: right;
+        color: var(--text-main);
+        font-size: 11px;
+    }
+
+    .day-table tfoot td:first-child {
+        text-align: left;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
     .day-table .pct {
         color: var(--text-muted);
         font-size: 11px;
@@ -526,6 +548,7 @@
                     </tr>
                 </thead>
                 <tbody id="day-tbody"></tbody>
+                <tfoot id="day-tfoot"></tfoot>
             </table>
         </div>
     </div>
@@ -558,6 +581,7 @@
                 </tr>
             </thead>
             <tbody id="ads-tbody"></tbody>
+            <tfoot id="ads-tfoot"></tfoot>
         </table>
     </div>
 </div>
@@ -817,6 +841,29 @@
                 <td>${cpl}</td>
             </tr>`;
         }).join('');
+
+        // Resumo (TOTAIS) da Tabela Diária
+        let totMqls = 0, totNc = 0, totVt = 0, totSpend = 0;
+        byDate.forEach(row => {
+            totMqls += row.mqls || 0;
+            totNc += matchProd(row.produtos, 'negocio');
+            totVt += matchProd(row.produtos, 'vinci');
+            totSpend += row.spend || 0;
+        });
+
+        const pctNcTot = totMqls > 0 ? ((totNc / totMqls) * 100).toFixed(1) + '%' : '—';
+        const pctVtTot = totMqls > 0 ? ((totVt / totMqls) * 100).toFixed(1) + '%' : '—';
+        const cplTotObj = totMqls > 0 ? fmtR(totSpend / totMqls) : '—';
+
+        document.getElementById('day-tfoot').innerHTML = `<tr>
+            <td>TOTAL</td>
+            <td>${totMqls}</td>
+            <td>${totNc || '—'}</td>
+            <td class="pct">${pctNcTot}</td>
+            <td>${totVt || '—'}</td>
+            <td class="pct">${pctVtTot}</td>
+            <td>${cplTotObj}</td>
+        </tr>`;
     }
 
     let currentAdsData = [];
@@ -909,6 +956,28 @@
                 <td>${custoNcStr}</td>
             </tr>`;
         }).join('');
+
+        // Resumo (TOTAIS) da Tabela Ads
+        let totSpendAds = 0, totMqlsAds = 0, totNcAds = 0;
+        currentAdsData.forEach(ad => {
+            totSpendAds += ad.spend || 0;
+            totMqlsAds += ad.mqls || 0;
+            totNcAds += ad.nc || 0;
+        });
+
+        const cplTotAds = totMqlsAds > 0 ? fmtR(totSpendAds / totMqlsAds) : '—';
+        const pctNcTotAds = totMqlsAds > 0 ? ((totNcAds / totMqlsAds) * 100).toFixed(1) + '%' : '—';
+        const custoNcTotAds = totNcAds > 0 ? fmtR(totSpendAds / totNcAds) : '—';
+
+        document.getElementById('ads-tfoot').innerHTML = `<tr>
+            <td>TOTAL (${currentAdsData.length} anúncio${currentAdsData.length !== 1 ? 's' : ''})</td>
+            <td style="color:var(--text-main); font-weight:600;">${fmtR(totSpendAds)}</td>
+            <td><b>${totMqlsAds}</b></td>
+            <td>${cplTotAds}</td>
+            <td style="color:var(--accent); font-weight:600;">${totNcAds || '—'}</td>
+            <td class="pct">${pctNcTotAds}</td>
+            <td>${custoNcTotAds}</td>
+        </tr>`;
     }
 
 
