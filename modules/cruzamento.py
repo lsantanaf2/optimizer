@@ -400,12 +400,16 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows):
     organicos = [l for l in leads_enriquecidos if l['deal_id'] not in matched_deal_ids]
     organico_metrics = _calc_organic_metrics(organicos)
 
+    # Somar faturamento total do Sheets (Wons filtradas)
+    fat_total_sheets = sum(_parse_valor(row.get('Valor', 0)) for row in wons_rows)
+
     return {
         'campaigns': result,
         'organicos': organico_metrics,
         'total_leads': len(leads_enriquecidos),
         'total_mqls': len(mqls_rows),
         'total_wons': len(wons_rows),
+        'fat_total_sheets': round(fat_total_sheets, 2),
     }
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

@@ -391,20 +391,28 @@
 <!-- KPI Summary Bar -->
 <div class="kpi-bar" id="kpi-bar" style="display:none;">
     <div class="kpi-card">
-        <div class="kpi-label">💸 Total Investido (FB)</div>
+        <div class="kpi-label">💸 Investido (FB)</div>
         <div class="kpi-value accent" id="kpi-spend">—</div>
     </div>
     <div class="kpi-card">
-        <div class="kpi-label">🎯 Total Leads (Sheets)</div>
+        <div class="kpi-label">🎯 MQLs</div>
         <div class="kpi-value" id="kpi-leads">—</div>
-    </div>
-    <div class="kpi-card">
-        <div class="kpi-label">✅ Total Vendas (Sheets)</div>
-        <div class="kpi-value" id="kpi-vendas">—</div>
     </div>
     <div class="kpi-card">
         <div class="kpi-label">🧮 CPL Médio</div>
         <div class="kpi-value" id="kpi-cpl">—</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-label">✅ Vendas</div>
+        <div class="kpi-value" id="kpi-vendas">—</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-label">💰 CAC</div>
+        <div class="kpi-value" id="kpi-cac">—</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-label">📊 Faturamento</div>
+        <div class="kpi-value positive" id="kpi-fat">—</div>
     </div>
 </div>
 
@@ -415,11 +423,11 @@
         <div class="chart-wrap"><canvas id="chart-spend"></canvas></div>
     </div>
     <div class="chart-card">
-        <div class="chart-card-title">🎯 Leads (MQLs) por Campanha</div>
+        <div class="chart-card-title">🧮 CPL por Campanha</div>
         <div class="chart-wrap"><canvas id="chart-leads"></canvas></div>
     </div>
     <div class="chart-card">
-        <div class="chart-card-title">🧮 Custo por Lead (CPL) por Campanha</div>
+        <div class="chart-card-title">📊 Faturamento por Campanha</div>
         <div class="chart-wrap"><canvas id="chart-cpl"></canvas></div>
     </div>
 </div>
@@ -657,29 +665,32 @@
         if (chartCpl) chartCpl.destroy();
 
         chartSpend = mkChart('chart-spend', 'Spend', spends, colorCyan, v => fmtR(v));
-        chartLeads = mkChart('chart-leads', 'Leads', leads, colorPurple, v => v + ' leads');
-        chartCpl = mkChart('chart-cpl', 'CPL', cpls, colorAmber, v => fmtR(v));
+        chartLeads = mkChart('chart-leads', 'CPL', cpls, colorPurple, v => fmtR(v));
+        chartCpl = mkChart('chart-cpl', 'Faturamento',
+            camps.map(c => c.fat_total || 0), colorAmber, v => fmtR(v));
 
         document.getElementById('charts-section').style.display = 'grid';
     }
 
-    // KPIs: usa total_mqls e total_wons do Sheets diretamente (não do cruzamento FB)
+    // KPIs usa total_mqls, total_wons e fat_total_sheets do Sheets
     function updateKPIs(data) {
-        // Spend: soma das campanhas do FB
         let totSpend = 0;
         for (const camp of (data.campaigns || [])) {
             totSpend += camp.spend || 0;
         }
 
-        // Leads e Vendas: total REAL do Sheets (independe de match com FB)
         const totLeads = data.total_mqls || 0;
         const totVendas = data.total_wons || 0;
+        const totFat = data.fat_total_sheets || 0;
         const totCPL = totLeads > 0 ? totSpend / totLeads : null;
+        const totCAC = totVendas > 0 ? totSpend / totVendas : null;
 
         document.getElementById('kpi-spend').textContent = fmtR(totSpend);
         document.getElementById('kpi-leads').textContent = totLeads || '—';
         document.getElementById('kpi-vendas').textContent = totVendas || '—';
         document.getElementById('kpi-cpl').textContent = totCPL != null ? fmtR(totCPL) : '—';
+        document.getElementById('kpi-cac').textContent = totCAC != null ? fmtR(totCAC) : '—';
+        document.getElementById('kpi-fat').textContent = fmtR(totFat);
         document.getElementById('kpi-bar').style.display = '';
     }
 
