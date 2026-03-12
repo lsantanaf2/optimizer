@@ -211,7 +211,7 @@ def fetch_fb_insights(account_id, access_token, date_preset='last_30d', since=No
     params = {
         'access_token': access_token,
         'level': 'ad',
-        'fields': 'campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions,clicks,date_start,ad_status',
+        'fields': 'campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions,clicks,date_start',
         'limit': 500,
         'time_increment': 1,  # dados diarios
     }
@@ -240,7 +240,6 @@ def fetch_fb_insights(account_id, access_token, date_preset='last_30d', since=No
                 'impressions':   int(item.get('impressions', 0) or 0),
                 'clicks':        int(item.get('clicks', 0) or 0),
                 'date_start':    item.get('date_start', ''),
-                'ad_status':     item.get('ad_status', 'UNKNOWN'),
             })
 
         # Paginação cursor
@@ -250,6 +249,23 @@ def fetch_fb_insights(account_id, access_token, date_preset='last_30d', since=No
         params = None  # next_url já tem params embutidos
 
     return ads
+
+def fetch_ads_status(account_id, access_token):
+    """Busca o status efetivo (ACTIVE, PAUSED, etc) de todos os ads da conta."""
+    base_url = f"https://graph.facebook.com/v22.0/{account_id}/ads"
+    params = {'access_token': access_token, 'fields': 'id,effective_status', 'limit': 1000}
+    status_map = {}
+    url = base_url
+    while url:
+        resp = requests.get(url, params=params if url == base_url else None, timeout=30)
+        if resp.status_code != 200:
+            break
+        body = resp.json()
+        for item in body.get('data', []):
+            status_map[item['id']] = item.get('effective_status', 'UNKNOWN')
+        url = body.get('paging', {}).get('next')
+        params = None
+    return status_map
 
 # ── Processamento: Duplo Join em Memória ──────────────────────────────────────
 def processar_cruzamento(fb_ads, mqls_rows, wons_rows):
@@ -571,13 +587,19 @@ def api_cruzamento_data():
 
     try:
         t0 = time.time()
-        # Fetch paralelo: FB + Sheets simultaneamente
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        # Fetch paralelo: FB + Sheets simultaneamente + Status dos Ads
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
             fb_future     = executor.submit(fetch_fb_insights, AD_ACCOUNT_ID, token, date_preset, since, until)
             sheets_future = executor.submit(fetch_sheets_data, SPREADSHEET_ID)
+            status_future = executor.submit(fetch_ads_status, AD_ACCOUNT_ID, token)
 
-            fb_ads               = fb_future.result()
+            fb_ads                       = fb_future.result()
             mqls_rows_all, wons_rows_all = sheets_future.result()
+            status_map                   = status_future.result()
+
+        # Injeta o status real nos ads de performance
+        for ad in fb_ads:
+            ad['ad_status'] = status_map.get(ad.get('ad_id'), 'UNKNOWN')
 
         # ── Aplicar filtro de data nas linhas do Sheets ─────────────────────────────────────
         since_d, until_d = preset_to_dates(date_preset, since, until)
