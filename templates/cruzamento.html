@@ -391,24 +391,16 @@
 <!-- KPI Summary Bar -->
 <div class="kpi-bar" id="kpi-bar" style="display:none;">
     <div class="kpi-card">
-        <div class="kpi-label">💸 Total Spend</div>
+        <div class="kpi-label">💸 Total Investido (FB)</div>
         <div class="kpi-value accent" id="kpi-spend">—</div>
     </div>
     <div class="kpi-card">
-        <div class="kpi-label">🎯 Total Leads</div>
+        <div class="kpi-label">🎯 Total Leads (Sheets)</div>
         <div class="kpi-value" id="kpi-leads">—</div>
     </div>
     <div class="kpi-card">
-        <div class="kpi-label">✅ Vendas</div>
+        <div class="kpi-label">✅ Total Vendas (Sheets)</div>
         <div class="kpi-value" id="kpi-vendas">—</div>
-    </div>
-    <div class="kpi-card">
-        <div class="kpi-label">💰 Faturamento</div>
-        <div class="kpi-value" id="kpi-fat">—</div>
-    </div>
-    <div class="kpi-card">
-        <div class="kpi-label">📈 Lucro Geral</div>
-        <div class="kpi-value" id="kpi-lucro">—</div>
     </div>
     <div class="kpi-card">
         <div class="kpi-label">🧮 CPL Médio</div>
@@ -432,68 +424,22 @@
     </div>
 </div>
 
-<!-- Table -->
-<div class="crz-table-wrap">
-    <!-- Loading state -->
+<!-- Loading / Error states -->
+<div style="background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius-md);">
     <div class="crz-state" id="crz-loading">
         <div class="crz-spinner"></div>
         Buscando dados do Facebook e Google Sheets em tempo real...
     </div>
-
-    <!-- Error state -->
     <div class="crz-state" id="crz-error" style="display:none;">
         <div style="font-size:32px;margin-bottom:12px;">⚠️</div>
         <div id="crz-error-msg">Erro ao carregar dados.</div>
     </div>
-
-    <!-- Table -->
-    <table class="crz-table" id="crz-table" style="display:none;">
-        <thead>
-            <tr>
-                <th rowspan="2">Nome / Entidade</th>
-                <!-- FB -->
-                <th class="group-header" colspan="3">📘 FACEBOOK ADS</th>
-                <!-- Leads -->
-                <th class="group-header" colspan="4">🎯 LEADS (MQLs)</th>
-                <!-- Vendas -->
-                <th class="group-header" colspan="3">✅ VENDAS (Wons)</th>
-                <!-- Faturamento -->
-                <th class="group-header" colspan="3">💰 FATURAMENTO</th>
-                <!-- Resultados -->
-                <th class="group-header" colspan="3">📊 RESULTADO</th>
-            </tr>
-            <tr>
-                <!-- FB -->
-                <th>Spend</th>
-                <th>Impressões</th>
-                <th>Cliques</th>
-                <!-- Leads -->
-                <th>Total</th>
-                <th>Prod. A</th>
-                <th>Prod. B</th>
-                <th>% A/B</th>
-                <!-- Vendas -->
-                <th>Vnd. A</th>
-                <th>Vnd. B</th>
-                <th>Total</th>
-                <!-- Fat -->
-                <th>Fat. A</th>
-                <th>Fat. B</th>
-                <th>Geral</th>
-                <!-- Resultado -->
-                <th>Lucro</th>
-                <th>CPL Geral</th>
-                <th>CPL A / B</th>
-            </tr>
-        </thead>
-        <tbody id="crz-tbody"></tbody>
-    </table>
 </div>
 
 <div class="crz-meta" id="crz-meta" style="display:none;"></div>
 
 <script>
-    let currentPreset = 'last_7_d';
+    let currentPreset = 'last_7_days';
 
     function setPeriod(btn, preset) {
         document.querySelectorAll('.period-pill').forEach(p => p.classList.remove('active'));
@@ -717,26 +663,22 @@
         document.getElementById('charts-section').style.display = 'grid';
     }
 
+    // KPIs: usa total_mqls e total_wons do Sheets diretamente (não do cruzamento FB)
     function updateKPIs(data) {
-        let totSpend = 0, totLeads = 0, totVendas = 0, totFat = 0;
+        // Spend: soma das campanhas do FB
+        let totSpend = 0;
         for (const camp of (data.campaigns || [])) {
             totSpend += camp.spend || 0;
-            totLeads += camp.leads_total || 0;
-            totVendas += (camp.vendas_a || 0) + (camp.vendas_b || 0);
-            totFat += camp.fat_total || 0;
         }
-        const totLucro = totFat - totSpend;
+
+        // Leads e Vendas: total REAL do Sheets (independe de match com FB)
+        const totLeads = data.total_mqls || 0;
+        const totVendas = data.total_wons || 0;
         const totCPL = totLeads > 0 ? totSpend / totLeads : null;
 
         document.getElementById('kpi-spend').textContent = fmtR(totSpend);
         document.getElementById('kpi-leads').textContent = totLeads || '—';
         document.getElementById('kpi-vendas').textContent = totVendas || '—';
-        document.getElementById('kpi-fat').textContent = fmtR(totFat);
-
-        const lucroEl = document.getElementById('kpi-lucro');
-        lucroEl.textContent = fmtR(totLucro);
-        lucroEl.className = 'kpi-value ' + lucroClass(totLucro);
-
         document.getElementById('kpi-cpl').textContent = totCPL != null ? fmtR(totCPL) : '—';
         document.getElementById('kpi-bar').style.display = '';
     }
@@ -755,12 +697,10 @@
 
             if (!json.success) throw new Error(json.error || 'Erro desconhecido');
 
-            buildTable(json.data);
             updateKPIs(json.data);
             renderCharts(json.data);
 
             document.getElementById('crz-loading').style.display = 'none';
-            document.getElementById('crz-table').style.display = '';
 
             const m = json.meta || {};
             document.getElementById('crz-meta').style.display = '';

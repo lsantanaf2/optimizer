@@ -462,7 +462,7 @@ def api_cruzamento_data():
     if not token:
         return jsonify({'success': False, 'error': 'Não autenticado'}), 401
 
-    date_preset = request.args.get('date_preset', 'last_30d')
+    date_preset = request.args.get('date_preset', 'last_7_days')
     since       = request.args.get('since')
     until       = request.args.get('until')
 
