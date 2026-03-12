@@ -389,6 +389,15 @@
         text-align: left;
     }
 
+    .day-table thead th.sortable {
+        cursor: pointer;
+        user-select: none;
+    }
+
+    .day-table thead th.sortable:hover {
+        background: rgba(255, 255, 255, 0.05);
+    }
+
     .day-table tbody tr {
         border-bottom: 1px solid rgba(255, 255, 255, 0.04);
         transition: background 0.15s;
@@ -533,13 +542,19 @@
         <table class="day-table" id="ads-table">
             <thead>
                 <tr>
-                    <th>Campanha / AdSet / Anúncio</th>
-                    <th style="text-align:right;">Investimento</th>
-                    <th style="text-align:right;">MQLs</th>
-                    <th style="text-align:right;">Custo / MQL</th>
-                    <th style="text-align:right;">NC</th>
-                    <th style="text-align:right;">%&nbsp;NC</th>
-                    <th style="text-align:right;">Custo / NC</th>
+                    <th class="sortable" onclick="sortAds('ad_name')">Anúncio <span id="sort-ind-ad_name"></span></th>
+                    <th class="sortable" style="text-align:right;" onclick="sortAds('spend')">Investimento <span
+                            id="sort-ind-spend">▼</span></th>
+                    <th class="sortable" style="text-align:right;" onclick="sortAds('mqls')">MQLs <span
+                            id="sort-ind-mqls"></span></th>
+                    <th class="sortable" style="text-align:right;" onclick="sortAds('cpl')">Custo / MQL <span
+                            id="sort-ind-cpl"></span></th>
+                    <th class="sortable" style="text-align:right;" onclick="sortAds('nc')">NC <span
+                            id="sort-ind-nc"></span></th>
+                    <th class="sortable" style="text-align:right;" onclick="sortAds('pct_nc')">%&nbsp;NC <span
+                            id="sort-ind-pct_nc"></span></th>
+                    <th class="sortable" style="text-align:right;" onclick="sortAds('custo_nc')">Custo / NC <span
+                            id="sort-ind-custo_nc"></span></th>
                 </tr>
             </thead>
             <tbody id="ads-tbody"></tbody>
@@ -804,59 +819,96 @@
         }).join('');
     }
 
+    let currentAdsData = [];
+    let currentSortCol = 'spend';
+    let currentSortDesc = true;
+
     function renderAdsTable(campaigns) {
         const adsContainer = document.getElementById('crz-ads-container');
-        const tbody = document.getElementById('ads-tbody');
         if (!campaigns || campaigns.length === 0) return;
 
-        // Extrair flat list de ads com spend ou mqls > 0
-        const flatAds = [];
+        // Extrair e consolidar ads pelo nome do criativo (ad_name)
+        const adsMap = {};
         for (const camp of campaigns) {
             for (const adset of (camp.adsets || [])) {
                 for (const ad of (adset.ads || [])) {
                     if (ad.spend > 0 || ad.leads_total > 0) {
-                        flatAds.push({
-                            ...ad,
-                            campaign_name: camp.campaign_name,
-                            adset_name: adset.adset_name
-                        });
+                        const name = ad.ad_name || 'Desconhecido';
+                        if (!adsMap[name]) {
+                            adsMap[name] = { ad_name: name, spend: 0, mqls: 0, nc: 0 };
+                        }
+                        adsMap[name].spend += (ad.spend || 0);
+                        adsMap[name].mqls += (ad.leads_total || 0);
+                        adsMap[name].nc += (ad.leads_a || 0);
                     }
                 }
             }
         }
 
-        // Ordenar por Spend (descending)
-        flatAds.sort((a, b) => b.spend - a.spend || (b.leads_total || 0) - (a.leads_total || 0));
-        const topAds = flatAds.slice(0, 100);
+        currentAdsData = Object.values(adsMap).map(ad => {
+            ad.cpl = ad.mqls > 0 ? ad.spend / ad.mqls : 0;
+            ad.pct_nc = ad.mqls > 0 ? (ad.nc / ad.mqls) * 100 : 0;
+            ad.custo_nc = ad.nc > 0 ? ad.spend / ad.nc : 0;
+            return ad;
+        });
+
+        renderAdsTableBody();
+        adsContainer.style.display = 'block';
+    }
+
+    function sortAds(col) {
+        if (currentSortCol === col) {
+            currentSortDesc = !currentSortDesc;
+        } else {
+            currentSortCol = col;
+            currentSortDesc = col !== 'ad_name'; // Alfabetico ASC por padrao, numéricos DESC
+        }
+        renderAdsTableBody();
+    }
+
+    function renderAdsTableBody() {
+        const tbody = document.getElementById('ads-tbody');
+
+        // Atualiza indicadores de ordenação
+        const cols = ['ad_name', 'spend', 'mqls', 'cpl', 'nc', 'pct_nc', 'custo_nc'];
+        cols.forEach(c => {
+            const ind = document.getElementById('sort-ind-' + c);
+            if (ind) ind.textContent = (c === currentSortCol) ? (currentSortDesc ? '▼' : '▲') : '';
+        });
+
+        const data = [...currentAdsData];
+        data.sort((a, b) => {
+            let valA = a[currentSortCol];
+            let valB = b[currentSortCol];
+
+            if (typeof valA === 'string') {
+                return currentSortDesc ? valB.localeCompare(valA) : valA.localeCompare(valB);
+            }
+            return currentSortDesc ? (valB - valA) : (valA - valB);
+        });
+
+        // Pega top 100
+        const topAds = data.slice(0, 100);
 
         tbody.innerHTML = topAds.map(ad => {
-            const spend = ad.spend || 0;
-            const mqls = ad.leads_total || 0;
-            const nc = ad.leads_a || 0; // _is_produto_a agora detecta Negocios Creator
-
-            const cpl = mqls > 0 ? fmtR(spend / mqls) : '<span style="color:var(--text-muted)">—</span>';
-            const pctNc = mqls > 0 ? ((nc / mqls) * 100).toFixed(1) + '%' : '—';
-            const custoNc = nc > 0 ? fmtR(spend / nc) : '<span style="color:var(--text-muted)">—</span>';
+            const cplStr = ad.mqls > 0 ? fmtR(ad.cpl) : '<span style="color:var(--text-muted)">—</span>';
+            const pctNcStr = ad.mqls > 0 ? ad.pct_nc.toFixed(1) + '%' : '—';
+            const custoNcStr = ad.nc > 0 ? fmtR(ad.custo_nc) : '<span style="color:var(--text-muted)">—</span>';
 
             return `<tr>
                 <td style="text-align:left; max-width: 300px;">
-                    <div style="font-size:10px;color:var(--text-muted);margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${ad.campaign_name} > ${ad.adset_name}">
-                        [${ad.campaign_name}] &rsaquo; [${ad.adset_name}]
-                    </div>
                     <div style="font-size:12px;color:var(--text-main);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:sans-serif;" title="${ad.ad_name}">
                         ${ad.ad_name}
                     </div>
                 </td>
-                <td style="color:var(--text-main); font-weight:600;">${fmtR(spend)}</td>
-                <td><b>${mqls}</b></td>
-                <td>${cpl}</td>
-                <td style="color:var(--accent); font-weight:600;">${nc || '—'}</td>
-                <td class="pct">${nc > 0 ? pctNc : '—'}</td>
-                <td>${custoNc}</td>
+                <td style="color:var(--text-main); font-weight:600;">${fmtR(ad.spend)}</td>
+                <td><b>${ad.mqls}</b></td>
+                <td>${cplStr}</td>
+                <td style="color:var(--accent); font-weight:600;">${ad.nc || '—'}</td>
+                <td class="pct">${ad.nc > 0 ? pctNcStr : '—'}</td>
+                <td>${custoNcStr}</td>
             </tr>`;
         }).join('');
-
-        adsContainer.style.display = 'block';
     }
 
 
