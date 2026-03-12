@@ -422,12 +422,13 @@
     .day-table tfoot {
         position: sticky;
         bottom: 0;
-        background: var(--surface);
         font-weight: bold;
-        border-top: 1px solid var(--border);
+        z-index: 10;
     }
 
     .day-table tfoot td {
+        background: var(--surface);
+        border-top: 1px solid var(--border);
         padding: 8px 12px;
         text-align: right;
         color: var(--text-main);
