@@ -735,10 +735,15 @@
         }).join('');
     }
 
+    // Remove acentos para comparação robusta (ex: 'negócios' → 'negocios')
+    function stripAccents(s) {
+        return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    }
+
     // Nomes canônicos dos produtos (case-insensitive contains)
     function matchProd(produtos, keyword) {
         for (const [k, v] of Object.entries(produtos)) {
-            if (k.toLowerCase().includes(keyword)) return v;
+            if (stripAccents(k.toLowerCase()).includes(keyword)) return v;
         }
         return 0;
     }
@@ -750,7 +755,9 @@
             return;
         }
 
-        tbody.innerHTML = byDate.map(row => {
+        // Ordem crescente por data (mais antigo primeiro)
+        const rows = byDate.slice().reverse();
+        tbody.innerHTML = rows.map(row => {
             const nc = matchProd(row.produtos, 'negocio');
             const vt = matchProd(row.produtos, 'vinci');
             const mqls = row.mqls || 0;
