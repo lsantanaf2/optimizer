@@ -687,9 +687,9 @@
         // Reset states
         document.getElementById('crz-loading').style.display = '';
         document.getElementById('crz-error').style.display = 'none';
-        document.getElementById('crz-table').style.display = 'none';
         document.getElementById('kpi-bar').style.display = 'none';
         document.getElementById('crz-meta').style.display = 'none';
+        document.getElementById('charts-section').style.display = 'none';
 
         try {
             const resp = await fetch(`/api/cruzamento/data?date_preset=${currentPreset}`);
