@@ -526,7 +526,13 @@
 
 <!-- Controls -->
 <div class="crz-controls">
-    <h2 class="crz-title">🔀 FB Ads × Google Sheets</h2>
+    <h2 class="crz-title">
+        {% if client_mode %}
+            🔀 Visualização do Cliente: {{ client_name }}
+        {% else %}
+            🔀 FB Ads × Google Sheets
+        {% endif %}
+    </h2>
     <div class="crz-right">
         <button class="btn-refresh" onclick="loadData()">🔄 Atualizar</button>
     </div>
@@ -535,11 +541,15 @@
 <!-- Period Selector -->
 <div class="period-bar">
     <span class="bar-label">Período:</span>
+    {% if not client_mode %}
     <button class="period-pill active" data-preset="last_7_d" onclick="setPeriod(this, 'last_7_d')">7 Dias</button>
     <button class="period-pill" data-preset="last_14_d" onclick="setPeriod(this, 'last_14_d')">14 Dias</button>
     <button class="period-pill" data-preset="last_30_d" onclick="setPeriod(this, 'last_30_d')">30 Dias</button>
-    <button class="period-pill" data-preset="this_month" onclick="setPeriod(this, 'this_month')">Mês Atual</button>
+    {% endif %}
+    <button class="period-pill {% if client_mode %}active{% endif %}" data-preset="this_month" onclick="{% if not client_mode %}setPeriod(this, 'this_month'){% endif %}">Mês Atual</button>
+    {% if not client_mode %}
     <button class="period-pill" data-preset="last_month" onclick="setPeriod(this, 'last_month')">Mês Anterior</button>
+    {% endif %}
 </div>
 
 <!-- KPI Summary Bar -->
@@ -739,7 +749,10 @@
 <div class="crz-meta" id="crz-meta" style="display:none;"></div>
 
 <script>
-    let currentPreset = 'last_7_days';
+    const IS_CLIENT = {{ 'true' if client_mode else 'false' }};
+    const LOCKED_PERIOD = '{{ locked_period if client_mode else "" }}';
+
+    let currentPreset = IS_CLIENT ? LOCKED_PERIOD : 'last_7_days';
 
     function setPeriod(btn, preset) {
         document.querySelectorAll('.period-pill').forEach(p => p.classList.remove('active'));

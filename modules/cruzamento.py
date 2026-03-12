@@ -686,7 +686,17 @@ def cruzamento_page():
     token = obter_token()
     if not token:
         return redirect(url_for('pagina_login'))
-    return render_template('cruzamento.html')
+    return render_template('cruzamento.html', client_mode=False)
+
+
+@cruzamento_bp.route('/cruzamento/vinci')
+def cruzamento_vinci_page():
+    from app import obter_token
+    # O token persistente do sistema já é retornado automaticamente
+    token = obter_token()
+    if not token:
+        return "Sistema não autenticado pelo administrador. Por favor, contate o suporte.", 403
+    return render_template('cruzamento.html', client_mode=True, client_name='Vinci', locked_period='this_month')
 
 
 @cruzamento_bp.route('/api/cruzamento/data')

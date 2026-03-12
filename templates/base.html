@@ -13,7 +13,7 @@
 
 <body>
     <div class="app-layout">
-        <aside class="sidebar">
+        <aside class="sidebar" {% if client_mode %}style="display:none;"{% endif %}>
             <div class="sidebar-logo">
                 <span class="lightning-icon">⚡</span>
             </div>
@@ -53,16 +53,16 @@
             </div>
         </aside>
 
-        <main class="main-content">
+        <main class="main-content" {% if client_mode %}style="margin-left:0;"{% endif %}>
             <div class="topbar">
                 <div style="display: flex; align-items: center; gap: 20px;">
-                    <h1>⚡ OPTIMIZER <span class="version-tag">{{ version }}</span></h1>
+                    <h1 {% if client_mode %}style="display:none;"{% endif %}>⚡ OPTIMIZER <span class="version-tag">{{ version }}</span></h1>
                     <div class="breadcrumb">
                         {% block breadcrumb %}{% endblock %}
                     </div>
                 </div>
 
-                {% if session.get('account_id') %}
+                {% if session.get('account_id') and not client_mode %}
                 <div class="topbar-account-selector"
                     style="display: flex; align-items: center; background: var(--bg-deep); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 4px 12px; font-size: 13px;">
                     <span
