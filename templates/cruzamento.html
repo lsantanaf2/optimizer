@@ -624,7 +624,7 @@
         <table class="day-table" id="ads-table">
             <thead>
                 <tr>
-                    <th class="sortable" onclick="sortAds('ad_name')" style="width: 100%;">Anúncio <span id="sort-ind-ad_name"></span></th>
+                    <th class="sortable" onclick="sortAds('ad_name')">Anúncio <span id="sort-ind-ad_name"></span></th>
                     <th class="sortable" style="text-align:right;" onclick="sortAds('spend')">Investimento <span
                             id="sort-ind-spend">▼</span></th>
                     <th class="sortable" style="text-align:right;" onclick="sortAds('mqls')">MQLs <span
@@ -662,7 +662,7 @@
         <table class="day-table" id="adsets-table">
             <thead>
                 <tr>
-                    <th class="sortable" onclick="sortAdSets('adset_name')" style="width: 100%;">Conjunto <span id="sort-ind-set-adset_name"></span></th>
+                    <th class="sortable" onclick="sortAdSets('adset_name')">Conjunto <span id="sort-ind-set-adset_name"></span></th>
                     <th class="sortable" style="text-align:right;" onclick="sortAdSets('spend')">Investimento <span
                             id="sort-ind-set-spend">▼</span></th>
                     <th class="sortable" style="text-align:right;" onclick="sortAdSets('mqls')">MQLs <span
@@ -700,7 +700,7 @@
         <table class="day-table" id="campaigns-table">
             <thead>
                 <tr>
-                    <th class="sortable" onclick="sortCampaigns('campaign_name')" style="width: 100%;">Campanha <span id="sort-ind-camp-campaign_name"></span></th>
+                    <th class="sortable" onclick="sortCampaigns('campaign_name')">Campanha <span id="sort-ind-camp-campaign_name"></span></th>
                     <th class="sortable" style="text-align:right;" onclick="sortCampaigns('spend')">Investimento <span
                             id="sort-ind-camp-spend">▼</span></th>
                     <th class="sortable" style="text-align:right;" onclick="sortCampaigns('mqls')">MQLs <span
@@ -1063,7 +1063,7 @@
             const custoNcStr = ad.nc > 0 ? fmtR(ad.custo_nc) : '<span style="color:var(--text-muted)">—</span>';
 
             return `<tr>
-                <td style="text-align:left; max-width: 400px; width: 100%;">
+                <td style="text-align:left; max-width: 300px;">
                     <div style="font-size:12px;color:var(--text-main);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:sans-serif;" title="${ad.ad_name}">
                         ${ad.ad_name}
                     </div>
@@ -1162,7 +1162,7 @@
             const custoNcStr = adset.nc > 0 ? fmtR(adset.custo_nc) : '<span style="color:var(--text-muted)">—</span>';
 
             return `<tr>
-                <td style="text-align:left; max-width: 400px; width: 100%;">
+                <td style="text-align:left; max-width: 300px;">
                     <div style="font-size:12px;color:var(--text-main);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:sans-serif;" title="${adset.adset_name}">
                         ${adset.adset_name}
                     </div>
@@ -1255,7 +1255,7 @@
             const custoNcStr = camp.nc > 0 ? fmtR(camp.custo_nc) : '<span style="color:var(--text-muted)">—</span>';
 
             return `<tr>
-                <td style="text-align:left; max-width: 400px; width: 100%;">
+                <td style="text-align:left; max-width: 300px;">
                     <div style="font-size:12px;color:var(--text-main);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:sans-serif;" title="${camp.campaign_name}">
                         ${camp.campaign_name}
                     </div>
