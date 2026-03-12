@@ -457,13 +457,12 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def _is_produto_a(produto_str):
-    """Determina se o produto é A (True) ou B (False)."""
-    s = produto_str.lower()
-    # Heurística flexível: se contiver 'a' como palavra ou 'produto a'
-    # Ajuste conforme os nomes reais dos seus produtos
-    if 'produto a' in s or ' a ' in s or s.endswith(' a') or s.startswith('a '):
-        return True
-    return False
+    """Determina se o produto é A (Negócios Creators) ou B (Outros)."""
+    if not produto_str:
+        return False
+    import unicodedata
+    s = ''.join(c for c in unicodedata.normalize('NFD', str(produto_str)) if unicodedata.category(c) != 'Mn')
+    return 'negocio' in s.lower()
 
 def _parse_valor(v):
     """Converte string de valor para float (trata R$ e vírgulas)."""

@@ -523,6 +523,31 @@
 
 </div>
 
+<!-- Ads Consolidados -->
+<div class="chart-card crz-ads-container" id="crz-ads-container"
+    style="display:none; margin-bottom: 14px; overflow:hidden; padding:0;">
+    <div class="chart-card-title" style="padding:14px 16px 10px; border-bottom:1px solid var(--border);">
+        📈 MQLs e Custos por Anúncio (Top 100 Investimentos)
+    </div>
+    <div style="overflow-x:auto; overflow-y:auto; max-height:500px;">
+        <table class="day-table" id="ads-table">
+            <thead>
+                <tr>
+                    <th>Campanha / AdSet / Anúncio</th>
+                    <th style="text-align:right;">Investimento</th>
+                    <th style="text-align:right;">MQLs</th>
+                    <th style="text-align:right;">Custo / MQL</th>
+                    <th style="text-align:right;">NC</th>
+                    <th style="text-align:right;">%&nbsp;NC</th>
+                    <th style="text-align:right;">Custo / NC</th>
+                </tr>
+            </thead>
+            <tbody id="ads-tbody"></tbody>
+        </table>
+    </div>
+</div>
+
+
 
 <!-- Loading / Error states -->
 <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius-md);">
@@ -779,6 +804,60 @@
         }).join('');
     }
 
+    function renderAdsTable(campaigns) {
+        const adsContainer = document.getElementById('crz-ads-container');
+        const tbody = document.getElementById('ads-tbody');
+        if (!campaigns || campaigns.length === 0) return;
+
+        // Extrair flat list de ads com spend ou mqls > 0
+        const flatAds = [];
+        for (const camp of campaigns) {
+            for (const adset of (camp.adsets || [])) {
+                for (const ad of (adset.ads || [])) {
+                    if (ad.spend > 0 || ad.leads_total > 0) {
+                        flatAds.push({
+                            ...ad,
+                            campaign_name: camp.campaign_name,
+                            adset_name: adset.adset_name
+                        });
+                    }
+                }
+            }
+        }
+
+        // Ordenar por Spend (descending)
+        flatAds.sort((a, b) => b.spend - a.spend || (b.leads_total || 0) - (a.leads_total || 0));
+        const topAds = flatAds.slice(0, 100);
+
+        tbody.innerHTML = topAds.map(ad => {
+            const spend = ad.spend || 0;
+            const mqls = ad.leads_total || 0;
+            const nc = ad.leads_a || 0; // _is_produto_a agora detecta Negocios Creator
+
+            const cpl = mqls > 0 ? fmtR(spend / mqls) : '<span style="color:var(--text-muted)">—</span>';
+            const pctNc = mqls > 0 ? ((nc / mqls) * 100).toFixed(1) + '%' : '—';
+            const custoNc = nc > 0 ? fmtR(spend / nc) : '<span style="color:var(--text-muted)">—</span>';
+
+            return `<tr>
+                <td style="text-align:left; max-width: 300px;">
+                    <div style="font-size:10px;color:var(--text-muted);margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${ad.campaign_name} > ${ad.adset_name}">
+                        [${ad.campaign_name}] &rsaquo; [${ad.adset_name}]
+                    </div>
+                    <div style="font-size:12px;color:var(--text-main);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:sans-serif;" title="${ad.ad_name}">
+                        ${ad.ad_name}
+                    </div>
+                </td>
+                <td style="color:var(--text-main); font-weight:600;">${fmtR(spend)}</td>
+                <td><b>${mqls}</b></td>
+                <td>${cpl}</td>
+                <td style="color:var(--accent); font-weight:600;">${nc || '—'}</td>
+                <td class="pct">${nc > 0 ? pctNc : '—'}</td>
+                <td>${custoNc}</td>
+            </tr>`;
+        }).join('');
+
+        adsContainer.style.display = 'block';
+    }
 
 
     // KPIs usa total_mqls, total_wons e fat_total_sheets do Sheets
@@ -810,6 +889,7 @@
         document.getElementById('kpi-bar').style.display = 'none';
         document.getElementById('crz-meta').style.display = 'none';
         document.getElementById('crz-main-grid').style.display = 'none';
+        document.getElementById('crz-ads-container').style.display = 'none';
 
         try {
             const resp = await fetch(`/api/cruzamento/data?date_preset=${currentPreset}`);
@@ -820,6 +900,7 @@
             updateKPIs(json.data);
             renderDonut(json.data.by_produto || {});
             renderDayTable(json.data.by_date || []);
+            renderAdsTable(json.data.campaigns || []);
             document.getElementById('crz-main-grid').style.display = 'grid';
 
             document.getElementById('crz-loading').style.display = 'none';
