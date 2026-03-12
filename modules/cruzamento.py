@@ -306,18 +306,14 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows):
         }
         leads_enriquecidos.append(lead)
 
-    # ── Passo 2: Indexar leads por utm_content e utm_campaign ─────────────────
-    # Estrutura: { utm_content_norm: [leads] }
-    leads_by_content  = {}
-    leads_by_campaign = {}
+    # ── Passo 2: Indexar leads por utm_term ─────────────────
+    # Estrutura: { utm_term_norm: [leads] }
+    leads_by_term = {}
 
     for lead in leads_enriquecidos:
-        uc = lead['utm_content']
-        if uc:
-            leads_by_content.setdefault(uc, []).append(lead)
-        uc2 = lead['utm_campaign']
-        if uc2:
-            leads_by_campaign.setdefault(uc2, []).append(lead)
+        ut = lead['utm_term']
+        if ut and ut != 'null':
+            leads_by_term.setdefault(ut, []).append(lead)
 
     # ── Passo 2: Consolidar FB Ads por ad_name ────────────────────────────────
     # Se o mesmo criativo (ad_name) rodar em campanhas/adsets diferentes ou
@@ -348,14 +344,8 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows):
     ads_consolidated = []
     
     for name_norm, ad_data in fb_ads_by_name.items():
-        campaign_name_norm = _norm(ad_data['campaign_name'])
-
-        # Match principal: utm_content → ad_name_norm
-        matched_leads = leads_by_content.get(name_norm, [])
-
-        # Fallback: utm_campaign → campaign_name_norm
-        if not matched_leads:
-            matched_leads = leads_by_campaign.get(campaign_name_norm, [])
+        # Match exclusivo: utm_term → ad_name_norm
+        matched_leads = leads_by_term.get(name_norm, [])
 
         metrics = _calc_metrics(ad_data, matched_leads)
         
@@ -377,12 +367,9 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows):
     matched_deal_ids = set()
     for ad_data in fb_ads_by_name.values():
         name_norm = _norm(ad_data['ad_name'])
-        campaign_name_norm = _norm(ad_data['campaign_name'])
         
         # Reconstrói quem foi matchado
-        m_leads = leads_by_content.get(name_norm, [])
-        if not m_leads:
-            m_leads = leads_by_campaign.get(campaign_name_norm, [])
+        m_leads = leads_by_term.get(name_norm, [])
             
         for lead in m_leads:
             matched_deal_ids.add(lead['deal_id'])
