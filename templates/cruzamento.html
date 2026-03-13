@@ -567,6 +567,14 @@
         <div class="kpi-value" id="kpi-cpl">—</div>
     </div>
     <div class="kpi-card">
+        <div class="kpi-label">🎯 MQLs NC</div>
+        <div class="kpi-value" id="kpi-nc">—</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-label">🧮 CPL NC</div>
+        <div class="kpi-value" id="kpi-cpl-nc">—</div>
+    </div>
+    <div class="kpi-card">
         <div class="kpi-label">✅ Vendas</div>
         <div class="kpi-value" id="kpi-vendas">—</div>
     </div>
@@ -1314,10 +1322,18 @@
         const totCPL = totLeads > 0 ? totSpend / totLeads : null;
         const totCAC = totVendas > 0 ? totSpend / totVendas : null;
 
+        let totNcMqls = 0;
+        if (data.by_produto) {
+            totNcMqls = matchProd(data.by_produto, 'negocio');
+        }
+        const cplNc = totNcMqls > 0 ? totSpend / totNcMqls : null;
+
         document.getElementById('kpi-spend').textContent = fmtR(totSpend);
         document.getElementById('kpi-leads').textContent = totLeads || '—';
-        document.getElementById('kpi-vendas').textContent = totVendas || '—';
+        document.getElementById('kpi-nc').textContent = totNcMqls || '—';
         document.getElementById('kpi-cpl').textContent = totCPL != null ? fmtR(totCPL) : '—';
+        document.getElementById('kpi-cpl-nc').textContent = cplNc != null ? fmtR(cplNc) : '—';
+        document.getElementById('kpi-vendas').textContent = totVendas || '—';
         document.getElementById('kpi-cac').textContent = totCAC != null ? fmtR(totCAC) : '—';
         document.getElementById('kpi-fat').textContent = fmtR(totFat);
         document.getElementById('kpi-bar').style.display = '';
