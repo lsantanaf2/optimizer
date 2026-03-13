@@ -631,13 +631,6 @@
     style="display:none; margin-bottom: 14px; overflow:hidden; padding:0;">
     <div class="chart-card-title" style="padding:14px 16px 10px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
         <span>📈 MQLs e Custos por Anúncio</span>
-        <label style="display:flex; align-items:center; cursor:pointer; font-weight:600; font-size:11px; color:var(--text-main); text-transform:none;">
-            <label class="switch">
-                <input type="checkbox" id="toggle-active-ads" onchange="renderAdsTableBody()">
-                <span class="slider"></span>
-            </label>
-            Somente ativos
-        </label>
     </div>
     <div style="overflow-x:auto; overflow-y:auto; max-height:500px;">
         <table class="day-table" id="ads-table" style="table-layout: fixed; width: 100%;">
@@ -669,13 +662,6 @@
     style="display:none; margin-bottom: 14px; overflow:hidden; padding:0;">
     <div class="chart-card-title" style="padding:14px 16px 10px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
         <span>📂 MQLs e Custos por Conjunto de Anúncios</span>
-        <label style="display:flex; align-items:center; cursor:pointer; font-weight:600; font-size:11px; color:var(--text-main); text-transform:none;">
-            <label class="switch">
-                <input type="checkbox" id="toggle-active-adsets" onchange="renderAdSetsTableBody()">
-                <span class="slider"></span>
-            </label>
-            Somente ativos
-        </label>
     </div>
     <div style="overflow-x:auto; overflow-y:auto; max-height:350px;">
         <table class="day-table" id="adsets-table" style="table-layout: fixed; width: 100%;">
@@ -707,13 +693,6 @@
     style="display:none; margin-bottom: 14px; overflow:hidden; padding:0;">
     <div class="chart-card-title" style="padding:14px 16px 10px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
         <span>🎯 MQLs e Custos por Campanha</span>
-        <label style="display:flex; align-items:center; cursor:pointer; font-weight:600; font-size:11px; color:var(--text-main); text-transform:none;">
-            <label class="switch">
-                <input type="checkbox" id="toggle-active-campaigns" onchange="renderCampaignsTableBody()">
-                <span class="slider"></span>
-            </label>
-            Somente ativas
-        </label>
     </div>
     <div style="overflow-x:auto; overflow-y:auto; max-height:350px;">
         <table class="day-table" id="campaigns-table" style="table-layout: fixed; width: 100%;">
@@ -1054,7 +1033,7 @@
 
     function renderAdsTableBody() {
         const tbody = document.getElementById('ads-tbody');
-        const showOnlyActive = document.getElementById('toggle-active-ads').checked;
+        const showOnlyActive = false;
 
         // Atualiza indicadores de ordenação
         const cols = ['ad_name', 'spend', 'mqls', 'cpl', 'nc', 'pct_nc', 'custo_nc'];
@@ -1154,7 +1133,7 @@
 
     function renderAdSetsTableBody() {
         const tbody = document.getElementById('adsets-tbody');
-        const showOnlyActive = document.getElementById('toggle-active-adsets').checked;
+        const showOnlyActive = false;
 
         const cols = ['adset_name', 'spend', 'mqls', 'cpl', 'nc', 'pct_nc', 'custo_nc'];
         cols.forEach(c => {
@@ -1247,7 +1226,7 @@
 
     function renderCampaignsTableBody() {
         const tbody = document.getElementById('campaigns-tbody');
-        const showOnlyActive = document.getElementById('toggle-active-campaigns').checked;
+        const showOnlyActive = false;
 
         const cols = ['campaign_name', 'spend', 'mqls', 'cpl', 'nc', 'pct_nc', 'custo_nc'];
         cols.forEach(c => {
