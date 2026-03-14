@@ -935,9 +935,9 @@
         const { year, month } = monthObj;
         const today = todayDate();
         let html = `<div class="drp-cal-header">`;
-        html += side === 'left' ? `<button class="drp-cal-nav" onclick="navMonth(-1)">‹</button>` : `<span></span>`;
+        html += side === 'left' ? `<button class="drp-cal-nav" onclick="event.stopPropagation();navMonth(-1)">‹</button>` : `<span></span>`;
         html += `<span>${MONTHS_PT[month]} ${year}</span>`;
-        html += side === 'right' ? `<button class="drp-cal-nav" onclick="navMonth(1)">›</button>` : `<span></span>`;
+        html += side === 'right' ? `<button class="drp-cal-nav" onclick="event.stopPropagation();navMonth(1)">›</button>` : `<span></span>`;
         html += `</div><div class="drp-cal-grid">`;
         DAYS_PT.forEach(d => { html += `<div class="drp-cal-dow">${d}</div>`; });
         let startDow = new Date(year, month, 1).getDay();
