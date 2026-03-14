@@ -1357,7 +1357,7 @@
             return currentSortDesc ? (vb - va) : (va - vb);
         });
         tbody.innerHTML = data.slice(0, 100).map(ad => `<tr>
-            <td style="text-align:left;"><div class="entity-link" style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${ad.ad_name}" onclick="setTimelineFilter('ad',${JSON.stringify(ad.ad_name)})">${ad.ad_name}</div></td>
+            <td style="text-align:left;"><div class="entity-link" style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${ad.ad_name}" onclick="setTimelineFilter('ad',${JSON.stringify(ad.ad_name).replace(/"/g,'&quot;')})">${ad.ad_name}</div></td>
             <td style="font-weight:600;">${fmtR(ad.spend)}</td>
             <td class="positive">${fmtR(ad.receita)}</td>
             <td>${fmtX(ad.roas)}</td>
@@ -1421,7 +1421,7 @@
             return currentAdSetSortDesc ? (vb - va) : (va - vb);
         });
         tbody.innerHTML = data.slice(0, 50).map(s => `<tr>
-            <td style="text-align:left;"><div class="entity-link" style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${s.adset_name}" onclick="setTimelineFilter('adset',${JSON.stringify(s.adset_name)})">${s.adset_name}</div></td>
+            <td style="text-align:left;"><div class="entity-link" style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${s.adset_name}" onclick="setTimelineFilter('adset',${JSON.stringify(s.adset_name).replace(/"/g,'&quot;')})">${s.adset_name}</div></td>
             <td style="font-weight:600;">${fmtR(s.spend)}</td>
             <td class="positive">${fmtR(s.receita)}</td>
             <td>${fmtX(s.roas)}</td>
@@ -1485,7 +1485,7 @@
             return currentCampSortDesc ? (vb - va) : (va - vb);
         });
         tbody.innerHTML = data.slice(0, 50).map(c => `<tr>
-            <td style="text-align:left;"><div class="entity-link" style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${c.campaign_name}" onclick="setTimelineFilter('campaign',${JSON.stringify(c.campaign_name)})">${c.campaign_name}</div></td>
+            <td style="text-align:left;"><div class="entity-link" style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${c.campaign_name}" onclick="setTimelineFilter('campaign',${JSON.stringify(c.campaign_name).replace(/"/g,'&quot;')})">${c.campaign_name}</div></td>
             <td style="font-weight:600;">${fmtR(c.spend)}</td>
             <td class="positive">${fmtR(c.receita)}</td>
             <td>${fmtX(c.roas)}</td>
