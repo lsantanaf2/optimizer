@@ -572,17 +572,86 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows):
         prod = row.get('Produto indicado', '').strip() or 'Sem produto'
         by_produto[prod] = by_produto.get(prod, 0) + 1
 
+    # ── Breakdown diário por entidade (para gráfico de linha/barra) ───────────
+    def _build_entity_series(spend_map, mqls_map):
+        all_keys = sorted(set(list(spend_map.keys()) + list(mqls_map.keys())))
+        result = []
+        for dk in all_keys:
+            sp = round(spend_map.get(dk, 0.0), 2)
+            mq = mqls_map.get(dk, 0)
+            result.append({
+                'date':  dk,
+                'mqls':  mq,
+                'spend': sp,
+                'cpl':   round(sp / mq, 2) if mq > 0 and sp > 0 else None,
+            })
+        return result
+
+    # Por campanha
+    by_date_per_campaign = {}
+    for camp_norm, camp_data in fb_campaigns_by_name.items():
+        ds, dm = {}, {}
+        for ad in fb_ads:
+            if _norm(ad.get('campaign_name', '')) == camp_norm:
+                d = ad.get('date_start', '')
+                if d:
+                    ds[d] = ds.get(d, 0.0) + ad['spend']
+        for row in mqls_rows:
+            if _norm(row.get('utm_campaign', '')) == camp_norm:
+                d = _parse_date_br(row.get('Data do preenchimento', ''))
+                if d:
+                    k = d.strftime('%Y-%m-%d')
+                    dm[k] = dm.get(k, 0) + 1
+        by_date_per_campaign[camp_data['campaign_name']] = _build_entity_series(ds, dm)
+
+    # Por conjunto
+    by_date_per_adset = {}
+    for adset_norm, adset_data in fb_adsets_by_name.items():
+        ds, dm = {}, {}
+        for ad in fb_ads:
+            if _norm(ad.get('adset_name', '')) == adset_norm:
+                d = ad.get('date_start', '')
+                if d:
+                    ds[d] = ds.get(d, 0.0) + ad['spend']
+        for row in mqls_rows:
+            if _norm(row.get('utm_content', '')) == adset_norm:
+                d = _parse_date_br(row.get('Data do preenchimento', ''))
+                if d:
+                    k = d.strftime('%Y-%m-%d')
+                    dm[k] = dm.get(k, 0) + 1
+        by_date_per_adset[adset_data['adset_name']] = _build_entity_series(ds, dm)
+
+    # Por anúncio
+    by_date_per_ad = {}
+    for ad_norm, ad_data_item in fb_ads_by_name.items():
+        ds, dm = {}, {}
+        for ad in fb_ads:
+            if _norm(ad.get('ad_name', '')) == ad_norm:
+                d = ad.get('date_start', '')
+                if d:
+                    ds[d] = ds.get(d, 0.0) + ad['spend']
+        for row in mqls_rows:
+            if _norm(row.get('utm_term', '')) == ad_norm:
+                d = _parse_date_br(row.get('Data do preenchimento', ''))
+                if d:
+                    k = d.strftime('%Y-%m-%d')
+                    dm[k] = dm.get(k, 0) + 1
+        by_date_per_ad[ad_data_item['ad_name']] = _build_entity_series(ds, dm)
+
     return {
         'ads_consolidated': ads_consolidated,
         'adsets_consolidated': adsets_consolidated,
         'campaigns_consolidated': campaigns_consolidated,
-        'organicos':        organico_metrics,
-        'total_leads':      len(leads_enriquecidos),
-        'total_mqls':       len(mqls_rows),
-        'total_wons':       len(wons_rows),
-        'fat_total_sheets': round(fat_total_sheets, 2),
-        'by_date':          by_date,
-        'by_produto':       by_produto,
+        'organicos':             organico_metrics,
+        'total_leads':           len(leads_enriquecidos),
+        'total_mqls':            len(mqls_rows),
+        'total_wons':            len(wons_rows),
+        'fat_total_sheets':      round(fat_total_sheets, 2),
+        'by_date':               by_date,
+        'by_produto':            by_produto,
+        'by_date_per_campaign':  by_date_per_campaign,
+        'by_date_per_adset':     by_date_per_adset,
+        'by_date_per_ad':        by_date_per_ad,
     }
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
