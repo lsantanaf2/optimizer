@@ -585,9 +585,6 @@
         {% endif %}
     </h2>
     <div class="crz-right">
-        {% if client_mode %}
-        <span class="period-locked-badge">📅 Mês Atual</span>
-        {% else %}
         <div class="drp-wrap" id="drp-wrap">
             <button class="drp-trigger" id="drp-trigger" onclick="toggleDatePicker()">
                 <span>📅</span>
@@ -629,7 +626,6 @@
                 </div>
             </div>
         </div>
-        {% endif %}
         <button class="btn-refresh" onclick="loadData()">🔄 Atualizar</button>
     </div>
 </div>
@@ -681,11 +677,9 @@
                     <tr>
                         <th>Data</th>
                         <th>MQLs</th>
-                        <th>Negocios Creator</th>
                         <th>%&nbsp;NC</th>
-                        <th>Vinci Track</th>
-                        <th>%&nbsp;VT</th>
-                        <th>Custo/MQL</th>
+                        <th>CPL/MQL</th>
+                        <th>Custo</th>
                     </tr>
                 </thead>
                 <tbody id="day-tbody"></tbody>
@@ -808,6 +802,7 @@
     let drpLeftMonth = null, drpRightMonth = null;
     let appliedPreset = IS_CLIENT ? (LOCKED_PERIOD || 'this_month') : 'last_7d';
     let appliedSince = null, appliedUntil = null;
+    // Nota: IS_CLIENT apenas define o preset inicial; o DRP é sempre interativo
 
     function todayDate() { const d = new Date(); d.setHours(0,0,0,0); return d; }
     function dateStr(d) { return d.toISOString().split('T')[0]; }
@@ -844,12 +839,10 @@
         const { since, until } = presetToDates(appliedPreset);
         appliedSince = since; appliedUntil = until;
         drpTempSince = new Date(since); drpTempUntil = new Date(until);
-        if (!IS_CLIENT) {
-            const today = todayDate();
-            drpLeftMonth = { year: today.getMonth() === 0 ? today.getFullYear()-1 : today.getFullYear(), month: today.getMonth() === 0 ? 11 : today.getMonth()-1 };
-            drpRightMonth = { year: today.getFullYear(), month: today.getMonth() };
-            updateTriggerLabel();
-        }
+        const today = todayDate();
+        drpLeftMonth = { year: today.getMonth() === 0 ? today.getFullYear()-1 : today.getFullYear(), month: today.getMonth() === 0 ? 11 : today.getMonth()-1 };
+        drpRightMonth = { year: today.getFullYear(), month: today.getMonth() };
+        updateTriggerLabel();
     }
 
     function updateTriggerLabel() {
@@ -861,7 +854,6 @@
     }
 
     function toggleDatePicker() {
-        if (IS_CLIENT) return;
         drpOpen = !drpOpen;
         document.getElementById('drp-dropdown').classList.toggle('open', drpOpen);
         if (drpOpen) {
@@ -904,7 +896,6 @@
     }
 
     document.addEventListener('click', (e) => {
-        if (IS_CLIENT) return;
         const preset = e.target.closest('.drp-preset');
         if (preset) {
             const val = preset.dataset.preset;
@@ -1209,47 +1200,35 @@
         // Ordem crescente por data (mais antigo primeiro)
         const rows = byDate.slice().reverse();
         tbody.innerHTML = rows.map(row => {
-            const nc = matchProd(row.produtos, 'negocio');
-            const vt = matchProd(row.produtos, 'vinci');
+            const nc   = matchProd(row.produtos, 'negocio');
             const mqls = row.mqls || 0;
-            const pctNc = mqls > 0 ? ((nc / mqls) * 100).toFixed(1) : '—';
-            const pctVt = mqls > 0 ? ((vt / mqls) * 100).toFixed(1) : '—';
-            const cpl = row.cpl != null ? fmtR(row.cpl) : '<span style="color:var(--text-muted)">—</span>';
-            // formatar data DD/MM/YYYY
+            const pctNc = mqls > 0 ? ((nc / mqls) * 100).toFixed(1) + '%' : '—';
+            const cpl   = row.cpl != null ? fmtR(row.cpl) : '—';
+            const custo = row.spend > 0 ? fmtR(row.spend) : '—';
             const [y, m, d] = row.date.split('-');
-            const dateStr = `${d}/${m}/${y}`;
             return `<tr>
-                <td>${dateStr}</td>
-                <td>${mqls}</td>
-                <td>${nc || '—'}</td>
-                <td class="pct">${nc && mqls > 0 ? pctNc + '%' : '—'}</td>
-                <td>${vt || '—'}</td>
-                <td class="pct">${vt && mqls > 0 ? pctVt + '%' : '—'}</td>
+                <td>${d}/${m}/${y}</td>
+                <td>${mqls || '—'}</td>
+                <td class="pct">${nc && mqls > 0 ? pctNc : '—'}</td>
                 <td>${cpl}</td>
+                <td>${custo}</td>
             </tr>`;
         }).join('');
 
-        // Resumo (TOTAIS) da Tabela Diária
-        let totMqls = 0, totNc = 0, totVt = 0, totSpend = 0;
+        // Totais
+        let totMqls = 0, totNc = 0, totSpend = 0;
         byDate.forEach(row => {
-            totMqls += row.mqls || 0;
-            totNc += matchProd(row.produtos, 'negocio');
-            totVt += matchProd(row.produtos, 'vinci');
+            totMqls  += row.mqls || 0;
+            totNc    += matchProd(row.produtos, 'negocio');
             totSpend += row.spend || 0;
         });
 
-        const pctNcTot = totMqls > 0 ? ((totNc / totMqls) * 100).toFixed(1) + '%' : '—';
-        const pctVtTot = totMqls > 0 ? ((totVt / totMqls) * 100).toFixed(1) + '%' : '—';
-        const cplTotObj = totMqls > 0 ? fmtR(totSpend / totMqls) : '—';
-
         document.getElementById('day-tfoot').innerHTML = `<tr>
             <td>TOTAL</td>
-            <td>${totMqls}</td>
-            <td>${totNc || '—'}</td>
-            <td class="pct">${pctNcTot}</td>
-            <td>${totVt || '—'}</td>
-            <td class="pct">${pctVtTot}</td>
-            <td>${cplTotObj}</td>
+            <td>${totMqls || '—'}</td>
+            <td class="pct">${totMqls > 0 ? ((totNc / totMqls) * 100).toFixed(1) + '%' : '—'}</td>
+            <td>${totMqls > 0 ? fmtR(totSpend / totMqls) : '—'}</td>
+            <td>${fmtR(totSpend)}</td>
         </tr>`;
     }
 
