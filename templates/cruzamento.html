@@ -39,49 +39,100 @@
         flex-wrap: wrap;
     }
 
-    /* Period pills */
-    .period-bar {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        margin-bottom: 12px;
-        padding: 8px 12px;
-        background: var(--card-bg, #16161a);
+    /* ── Date Range Picker ── */
+    .drp-wrap { position: relative; }
+    .drp-trigger {
+        display: flex; align-items: center; gap: 8px;
+        padding: 6px 14px;
+        background: var(--bg-surface, var(--card-bg));
         border: 1px solid var(--border);
         border-radius: var(--radius-sm);
+        color: var(--text-primary);
+        font-family: var(--font-sans, inherit);
+        font-size: 12px; font-weight: 500;
+        cursor: pointer; transition: all 0.15s; white-space: nowrap;
     }
-
-    .period-bar .bar-label {
-        font-size: 11px;
-        font-weight: 700;
-        color: var(--text-muted);
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        margin-right: 4px;
-    }
-
-    .period-pill {
-        padding: 4px 14px;
+    .drp-trigger:hover { border-color: var(--accent); }
+    .drp-arrow { font-size: 10px; color: var(--text-muted); }
+    .drp-dropdown {
+        display: none; position: absolute;
+        top: calc(100% + 6px); right: 0; z-index: 1000;
+        background: var(--bg-surface, var(--card-bg));
         border: 1px solid var(--border);
-        border-radius: 20px;
-        background: transparent;
-        color: var(--text-secondary);
-        cursor: pointer;
-        font-size: 11px;
-        font-weight: 700;
-        letter-spacing: 0.3px;
-        transition: all .15s;
+        border-radius: var(--radius-md);
+        box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+        min-width: 620px;
     }
-
-    .period-pill.active {
-        background: var(--accent);
-        color: #000;
-        border-color: var(--accent);
+    .drp-dropdown.open { display: block; }
+    .drp-body { display: flex; }
+    .drp-presets {
+        width: 160px; border-right: 1px solid var(--border);
+        padding: 12px 0; display: flex; flex-direction: column; flex-shrink: 0;
     }
-
-    .period-pill:hover:not(.active) {
-        border-color: var(--accent);
-        color: var(--accent);
+    .drp-presets-title {
+        padding: 4px 16px 8px; font-size: 10px;
+        text-transform: uppercase; letter-spacing: 0.6px;
+        color: var(--text-muted); font-weight: 700;
+    }
+    .drp-preset {
+        display: flex; align-items: center; gap: 8px;
+        padding: 6px 16px; font-size: 12px; color: var(--text-secondary);
+        cursor: pointer; transition: all 0.1s; border: none; background: none;
+    }
+    .drp-preset:hover { background: var(--card-bg-hover, rgba(255,255,255,0.05)); color: var(--text-primary); }
+    .drp-preset.active { background: #0891b215; color: var(--accent); }
+    .drp-preset input[type="radio"] { width: 13px; height: 13px; accent-color: var(--accent); margin: 0; cursor: pointer; }
+    .drp-cal-area { display: flex; flex-direction: column; flex: 1; }
+    .drp-cals { display: flex; gap: 0; padding: 12px 16px; flex: 1; }
+    .drp-cal { flex: 1; }
+    .drp-cal-header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 0 4px 10px; font-size: 12px; font-weight: 600; color: var(--text-primary);
+    }
+    .drp-cal-nav {
+        background: none; border: none; color: var(--text-muted);
+        font-size: 16px; cursor: pointer; padding: 2px 6px; border-radius: 4px; transition: all 0.15s;
+    }
+    .drp-cal-nav:hover { background: var(--card-bg-hover, rgba(255,255,255,0.05)); color: var(--text-primary); }
+    .drp-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; text-align: center; }
+    .drp-cal-dow { font-size: 10px; font-weight: 700; color: var(--text-muted); padding: 4px 0; text-transform: uppercase; letter-spacing: 0.4px; }
+    .drp-cal-day { font-size: 12px; padding: 6px 2px; cursor: pointer; border-radius: 4px; color: var(--text-secondary); transition: all 0.1s; }
+    .drp-cal-day:hover { background: var(--card-bg-hover, rgba(255,255,255,0.05)); color: var(--text-primary); }
+    .drp-cal-day.other-month { color: var(--text-muted); opacity: 0.3; }
+    .drp-cal-day.today { font-weight: 700; color: var(--accent); }
+    .drp-cal-day.in-range { background: #0891b220; border-radius: 0; color: var(--text-primary); }
+    .drp-cal-day.range-start { background: #0891b2; color: #fff; border-radius: 6px 0 0 6px; font-weight: 700; }
+    .drp-cal-day.range-end { background: #0891b2; color: #fff; border-radius: 0 6px 6px 0; font-weight: 700; }
+    .drp-cal-day.range-start.range-end { border-radius: 6px; }
+    .drp-cal-day.disabled { opacity: 0.2; pointer-events: none; }
+    .drp-inline-footer {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 12px; padding: 10px 16px; border-top: 1px solid var(--border);
+    }
+    .drp-footer-dates { display: flex; align-items: center; gap: 6px; }
+    .drp-date-input {
+        width: 120px; padding: 5px 8px;
+        background: var(--bg-deep, #0e0e10); border: 1px solid var(--border);
+        border-radius: 4px; color: var(--text-primary);
+        font-family: var(--font-sans, inherit); font-size: 11px; text-align: center;
+    }
+    .drp-footer-btns { display: flex; gap: 8px; }
+    .drp-btn-cancel {
+        padding: 6px 16px; background: var(--bg-deep, #0e0e10);
+        border: 1px solid var(--border); border-radius: 4px;
+        color: var(--text-secondary); font-family: var(--font-sans, inherit);
+        font-size: 12px; cursor: pointer; transition: all 0.15s;
+    }
+    .drp-btn-cancel:hover { border-color: var(--text-muted); color: var(--text-primary); }
+    .drp-btn-apply {
+        padding: 6px 20px; background: #0891b2; border: none; border-radius: 4px;
+        color: #fff; font-family: var(--font-sans, inherit); font-size: 12px;
+        font-weight: 600; cursor: pointer; transition: all 0.15s;
+    }
+    .drp-btn-apply:hover { background: #06b6d4; }
+    .period-locked-badge {
+        padding: 6px 14px; background: var(--card-bg); border: 1px solid var(--border);
+        border-radius: var(--radius-sm); color: var(--text-muted); font-size: 12px; font-weight: 500;
     }
 
     /* Refresh btn */
@@ -129,7 +180,7 @@
     }
 
     .kpi-value {
-        font-size: 18px;
+        font-size: 16px;
         font-weight: 700;
         color: var(--text-primary);
     }
@@ -534,57 +585,76 @@
         {% endif %}
     </h2>
     <div class="crz-right">
+        {% if client_mode %}
+        <span class="period-locked-badge">📅 Mês Atual</span>
+        {% else %}
+        <div class="drp-wrap" id="drp-wrap">
+            <button class="drp-trigger" id="drp-trigger" onclick="toggleDatePicker()">
+                <span>📅</span>
+                <span id="drp-label">Últimos 7 dias</span>
+                <span class="drp-arrow">▾</span>
+            </button>
+            <div class="drp-dropdown" id="drp-dropdown">
+                <div class="drp-body">
+                    <div class="drp-presets">
+                        <div class="drp-presets-title">Período</div>
+                        <label class="drp-preset" data-preset="today"><input type="radio" name="drp" value="today"> Hoje</label>
+                        <label class="drp-preset" data-preset="yesterday"><input type="radio" name="drp" value="yesterday"> Ontem</label>
+                        <label class="drp-preset" data-preset="last_3d"><input type="radio" name="drp" value="last_3d"> Últimos 3 dias</label>
+                        <label class="drp-preset" data-preset="last_7d"><input type="radio" name="drp" value="last_7d" checked> Últimos 7 dias</label>
+                        <label class="drp-preset" data-preset="last_14d"><input type="radio" name="drp" value="last_14d"> Últimos 14 dias</label>
+                        <label class="drp-preset" data-preset="last_30d"><input type="radio" name="drp" value="last_30d"> Últimos 30 dias</label>
+                        <label class="drp-preset" data-preset="this_month"><input type="radio" name="drp" value="this_month"> Este mês</label>
+                        <label class="drp-preset" data-preset="last_month"><input type="radio" name="drp" value="last_month"> Mês passado</label>
+                        <label class="drp-preset" data-preset="maximum"><input type="radio" name="drp" value="maximum"> Tempo todo</label>
+                        <label class="drp-preset" data-preset="custom"><input type="radio" name="drp" value="custom"> Personalizado</label>
+                    </div>
+                    <div class="drp-cal-area">
+                        <div class="drp-cals">
+                            <div class="drp-cal" id="drp-cal-left"></div>
+                            <div class="drp-cal" id="drp-cal-right"></div>
+                        </div>
+                        <div class="drp-inline-footer">
+                            <div class="drp-footer-dates">
+                                <input type="text" class="drp-date-input" id="drp-since-display" readonly placeholder="Data inicial">
+                                <span style="color:var(--text-muted);font-size:11px;">→</span>
+                                <input type="text" class="drp-date-input" id="drp-until-display" readonly placeholder="Data final">
+                            </div>
+                            <div class="drp-footer-btns">
+                                <button class="drp-btn-cancel" onclick="cancelDatePicker()">Cancelar</button>
+                                <button class="drp-btn-apply" onclick="applyDatePicker()">Atualizar</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
         <button class="btn-refresh" onclick="loadData()">🔄 Atualizar</button>
     </div>
-</div>
-
-<!-- Period Selector -->
-<div class="period-bar">
-    <span class="bar-label">Período:</span>
-    {% if not client_mode %}
-    <button class="period-pill active" data-preset="last_7_d" onclick="setPeriod(this, 'last_7_d')">7 Dias</button>
-    <button class="period-pill" data-preset="last_14_d" onclick="setPeriod(this, 'last_14_d')">14 Dias</button>
-    <button class="period-pill" data-preset="last_30_d" onclick="setPeriod(this, 'last_30_d')">30 Dias</button>
-    {% endif %}
-    <button class="period-pill {% if client_mode %}active{% endif %}" data-preset="this_month" onclick="{% if not client_mode %}setPeriod(this, 'this_month'){% endif %}">Mês Atual</button>
-    {% if not client_mode %}
-    <button class="period-pill" data-preset="last_month" onclick="setPeriod(this, 'last_month')">Mês Anterior</button>
-    {% endif %}
 </div>
 
 <!-- KPI Summary Bar -->
 <div class="kpi-bar" id="kpi-bar" style="display:none;">
     <div class="kpi-card">
-        <div class="kpi-label">💸 Investido (FB)</div>
+        <div class="kpi-label">💸 Investimento Total</div>
         <div class="kpi-value accent" id="kpi-spend">—</div>
     </div>
     <div class="kpi-card">
-        <div class="kpi-label">🎯 MQLs</div>
-        <div class="kpi-value" id="kpi-leads">—</div>
+        <div class="kpi-label">📊 Receita Total</div>
+        <div class="kpi-value positive" id="kpi-receita">—</div>
     </div>
     <div class="kpi-card">
-        <div class="kpi-label">🧮 CPL Médio</div>
+        <div class="kpi-label">🚀 ROAS</div>
+        <div class="kpi-value" id="kpi-roas">—</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-label">🎯 MQL Total</div>
+        <div class="kpi-value" id="kpi-mqls">—</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-label">🧮 CPL Total</div>
         <div class="kpi-value" id="kpi-cpl">—</div>
-    </div>
-    <div class="kpi-card">
-        <div class="kpi-label">🎯 MQLs NC</div>
-        <div class="kpi-value" id="kpi-nc">—</div>
-    </div>
-    <div class="kpi-card">
-        <div class="kpi-label">🧮 CPL NC</div>
-        <div class="kpi-value" id="kpi-cpl-nc">—</div>
-    </div>
-    <div class="kpi-card">
-        <div class="kpi-label">✅ Vendas</div>
-        <div class="kpi-value" id="kpi-vendas">—</div>
-    </div>
-    <div class="kpi-card">
-        <div class="kpi-label">💰 CAC</div>
-        <div class="kpi-value" id="kpi-cac">—</div>
-    </div>
-    <div class="kpi-card">
-        <div class="kpi-label">📊 Faturamento</div>
-        <div class="kpi-value positive" id="kpi-fat">—</div>
     </div>
 </div>
 
@@ -636,19 +706,15 @@
         <table class="day-table" id="ads-table" style="table-layout: fixed; width: 100%;">
             <thead>
                 <tr>
-                    <th class="sortable" onclick="sortAds('ad_name')" style="width: 34%;">Anúncio <span id="sort-ind-ad_name"></span></th>
-                    <th class="sortable" style="text-align:right; width: 11%;" onclick="sortAds('spend')">Investimento <span
-                            id="sort-ind-spend">▼</span></th>
-                    <th class="sortable" style="text-align:right; width: 11%;" onclick="sortAds('mqls')">MQLs <span
-                            id="sort-ind-mqls"></span></th>
-                    <th class="sortable" style="text-align:right; width: 11%;" onclick="sortAds('cpl')">Custo / MQL <span
-                            id="sort-ind-cpl"></span></th>
-                    <th class="sortable" style="text-align:right; width: 11%;" onclick="sortAds('nc')">NC <span
-                            id="sort-ind-nc"></span></th>
-                    <th class="sortable" style="text-align:right; width: 11%;" onclick="sortAds('pct_nc')">%&nbsp;NC <span
-                            id="sort-ind-pct_nc"></span></th>
-                    <th class="sortable" style="text-align:right; width: 11%;" onclick="sortAds('custo_nc')">Custo / NC <span
-                            id="sort-ind-custo_nc"></span></th>
+                    <th class="sortable" onclick="sortAds('ad_name')" style="width: 28%;">Anúncio <span id="sort-ind-ad_name"></span></th>
+                    <th class="sortable" style="text-align:right; width: 9%;" onclick="sortAds('spend')">Investimento <span id="sort-ind-spend">▼</span></th>
+                    <th class="sortable" style="text-align:right; width: 9%;" onclick="sortAds('receita')">Receita <span id="sort-ind-receita"></span></th>
+                    <th class="sortable" style="text-align:right; width: 8%;" onclick="sortAds('roas')">ROAS <span id="sort-ind-roas"></span></th>
+                    <th class="sortable" style="text-align:right; width: 8%;" onclick="sortAds('mqls')">MQLs <span id="sort-ind-mqls"></span></th>
+                    <th class="sortable" style="text-align:right; width: 9%;" onclick="sortAds('cpl')">Custo / MQL <span id="sort-ind-cpl"></span></th>
+                    <th class="sortable" style="text-align:right; width: 8%;" onclick="sortAds('nc')">NC <span id="sort-ind-nc"></span></th>
+                    <th class="sortable" style="text-align:right; width: 8%;" onclick="sortAds('pct_nc')">%&nbsp;NC <span id="sort-ind-pct_nc"></span></th>
+                    <th class="sortable" style="text-align:right; width: 13%;" onclick="sortAds('custo_nc')">Custo / NC <span id="sort-ind-custo_nc"></span></th>
                 </tr>
             </thead>
             <tbody id="ads-tbody"></tbody>
@@ -667,19 +733,15 @@
         <table class="day-table" id="adsets-table" style="table-layout: fixed; width: 100%;">
             <thead>
                 <tr>
-                    <th class="sortable" onclick="sortAdSets('adset_name')" style="width: 34%;">Conjunto <span id="sort-ind-set-adset_name"></span></th>
-                    <th class="sortable" style="text-align:right; width: 11%;" onclick="sortAdSets('spend')">Investimento <span
-                            id="sort-ind-set-spend">▼</span></th>
-                    <th class="sortable" style="text-align:right; width: 11%;" onclick="sortAdSets('mqls')">MQLs <span
-                            id="sort-ind-set-mqls"></span></th>
-                    <th class="sortable" style="text-align:right; width: 11%;" onclick="sortAdSets('cpl')">Custo / MQL <span
-                            id="sort-ind-set-cpl"></span></th>
-                    <th class="sortable" style="text-align:right; width: 11%;" onclick="sortAdSets('nc')">NC <span
-                            id="sort-ind-set-nc"></span></th>
-                    <th class="sortable" style="text-align:right; width: 11%;" onclick="sortAdSets('pct_nc')">%&nbsp;NC <span
-                            id="sort-ind-set-pct_nc"></span></th>
-                    <th class="sortable" style="text-align:right; width: 11%;" onclick="sortAdSets('custo_nc')">Custo / NC <span
-                            id="sort-ind-set-custo_nc"></span></th>
+                    <th class="sortable" onclick="sortAdSets('adset_name')" style="width: 28%;">Conjunto <span id="sort-ind-set-adset_name"></span></th>
+                    <th class="sortable" style="text-align:right; width: 9%;" onclick="sortAdSets('spend')">Investimento <span id="sort-ind-set-spend">▼</span></th>
+                    <th class="sortable" style="text-align:right; width: 9%;" onclick="sortAdSets('receita')">Receita <span id="sort-ind-set-receita"></span></th>
+                    <th class="sortable" style="text-align:right; width: 8%;" onclick="sortAdSets('roas')">ROAS <span id="sort-ind-set-roas"></span></th>
+                    <th class="sortable" style="text-align:right; width: 8%;" onclick="sortAdSets('mqls')">MQLs <span id="sort-ind-set-mqls"></span></th>
+                    <th class="sortable" style="text-align:right; width: 9%;" onclick="sortAdSets('cpl')">Custo / MQL <span id="sort-ind-set-cpl"></span></th>
+                    <th class="sortable" style="text-align:right; width: 8%;" onclick="sortAdSets('nc')">NC <span id="sort-ind-set-nc"></span></th>
+                    <th class="sortable" style="text-align:right; width: 8%;" onclick="sortAdSets('pct_nc')">%&nbsp;NC <span id="sort-ind-set-pct_nc"></span></th>
+                    <th class="sortable" style="text-align:right; width: 13%;" onclick="sortAdSets('custo_nc')">Custo / NC <span id="sort-ind-set-custo_nc"></span></th>
                 </tr>
             </thead>
             <tbody id="adsets-tbody"></tbody>
@@ -698,19 +760,15 @@
         <table class="day-table" id="campaigns-table" style="table-layout: fixed; width: 100%;">
             <thead>
                 <tr>
-                    <th class="sortable" onclick="sortCampaigns('campaign_name')" style="width: 34%;">Campanha <span id="sort-ind-camp-campaign_name"></span></th>
-                    <th class="sortable" style="text-align:right; width: 11%;" onclick="sortCampaigns('spend')">Investimento <span
-                            id="sort-ind-camp-spend">▼</span></th>
-                    <th class="sortable" style="text-align:right; width: 11%;" onclick="sortCampaigns('mqls')">MQLs <span
-                            id="sort-ind-camp-mqls"></span></th>
-                    <th class="sortable" style="text-align:right; width: 11%;" onclick="sortCampaigns('cpl')">Custo / MQL <span
-                            id="sort-ind-camp-cpl"></span></th>
-                    <th class="sortable" style="text-align:right; width: 11%;" onclick="sortCampaigns('nc')">NC <span
-                            id="sort-ind-camp-nc"></span></th>
-                    <th class="sortable" style="text-align:right; width: 11%;" onclick="sortCampaigns('pct_nc')">%&nbsp;NC <span
-                            id="sort-ind-camp-pct_nc"></span></th>
-                    <th class="sortable" style="text-align:right; width: 11%;" onclick="sortCampaigns('custo_nc')">Custo / NC <span
-                            id="sort-ind-camp-custo_nc"></span></th>
+                    <th class="sortable" onclick="sortCampaigns('campaign_name')" style="width: 28%;">Campanha <span id="sort-ind-camp-campaign_name"></span></th>
+                    <th class="sortable" style="text-align:right; width: 9%;" onclick="sortCampaigns('spend')">Investimento <span id="sort-ind-camp-spend">▼</span></th>
+                    <th class="sortable" style="text-align:right; width: 9%;" onclick="sortCampaigns('receita')">Receita <span id="sort-ind-camp-receita"></span></th>
+                    <th class="sortable" style="text-align:right; width: 8%;" onclick="sortCampaigns('roas')">ROAS <span id="sort-ind-camp-roas"></span></th>
+                    <th class="sortable" style="text-align:right; width: 8%;" onclick="sortCampaigns('mqls')">MQLs <span id="sort-ind-camp-mqls"></span></th>
+                    <th class="sortable" style="text-align:right; width: 9%;" onclick="sortCampaigns('cpl')">Custo / MQL <span id="sort-ind-camp-cpl"></span></th>
+                    <th class="sortable" style="text-align:right; width: 8%;" onclick="sortCampaigns('nc')">NC <span id="sort-ind-camp-nc"></span></th>
+                    <th class="sortable" style="text-align:right; width: 8%;" onclick="sortCampaigns('pct_nc')">%&nbsp;NC <span id="sort-ind-camp-pct_nc"></span></th>
+                    <th class="sortable" style="text-align:right; width: 13%;" onclick="sortCampaigns('custo_nc')">Custo / NC <span id="sort-ind-camp-custo_nc"></span></th>
                 </tr>
             </thead>
             <tbody id="campaigns-tbody"></tbody>
@@ -739,15 +797,204 @@
     const IS_CLIENT = {{ 'true' if client_mode else 'false' }};
     const LOCKED_PERIOD = '{{ locked_period if client_mode else "" }}';
 
-    let currentPreset = IS_CLIENT ? LOCKED_PERIOD : 'last_7_days';
+    // ── Date Range Picker State ──────────────────────────────────────────────────
+    const MONTHS_PT = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+    const DAYS_PT = ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
 
-    function setPeriod(btn, preset) {
-        document.querySelectorAll('.period-pill').forEach(p => p.classList.remove('active'));
-        btn.classList.add('active');
-        currentPreset = preset;
+    let drpOpen = false;
+    let drpPreset = IS_CLIENT ? (LOCKED_PERIOD || 'this_month') : 'last_7d';
+    let drpTempSince = null, drpTempUntil = null;
+    let drpClickState = 0;
+    let drpLeftMonth = null, drpRightMonth = null;
+    let appliedPreset = IS_CLIENT ? (LOCKED_PERIOD || 'this_month') : 'last_7d';
+    let appliedSince = null, appliedUntil = null;
+
+    function todayDate() { const d = new Date(); d.setHours(0,0,0,0); return d; }
+    function dateStr(d) { return d.toISOString().split('T')[0]; }
+    function datePT(d) { return `${d.getDate()} de ${MONTHS_PT[d.getMonth()]} de ${d.getFullYear()}`; }
+    function sameDay(a, b) { return a && b && dateStr(a) === dateStr(b); }
+
+    function presetToDates(preset) {
+        const today = todayDate();
+        switch (preset) {
+            case 'today':      return { since: new Date(today), until: new Date(today) };
+            case 'yesterday':  return { since: new Date(today - 86400000), until: new Date(today - 86400000) };
+            case 'last_3d':    return { since: new Date(today - 2*86400000), until: new Date(today) };
+            case 'last_7d':    return { since: new Date(today - 6*86400000), until: new Date(today) };
+            case 'last_14d':   return { since: new Date(today - 13*86400000), until: new Date(today) };
+            case 'last_30d':   return { since: new Date(today - 29*86400000), until: new Date(today) };
+            case 'this_month': return { since: new Date(today.getFullYear(), today.getMonth(), 1), until: new Date(today) };
+            case 'last_month': return {
+                since: new Date(today.getFullYear(), today.getMonth()-1, 1),
+                until: new Date(today.getFullYear(), today.getMonth(), 0)
+            };
+            default: return { since: new Date(today - 6*86400000), until: new Date(today) };
+        }
+    }
+
+    function getDateParams() {
+        if (appliedPreset === 'maximum') return 'date_preset=maximum';
+        const s = appliedSince ? dateStr(appliedSince) : null;
+        const u = appliedUntil ? dateStr(appliedUntil) : null;
+        if (s && u) return `since=${s}&until=${u}`;
+        return 'date_preset=last_7d';
+    }
+
+    function initDRP() {
+        const { since, until } = presetToDates(appliedPreset);
+        appliedSince = since; appliedUntil = until;
+        drpTempSince = new Date(since); drpTempUntil = new Date(until);
+        if (!IS_CLIENT) {
+            const today = todayDate();
+            drpLeftMonth = { year: today.getMonth() === 0 ? today.getFullYear()-1 : today.getFullYear(), month: today.getMonth() === 0 ? 11 : today.getMonth()-1 };
+            drpRightMonth = { year: today.getFullYear(), month: today.getMonth() };
+            updateTriggerLabel();
+        }
+    }
+
+    function updateTriggerLabel() {
+        const label = document.getElementById('drp-label');
+        if (!label) return;
+        if (appliedPreset === 'maximum') { label.textContent = 'Tempo todo'; return; }
+        const s = appliedSince, u = appliedUntil;
+        if (s && u) label.textContent = sameDay(s, u) ? datePT(s) : `${datePT(s)} → ${datePT(u)}`;
+    }
+
+    function toggleDatePicker() {
+        if (IS_CLIENT) return;
+        drpOpen = !drpOpen;
+        document.getElementById('drp-dropdown').classList.toggle('open', drpOpen);
+        if (drpOpen) {
+            drpPreset = appliedPreset;
+            drpTempSince = appliedSince ? new Date(appliedSince) : null;
+            drpTempUntil = appliedUntil ? new Date(appliedUntil) : null;
+            drpClickState = 0;
+            highlightPreset(); renderCalendars(); updateFooterDates();
+        }
+    }
+
+    function cancelDatePicker() {
+        drpOpen = false;
+        document.getElementById('drp-dropdown').classList.remove('open');
+    }
+
+    function applyDatePicker() {
+        appliedPreset = drpPreset;
+        if (drpPreset === 'custom') {
+            if (!drpTempSince || !drpTempUntil) return;
+            appliedSince = new Date(drpTempSince); appliedUntil = new Date(drpTempUntil);
+        } else if (drpPreset === 'maximum') {
+            appliedSince = null; appliedUntil = null;
+        } else {
+            const { since, until } = presetToDates(drpPreset);
+            appliedSince = since; appliedUntil = until;
+        }
+        drpOpen = false;
+        document.getElementById('drp-dropdown').classList.remove('open');
+        updateTriggerLabel();
         loadData();
     }
 
+    function highlightPreset() {
+        document.querySelectorAll('.drp-preset').forEach(el => {
+            const val = el.dataset.preset;
+            el.classList.toggle('active', val === drpPreset);
+            el.querySelector('input').checked = val === drpPreset;
+        });
+    }
+
+    document.addEventListener('click', (e) => {
+        if (IS_CLIENT) return;
+        const preset = e.target.closest('.drp-preset');
+        if (preset) {
+            const val = preset.dataset.preset;
+            drpPreset = val; highlightPreset();
+            if (val !== 'custom' && val !== 'maximum') {
+                const { since, until } = presetToDates(val);
+                drpTempSince = since; drpTempUntil = until; drpClickState = 0;
+                drpLeftMonth = { year: since.getFullYear(), month: since.getMonth() };
+                const nm = since.getMonth() + 1;
+                drpRightMonth = { year: nm > 11 ? since.getFullYear()+1 : since.getFullYear(), month: nm > 11 ? 0 : nm };
+                if (until.getFullYear() > drpRightMonth.year || (until.getFullYear() === drpRightMonth.year && until.getMonth() > drpRightMonth.month)) {
+                    drpRightMonth = { year: until.getFullYear(), month: until.getMonth() };
+                    const pm = until.getMonth() - 1;
+                    drpLeftMonth = { year: pm < 0 ? until.getFullYear()-1 : until.getFullYear(), month: pm < 0 ? 11 : pm };
+                }
+            } else if (val === 'maximum') {
+                drpTempSince = null; drpTempUntil = null; drpClickState = 0;
+            } else { drpClickState = 0; }
+            renderCalendars(); updateFooterDates();
+        }
+        if (drpOpen && !e.target.closest('#drp-wrap')) cancelDatePicker();
+    });
+
+    function updateFooterDates() {
+        document.getElementById('drp-since-display').value = drpTempSince ? datePT(drpTempSince) : '';
+        document.getElementById('drp-until-display').value = drpTempUntil ? datePT(drpTempUntil) : '';
+    }
+
+    function renderCalendars() {
+        renderOneCalendar('drp-cal-left', drpLeftMonth, 'left');
+        renderOneCalendar('drp-cal-right', drpRightMonth, 'right');
+    }
+
+    function renderOneCalendar(containerId, monthObj, side) {
+        const container = document.getElementById(containerId);
+        if (!container || !monthObj) return;
+        const { year, month } = monthObj;
+        const today = todayDate();
+        let html = `<div class="drp-cal-header">`;
+        html += side === 'left' ? `<button class="drp-cal-nav" onclick="navMonth(-1)">‹</button>` : `<span></span>`;
+        html += `<span>${MONTHS_PT[month]} ${year}</span>`;
+        html += side === 'right' ? `<button class="drp-cal-nav" onclick="navMonth(1)">›</button>` : `<span></span>`;
+        html += `</div><div class="drp-cal-grid">`;
+        DAYS_PT.forEach(d => { html += `<div class="drp-cal-dow">${d}</div>`; });
+        let startDow = new Date(year, month, 1).getDay();
+        startDow = startDow === 0 ? 6 : startDow - 1;
+        const daysInMonth = new Date(year, month+1, 0).getDate();
+        const prevDays = new Date(year, month, 0).getDate();
+        for (let i = startDow-1; i >= 0; i--) html += `<div class="drp-cal-day other-month">${prevDays-i}</div>`;
+        for (let d = 1; d <= daysInMonth; d++) {
+            const td = new Date(year, month, d);
+            const cls = ['drp-cal-day'];
+            if (sameDay(td, today)) cls.push('today');
+            if (td > today) cls.push('disabled');
+            if (drpTempSince && drpTempUntil) {
+                if (sameDay(td, drpTempSince)) cls.push('range-start');
+                if (sameDay(td, drpTempUntil)) cls.push('range-end');
+                if (td > drpTempSince && td < drpTempUntil) cls.push('in-range');
+            } else if (drpTempSince && sameDay(td, drpTempSince)) cls.push('range-start','range-end');
+            html += `<div class="${cls.join(' ')}" onclick="event.stopPropagation();onDayClick('${dateStr(td)}')">${d}</div>`;
+        }
+        const remaining = (startDow + daysInMonth) % 7 === 0 ? 0 : 7 - ((startDow + daysInMonth) % 7);
+        for (let i = 1; i <= remaining; i++) html += `<div class="drp-cal-day other-month">${i}</div>`;
+        html += `</div>`;
+        container.innerHTML = html;
+    }
+
+    function navMonth(dir) {
+        [drpLeftMonth, drpRightMonth].forEach(m => {
+            m.month += dir;
+            if (m.month < 0) { m.month = 11; m.year--; }
+            if (m.month > 11) { m.month = 0; m.year++; }
+        });
+        renderCalendars();
+    }
+
+    function onDayClick(ds) {
+        const clicked = new Date(ds + 'T00:00:00');
+        drpPreset = 'custom'; highlightPreset();
+        if (drpClickState === 0) {
+            drpTempSince = clicked; drpTempUntil = null; drpClickState = 1;
+        } else {
+            if (clicked < drpTempSince) { drpTempUntil = new Date(drpTempSince); drpTempSince = clicked; }
+            else drpTempUntil = clicked;
+            drpClickState = 0;
+        }
+        renderCalendars(); updateFooterDates();
+    }
+
+    // ── Formatters ───────────────────────────────────────────────────────────────
     function fmtR(v) {
         if (v == null) return '—';
         return 'R$ ' + Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -755,6 +1002,10 @@
     function fmtN(v) {
         if (v == null || v === 0) return '—';
         return Number(v).toLocaleString('pt-BR');
+    }
+    function fmtX(v) {
+        if (v == null || v === 0) return '—';
+        return Number(v).toFixed(2) + 'x';
     }
     function lucroClass(v) {
         if (v == null) return 'neutral';
@@ -1002,380 +1253,261 @@
         </tr>`;
     }
 
+    // ── Ads Table ────────────────────────────────────────────────────────────────
     let currentAdsData = [];
     let currentSortCol = 'spend';
     let currentSortDesc = true;
 
     function renderAdsTable(ads) {
-        const adsContainer = document.getElementById('crz-ads-container');
         if (!ads || ads.length === 0) return;
-
         currentAdsData = ads.map(ad => {
-            ad.cpl = ad.mqls > 0 ? ad.spend / ad.mqls : 0;
-            ad.pct_nc = ad.mqls > 0 ? (ad.nc / ad.mqls) * 100 : 0;
+            ad.roas     = ad.spend > 0 && ad.receita > 0 ? ad.receita / ad.spend : 0;
+            ad.cpl      = ad.mqls > 0 ? ad.spend / ad.mqls : 0;
+            ad.pct_nc   = ad.mqls > 0 ? (ad.nc / ad.mqls) * 100 : 0;
             ad.custo_nc = ad.nc > 0 ? ad.spend / ad.nc : 0;
             return ad;
         });
-
         renderAdsTableBody();
-        adsContainer.style.display = 'block';
+        document.getElementById('crz-ads-container').style.display = 'block';
     }
 
     function sortAds(col) {
-        if (currentSortCol === col) {
-            currentSortDesc = !currentSortDesc;
-        } else {
-            currentSortCol = col;
-            currentSortDesc = col !== 'ad_name'; // Alfabetico ASC por padrao, numéricos DESC
-        }
+        if (currentSortCol === col) currentSortDesc = !currentSortDesc;
+        else { currentSortCol = col; currentSortDesc = col !== 'ad_name'; }
         renderAdsTableBody();
     }
 
     function renderAdsTableBody() {
         const tbody = document.getElementById('ads-tbody');
-        const showOnlyActive = false;
-
-        // Atualiza indicadores de ordenação
-        const cols = ['ad_name', 'spend', 'mqls', 'cpl', 'nc', 'pct_nc', 'custo_nc'];
+        const cols = ['ad_name','spend','receita','roas','mqls','cpl','nc','pct_nc','custo_nc'];
         cols.forEach(c => {
             const ind = document.getElementById('sort-ind-' + c);
-            if (ind) ind.textContent = (c === currentSortCol) ? (currentSortDesc ? '▼' : '▲') : '';
+            if (ind) ind.textContent = c === currentSortCol ? (currentSortDesc ? '▼' : '▲') : '';
         });
-
-        // Aplica o filtro Ativo
-        let data = showOnlyActive 
-            ? currentAdsData.filter(ad => ad.ad_status === 'ACTIVE')
-            : [...currentAdsData];
-        data.sort((a, b) => {
-            let valA = a[currentSortCol];
-            let valB = b[currentSortCol];
-
-            if (typeof valA === 'string') {
-                return currentSortDesc ? valB.localeCompare(valA) : valA.localeCompare(valB);
-            }
-            return currentSortDesc ? (valB - valA) : (valA - valB);
+        const data = [...currentAdsData].sort((a, b) => {
+            const va = a[currentSortCol], vb = b[currentSortCol];
+            if (typeof va === 'string') return currentSortDesc ? vb.localeCompare(va) : va.localeCompare(vb);
+            return currentSortDesc ? (vb - va) : (va - vb);
         });
+        tbody.innerHTML = data.slice(0, 100).map(ad => `<tr>
+            <td style="text-align:left;"><div style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${ad.ad_name}">${ad.ad_name}</div></td>
+            <td style="font-weight:600;">${fmtR(ad.spend)}</td>
+            <td class="positive">${fmtR(ad.receita)}</td>
+            <td>${fmtX(ad.roas)}</td>
+            <td><b>${ad.mqls || '—'}</b></td>
+            <td>${ad.mqls > 0 ? fmtR(ad.cpl) : '—'}</td>
+            <td style="color:var(--accent);font-weight:600;">${ad.nc || '—'}</td>
+            <td class="pct">${ad.nc > 0 ? ad.pct_nc.toFixed(1)+'%' : '—'}</td>
+            <td>${ad.nc > 0 ? fmtR(ad.custo_nc) : '—'}</td>
+        </tr>`).join('');
 
-        const topAds = data.slice(0, 100);
-
-        tbody.innerHTML = topAds.map(ad => {
-            const cplStr = ad.mqls > 0 ? fmtR(ad.cpl) : '<span style="color:var(--text-muted)">—</span>';
-            const pctNcStr = ad.mqls > 0 ? ad.pct_nc.toFixed(1) + '%' : '—';
-            const custoNcStr = ad.nc > 0 ? fmtR(ad.custo_nc) : '<span style="color:var(--text-muted)">—</span>';
-
-            return `<tr>
-                <td style="text-align:left;">
-                    <div style="font-size:12px;color:var(--text-main);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:sans-serif;" title="${ad.ad_name}">
-                        ${ad.ad_name}
-                    </div>
-                </td>
-                <td style="color:var(--text-main); font-weight:600;">${fmtR(ad.spend)}</td>
-                <td><b>${ad.mqls}</b></td>
-                <td>${cplStr}</td>
-                <td style="color:var(--accent); font-weight:600;">${ad.nc || '—'}</td>
-                <td class="pct">${ad.nc > 0 ? pctNcStr : '—'}</td>
-                <td>${custoNcStr}</td>
-            </tr>`;
-        }).join('');
-
-        // Resumo (TOTAIS) da Tabela Ads
-        let totSpendAds = 0, totMqlsAds = 0, totNcAds = 0;
-        currentAdsData.forEach(ad => {
-            totSpendAds += ad.spend || 0;
-            totMqlsAds += ad.mqls || 0;
-            totNcAds += ad.nc || 0;
-        });
-
-        const cplTotAds = totMqlsAds > 0 ? fmtR(totSpendAds / totMqlsAds) : '—';
-        const pctNcTotAds = totMqlsAds > 0 ? ((totNcAds / totMqlsAds) * 100).toFixed(1) + '%' : '—';
-        const custoNcTotAds = totNcAds > 0 ? fmtR(totSpendAds / totNcAds) : '—';
-
+        let tS = 0, tM = 0, tN = 0, tR = 0;
+        currentAdsData.forEach(a => { tS += a.spend||0; tM += a.mqls||0; tN += a.nc||0; tR += a.receita||0; });
         document.getElementById('ads-tfoot').innerHTML = `<tr>
-            <td>TOTAL (${currentAdsData.length} anúncio${currentAdsData.length !== 1 ? 's' : ''})</td>
-            <td style="color:var(--text-main); font-weight:600;">${fmtR(totSpendAds)}</td>
-            <td><b>${totMqlsAds}</b></td>
-            <td>${cplTotAds}</td>
-            <td style="color:var(--accent); font-weight:600;">${totNcAds || '—'}</td>
-            <td class="pct">${pctNcTotAds}</td>
-            <td>${custoNcTotAds}</td>
+            <td>TOTAL (${currentAdsData.length} anúncio${currentAdsData.length!==1?'s':''})</td>
+            <td style="font-weight:600;">${fmtR(tS)}</td>
+            <td class="positive">${fmtR(tR)}</td>
+            <td>${tS > 0 && tR > 0 ? fmtX(tR/tS) : '—'}</td>
+            <td><b>${tM||'—'}</b></td>
+            <td>${tM > 0 ? fmtR(tS/tM) : '—'}</td>
+            <td style="color:var(--accent);font-weight:600;">${tN||'—'}</td>
+            <td class="pct">${tM > 0 ? ((tN/tM)*100).toFixed(1)+'%' : '—'}</td>
+            <td>${tN > 0 ? fmtR(tS/tN) : '—'}</td>
         </tr>`;
     }
 
-    // ── AdSets Table ──
+    // ── AdSets Table ──────────────────────────────────────────────────────────
     let currentAdSetsData = [];
     let currentAdSetSortCol = 'spend';
     let currentAdSetSortDesc = true;
 
     function renderAdSetsTable(adsets) {
-        const adsetsCont = document.getElementById('crz-adsets-container');
         if (!adsets || adsets.length === 0) return;
-
-        currentAdSetsData = adsets.map(se => {
-            se.cpl = se.mqls > 0 ? se.spend / se.mqls : 0;
-            se.pct_nc = se.mqls > 0 ? (se.nc / se.mqls) * 100 : 0;
-            se.custo_nc = se.nc > 0 ? se.spend / se.nc : 0;
-            return se;
+        currentAdSetsData = adsets.map(s => {
+            s.roas     = s.spend > 0 && s.receita > 0 ? s.receita / s.spend : 0;
+            s.cpl      = s.mqls > 0 ? s.spend / s.mqls : 0;
+            s.pct_nc   = s.mqls > 0 ? (s.nc / s.mqls) * 100 : 0;
+            s.custo_nc = s.nc > 0 ? s.spend / s.nc : 0;
+            return s;
         });
-
         renderAdSetsTableBody();
-        adsetsCont.style.display = 'block';
+        document.getElementById('crz-adsets-container').style.display = 'block';
     }
 
     function sortAdSets(col) {
-        if (currentAdSetSortCol === col) {
-            currentAdSetSortDesc = !currentAdSetSortDesc;
-        } else {
-            currentAdSetSortCol = col;
-            currentAdSetSortDesc = col !== 'adset_name';
-        }
+        if (currentAdSetSortCol === col) currentAdSetSortDesc = !currentAdSetSortDesc;
+        else { currentAdSetSortCol = col; currentAdSetSortDesc = col !== 'adset_name'; }
         renderAdSetsTableBody();
     }
 
     function renderAdSetsTableBody() {
         const tbody = document.getElementById('adsets-tbody');
-        const showOnlyActive = false;
-
-        const cols = ['adset_name', 'spend', 'mqls', 'cpl', 'nc', 'pct_nc', 'custo_nc'];
+        const cols = ['adset_name','spend','receita','roas','mqls','cpl','nc','pct_nc','custo_nc'];
         cols.forEach(c => {
             const ind = document.getElementById('sort-ind-set-' + c);
-            if (ind) ind.textContent = (c === currentAdSetSortCol) ? (currentAdSetSortDesc ? '▼' : '▲') : '';
+            if (ind) ind.textContent = c === currentAdSetSortCol ? (currentAdSetSortDesc ? '▼' : '▲') : '';
         });
-
-        let data = showOnlyActive 
-            ? currentAdSetsData.filter(s => s.ad_status === 'ACTIVE')
-            : [...currentAdSetsData];
-
-        data.sort((a, b) => {
-            let valA = a[currentAdSetSortCol];
-            let valB = b[currentAdSetSortCol];
-
-            if (typeof valA === 'string') {
-                return currentAdSetSortDesc ? valB.localeCompare(valA) : valA.localeCompare(valB);
-            }
-            return currentAdSetSortDesc ? (valB - valA) : (valA - valB);
+        const data = [...currentAdSetsData].sort((a, b) => {
+            const va = a[currentAdSetSortCol], vb = b[currentAdSetSortCol];
+            if (typeof va === 'string') return currentAdSetSortDesc ? vb.localeCompare(va) : va.localeCompare(vb);
+            return currentAdSetSortDesc ? (vb - va) : (va - vb);
         });
+        tbody.innerHTML = data.slice(0, 50).map(s => `<tr>
+            <td style="text-align:left;"><div style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${s.adset_name}">${s.adset_name}</div></td>
+            <td style="font-weight:600;">${fmtR(s.spend)}</td>
+            <td class="positive">${fmtR(s.receita)}</td>
+            <td>${fmtX(s.roas)}</td>
+            <td><b>${s.mqls||'—'}</b></td>
+            <td>${s.mqls > 0 ? fmtR(s.cpl) : '—'}</td>
+            <td style="color:var(--accent);font-weight:600;">${s.nc||'—'}</td>
+            <td class="pct">${s.nc > 0 ? s.pct_nc.toFixed(1)+'%' : '—'}</td>
+            <td>${s.nc > 0 ? fmtR(s.custo_nc) : '—'}</td>
+        </tr>`).join('');
 
-        const top = data.slice(0, 50);
-
-        tbody.innerHTML = top.map(adset => {
-            const cplStr = adset.mqls > 0 ? fmtR(adset.cpl) : '<span style="color:var(--text-muted)">—</span>';
-            const pctNcStr = adset.mqls > 0 ? adset.pct_nc.toFixed(1) + '%' : '—';
-            const custoNcStr = adset.nc > 0 ? fmtR(adset.custo_nc) : '<span style="color:var(--text-muted)">—</span>';
-
-            return `<tr>
-                <td style="text-align:left;">
-                    <div style="font-size:12px;color:var(--text-main);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:sans-serif;" title="${adset.adset_name}">
-                        ${adset.adset_name}
-                    </div>
-                </td>
-                <td style="color:var(--text-main); font-weight:600;">${fmtR(adset.spend)}</td>
-                <td><b>${adset.mqls}</b></td>
-                <td>${cplStr}</td>
-                <td style="color:var(--accent); font-weight:600;">${adset.nc || '—'}</td>
-                <td class="pct">${adset.nc > 0 ? pctNcStr : '—'}</td>
-                <td>${custoNcStr}</td>
-            </tr>`;
-        }).join('');
-
-        let totSpend = 0, totMqls = 0, totNc = 0;
-        currentAdSetsData.forEach(s => { totSpend += s.spend || 0; totMqls += s.mqls || 0; totNc += s.nc || 0; });
-        const cplTot = totMqls > 0 ? fmtR(totSpend / totMqls) : '—';
-        const pctNcTot = totMqls > 0 ? ((totNc / totMqls) * 100).toFixed(1) + '%' : '—';
-        const custoNcTot = totNc > 0 ? fmtR(totSpend / totNc) : '—';
-
+        let tS = 0, tM = 0, tN = 0, tR = 0;
+        currentAdSetsData.forEach(s => { tS += s.spend||0; tM += s.mqls||0; tN += s.nc||0; tR += s.receita||0; });
         document.getElementById('adsets-tfoot').innerHTML = `<tr>
             <td>TOTAL (${currentAdSetsData.length} conj)</td>
-            <td style="color:var(--text-main); font-weight:600;">${fmtR(totSpend)}</td>
-            <td><b>${totMqls}</b></td>
-            <td>${cplTot}</td>
-            <td style="color:var(--accent); font-weight:600;">${totNc || '—'}</td>
-            <td class="pct">${pctNcTot}</td>
-            <td>${custoNcTot}</td>
+            <td style="font-weight:600;">${fmtR(tS)}</td>
+            <td class="positive">${fmtR(tR)}</td>
+            <td>${tS > 0 && tR > 0 ? fmtX(tR/tS) : '—'}</td>
+            <td><b>${tM||'—'}</b></td>
+            <td>${tM > 0 ? fmtR(tS/tM) : '—'}</td>
+            <td style="color:var(--accent);font-weight:600;">${tN||'—'}</td>
+            <td class="pct">${tM > 0 ? ((tN/tM)*100).toFixed(1)+'%' : '—'}</td>
+            <td>${tN > 0 ? fmtR(tS/tN) : '—'}</td>
         </tr>`;
     }
 
-    // ── Campaigns Table ──
+    // ── Campaigns Table ───────────────────────────────────────────────────────
     let currentCampaignsData = [];
     let currentCampSortCol = 'spend';
     let currentCampSortDesc = true;
 
     function renderCampaignsTable(camps) {
-        const cont = document.getElementById('crz-campaigns-container');
         if (!camps || camps.length === 0) return;
-
         currentCampaignsData = camps.map(c => {
-            c.cpl = c.mqls > 0 ? c.spend / c.mqls : 0;
-            c.pct_nc = c.mqls > 0 ? (c.nc / c.mqls) * 100 : 0;
+            c.roas     = c.spend > 0 && c.receita > 0 ? c.receita / c.spend : 0;
+            c.cpl      = c.mqls > 0 ? c.spend / c.mqls : 0;
+            c.pct_nc   = c.mqls > 0 ? (c.nc / c.mqls) * 100 : 0;
             c.custo_nc = c.nc > 0 ? c.spend / c.nc : 0;
             return c;
         });
-
         renderCampaignsTableBody();
-        cont.style.display = 'block';
+        document.getElementById('crz-campaigns-container').style.display = 'block';
     }
 
     function sortCampaigns(col) {
-        if (currentCampSortCol === col) {
-            currentCampSortDesc = !currentCampSortDesc;
-        } else {
-            currentCampSortCol = col;
-            currentCampSortDesc = col !== 'campaign_name';
-        }
+        if (currentCampSortCol === col) currentCampSortDesc = !currentCampSortDesc;
+        else { currentCampSortCol = col; currentCampSortDesc = col !== 'campaign_name'; }
         renderCampaignsTableBody();
     }
 
     function renderCampaignsTableBody() {
         const tbody = document.getElementById('campaigns-tbody');
-        const showOnlyActive = false;
-
-        const cols = ['campaign_name', 'spend', 'mqls', 'cpl', 'nc', 'pct_nc', 'custo_nc'];
+        const cols = ['campaign_name','spend','receita','roas','mqls','cpl','nc','pct_nc','custo_nc'];
         cols.forEach(c => {
             const ind = document.getElementById('sort-ind-camp-' + c);
-            if (ind) ind.textContent = (c === currentCampSortCol) ? (currentCampSortDesc ? '▼' : '▲') : '';
+            if (ind) ind.textContent = c === currentCampSortCol ? (currentCampSortDesc ? '▼' : '▲') : '';
         });
-
-        let data = showOnlyActive 
-            ? currentCampaignsData.filter(s => s.ad_status === 'ACTIVE')
-            : [...currentCampaignsData];
-
-        data.sort((a, b) => {
-            let valA = a[currentCampSortCol];
-            let valB = b[currentCampSortCol];
-
-            if (typeof valA === 'string') {
-                return currentCampSortDesc ? valB.localeCompare(valA) : valA.localeCompare(valB);
-            }
-            return currentCampSortDesc ? (valB - valA) : (valA - valB);
+        const data = [...currentCampaignsData].sort((a, b) => {
+            const va = a[currentCampSortCol], vb = b[currentCampSortCol];
+            if (typeof va === 'string') return currentCampSortDesc ? vb.localeCompare(va) : va.localeCompare(vb);
+            return currentCampSortDesc ? (vb - va) : (va - vb);
         });
+        tbody.innerHTML = data.slice(0, 50).map(c => `<tr>
+            <td style="text-align:left;"><div style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${c.campaign_name}">${c.campaign_name}</div></td>
+            <td style="font-weight:600;">${fmtR(c.spend)}</td>
+            <td class="positive">${fmtR(c.receita)}</td>
+            <td>${fmtX(c.roas)}</td>
+            <td><b>${c.mqls||'—'}</b></td>
+            <td>${c.mqls > 0 ? fmtR(c.cpl) : '—'}</td>
+            <td style="color:var(--accent);font-weight:600;">${c.nc||'—'}</td>
+            <td class="pct">${c.nc > 0 ? c.pct_nc.toFixed(1)+'%' : '—'}</td>
+            <td>${c.nc > 0 ? fmtR(c.custo_nc) : '—'}</td>
+        </tr>`).join('');
 
-        const top = data.slice(0, 50);
-
-        tbody.innerHTML = top.map(camp => {
-            const cplStr = camp.mqls > 0 ? fmtR(camp.cpl) : '<span style="color:var(--text-muted)">—</span>';
-            const pctNcStr = camp.mqls > 0 ? camp.pct_nc.toFixed(1) + '%' : '—';
-            const custoNcStr = camp.nc > 0 ? fmtR(camp.custo_nc) : '<span style="color:var(--text-muted)">—</span>';
-
-            return `<tr>
-                <td style="text-align:left;">
-                    <div style="font-size:12px;color:var(--text-main);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:sans-serif;" title="${camp.campaign_name}">
-                        ${camp.campaign_name}
-                    </div>
-                </td>
-                <td style="color:var(--text-main); font-weight:600;">${fmtR(camp.spend)}</td>
-                <td><b>${camp.mqls}</b></td>
-                <td>${cplStr}</td>
-                <td style="color:var(--accent); font-weight:600;">${camp.nc || '—'}</td>
-                <td class="pct">${camp.nc > 0 ? pctNcStr : '—'}</td>
-                <td>${custoNcStr}</td>
-            </tr>`;
-        }).join('');
-
-        let totSpend = 0, totMqls = 0, totNc = 0;
-        currentCampaignsData.forEach(s => { totSpend += s.spend || 0; totMqls += s.mqls || 0; totNc += s.nc || 0; });
-        const cplTot = totMqls > 0 ? fmtR(totSpend / totMqls) : '—';
-        const pctNcTot = totMqls > 0 ? ((totNc / totMqls) * 100).toFixed(1) + '%' : '—';
-        const custoNcTot = totNc > 0 ? fmtR(totSpend / totNc) : '—';
-
+        let tS = 0, tM = 0, tN = 0, tR = 0;
+        currentCampaignsData.forEach(c => { tS += c.spend||0; tM += c.mqls||0; tN += c.nc||0; tR += c.receita||0; });
         document.getElementById('campaigns-tfoot').innerHTML = `<tr>
             <td>TOTAL (${currentCampaignsData.length} camp)</td>
-            <td style="color:var(--text-main); font-weight:600;">${fmtR(totSpend)}</td>
-            <td><b>${totMqls}</b></td>
-            <td>${cplTot}</td>
-            <td style="color:var(--accent); font-weight:600;">${totNc || '—'}</td>
-            <td class="pct">${pctNcTot}</td>
-            <td>${custoNcTot}</td>
+            <td style="font-weight:600;">${fmtR(tS)}</td>
+            <td class="positive">${fmtR(tR)}</td>
+            <td>${tS > 0 && tR > 0 ? fmtX(tR/tS) : '—'}</td>
+            <td><b>${tM||'—'}</b></td>
+            <td>${tM > 0 ? fmtR(tS/tM) : '—'}</td>
+            <td style="color:var(--accent);font-weight:600;">${tN||'—'}</td>
+            <td class="pct">${tM > 0 ? ((tN/tM)*100).toFixed(1)+'%' : '—'}</td>
+            <td>${tN > 0 ? fmtR(tS/tN) : '—'}</td>
         </tr>`;
     }
 
 
-    // KPIs usa total_mqls, total_wons e fat_total_sheets do Sheets
+    // ── KPIs ─────────────────────────────────────────────────────────────────────
     function updateKPIs(data) {
         let totSpend = 0;
-        for (const ad of (data.ads_consolidated || [])) {
-            totSpend += ad.spend || 0;
-        }
+        for (const ad of (data.ads_consolidated || [])) totSpend += ad.spend || 0;
+        const totMqls   = data.total_mqls || 0;
+        const totReceita = data.fat_total_sheets || 0;
+        const roas = totSpend > 0 && totReceita > 0 ? totReceita / totSpend : null;
+        const cpl  = totMqls > 0 ? totSpend / totMqls : null;
 
-        const totLeads = data.total_mqls || 0;
-        const totVendas = data.total_wons || 0;
-        const totFat = data.fat_total_sheets || 0;
-        const totCPL = totLeads > 0 ? totSpend / totLeads : null;
-        const totCAC = totVendas > 0 ? totSpend / totVendas : null;
-
-        let totNcMqls = 0;
-        if (data.by_produto) {
-            totNcMqls = matchProd(data.by_produto, 'negocio');
-        }
-        const cplNc = totNcMqls > 0 ? totSpend / totNcMqls : null;
-
-        document.getElementById('kpi-spend').textContent = fmtR(totSpend);
-        document.getElementById('kpi-leads').textContent = totLeads || '—';
-        document.getElementById('kpi-nc').textContent = totNcMqls || '—';
-        document.getElementById('kpi-cpl').textContent = totCPL != null ? fmtR(totCPL) : '—';
-        document.getElementById('kpi-cpl-nc').textContent = cplNc != null ? fmtR(cplNc) : '—';
-        document.getElementById('kpi-vendas').textContent = totVendas || '—';
-        document.getElementById('kpi-cac').textContent = totCAC != null ? fmtR(totCAC) : '—';
-        document.getElementById('kpi-fat').textContent = fmtR(totFat);
-        document.getElementById('kpi-bar').style.display = '';
+        document.getElementById('kpi-spend').textContent   = fmtR(totSpend);
+        document.getElementById('kpi-receita').textContent = fmtR(totReceita);
+        document.getElementById('kpi-roas').textContent    = roas != null ? fmtX(roas) : '—';
+        document.getElementById('kpi-mqls').textContent    = totMqls || '—';
+        document.getElementById('kpi-cpl').textContent     = cpl != null ? fmtR(cpl) : '—';
+        document.getElementById('kpi-bar').style.display   = '';
     }
 
     async function loadData() {
-        // Reset states
+        ['kpi-bar','crz-meta','crz-main-grid','crz-ads-container','crz-adsets-container','crz-campaigns-container'].forEach(id => {
+            const el = document.getElementById(id); if (el) el.style.display = 'none';
+        });
         document.getElementById('crz-loading').style.display = '';
         document.getElementById('crz-error').style.display = 'none';
-        document.getElementById('kpi-bar').style.display = 'none';
-        document.getElementById('crz-meta').style.display = 'none';
-        document.getElementById('crz-main-grid').style.display = 'none';
-        document.getElementById('crz-ads-container').style.display = 'none';
 
         try {
-            const resp = await fetch(`/api/cruzamento/data?date_preset=${currentPreset}`);
+            const resp = await fetch(`/api/cruzamento/data?${getDateParams()}`);
             const json = await resp.json();
-
             if (!json.success) throw new Error(json.error || 'Erro desconhecido');
 
             updateKPIs(json.data);
             renderDonut(json.data.by_produto || {});
             renderDayTable(json.data.by_date || []);
 
-            // Adaptar campos do backend (flat) para o frontend ler certinho!
-            const mappedAds = (json.data.ads_consolidated || []).map(ad => ({
-                ad_name: ad.ad_name,
-                spend: ad.spend,
-                mqls: ad.leads_total,
-                nc: ad.leads_a,
-                ad_status: ad.ad_status
-            }));
-
-            const mappedAdSets = (json.data.adsets_consolidated || []).map(s => ({
-                adset_name: s.adset_name,
-                spend: s.spend,
-                mqls: s.leads_total,
-                nc: s.leads_a,
-                ad_status: s.ad_status
-            }));
-
-            const mappedCampaigns = (json.data.campaigns_consolidated || []).map(c => ({
+            renderAdsTable((json.data.ads_consolidated || []).map(ad => ({
+                ad_name:      ad.ad_name,
+                spend:        ad.spend,
+                receita:      ad.fat_total || 0,
+                mqls:         ad.leads_total,
+                nc:           ad.leads_a,
+                ad_status:    ad.ad_status
+            })));
+            renderAdSetsTable((json.data.adsets_consolidated || []).map(s => ({
+                adset_name:   s.adset_name,
+                spend:        s.spend,
+                receita:      s.fat_total || 0,
+                mqls:         s.leads_total,
+                nc:           s.leads_a,
+                ad_status:    s.ad_status
+            })));
+            renderCampaignsTable((json.data.campaigns_consolidated || []).map(c => ({
                 campaign_name: c.campaign_name,
-                spend: c.spend,
-                mqls: c.leads_total,
-                nc: c.leads_a,
-                ad_status: c.ad_status
-            }));
-
-            renderAdsTable(mappedAds);
-            renderAdSetsTable(mappedAdSets);
-            renderCampaignsTable(mappedCampaigns);
+                spend:         c.spend,
+                receita:       c.fat_total || 0,
+                mqls:          c.leads_total,
+                nc:            c.leads_a,
+                ad_status:     c.ad_status
+            })));
 
             document.getElementById('crz-main-grid').style.display = 'grid';
-
             document.getElementById('crz-loading').style.display = 'none';
 
             const m = json.meta || {};
-            document.getElementById('crz-meta').style.display = '';
-            document.getElementById('crz-meta').innerHTML =
-                `⏱ ${m.elapsed_sec}s · 📘 ${m.fb_ads_count} ads do FB · ` +
-                `📋 ${m.mqls_count} MQLs · ✅ ${m.wons_count} Wons · ` +
-                `Atualizado: ${new Date(m.timestamp).toLocaleString('pt-BR')}`;
+            const meta = document.getElementById('crz-meta');
+            meta.style.display = '';
+            meta.innerHTML = `⏱ ${m.elapsed_sec}s · 📘 ${m.fb_ads_count} ads · 📋 ${m.mqls_count} MQLs · ✅ ${m.wons_count} Wons · ${new Date(m.timestamp).toLocaleString('pt-BR')}`;
 
         } catch (err) {
             document.getElementById('crz-loading').style.display = 'none';
@@ -1384,7 +1516,8 @@
         }
     }
 
-    // Carregar ao abrir a página
+    // Inicializar DRP e carregar dados
+    initDRP();
     loadData();
 </script>
 {% endblock %}
