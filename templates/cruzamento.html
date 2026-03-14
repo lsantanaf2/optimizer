@@ -76,7 +76,7 @@
     }
     .drp-preset {
         display: flex; align-items: center; gap: 8px;
-        padding: 6px 16px; font-size: 12px; color: var(--text-secondary);
+        padding: 0 16px; margin: 5px 0; font-size: 12px; color: var(--text-secondary);
         cursor: pointer; transition: all 0.1s; border: none; background: none;
     }
     .drp-preset:hover { background: var(--card-bg-hover, rgba(255,255,255,0.05)); color: var(--text-primary); }
@@ -134,6 +134,13 @@
         padding: 6px 14px; background: var(--card-bg); border: 1px solid var(--border);
         border-radius: var(--radius-sm); color: var(--text-muted); font-size: 12px; font-weight: 500;
     }
+    .btn-active-filter {
+        padding: 3px 12px; border: 1px solid var(--border); border-radius: 20px;
+        background: transparent; color: var(--text-muted); font-size: 11px; font-weight: 600;
+        cursor: pointer; transition: all .15s; letter-spacing: 0.3px;
+    }
+    .btn-active-filter:hover { border-color: var(--accent); color: var(--accent); }
+    .btn-active-filter.on { background: var(--accent); color: #000; border-color: var(--accent); }
 
     /* Refresh btn */
     .btn-refresh {
@@ -695,6 +702,7 @@
     style="display:none; margin-bottom: 14px; overflow:hidden; padding:0;">
     <div class="chart-card-title" style="padding:14px 16px 10px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
         <span>📈 MQLs e Custos por Anúncio</span>
+        <button class="btn-active-filter" id="btn-active-ads" onclick="toggleActiveFilter('ads')">Somente ativos</button>
     </div>
     <div style="overflow-x:auto; overflow-y:auto; max-height:500px;">
         <table class="day-table" id="ads-table" style="table-layout: fixed; width: 100%;">
@@ -722,6 +730,7 @@
     style="display:none; margin-bottom: 14px; overflow:hidden; padding:0;">
     <div class="chart-card-title" style="padding:14px 16px 10px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
         <span>📂 MQLs e Custos por Conjunto de Anúncios</span>
+        <button class="btn-active-filter" id="btn-active-adsets" onclick="toggleActiveFilter('adsets')">Somente ativos</button>
     </div>
     <div style="overflow-x:auto; overflow-y:auto; max-height:350px;">
         <table class="day-table" id="adsets-table" style="table-layout: fixed; width: 100%;">
@@ -749,6 +758,7 @@
     style="display:none; margin-bottom: 14px; overflow:hidden; padding:0;">
     <div class="chart-card-title" style="padding:14px 16px 10px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
         <span>🎯 MQLs e Custos por Campanha</span>
+        <button class="btn-active-filter" id="btn-active-camps" onclick="toggleActiveFilter('camps')">Somente ativos</button>
     </div>
     <div style="overflow-x:auto; overflow-y:auto; max-height:350px;">
         <table class="day-table" id="campaigns-table" style="table-layout: fixed; width: 100%;">
@@ -1232,6 +1242,19 @@
         </tr>`;
     }
 
+    // ── Filtro Somente Ativos ─────────────────────────────────────────────────────
+    const activeFilters = { ads: false, adsets: false, camps: false };
+    const btnIds = { ads: 'btn-active-ads', adsets: 'btn-active-adsets', camps: 'btn-active-camps' };
+
+    function toggleActiveFilter(table) {
+        activeFilters[table] = !activeFilters[table];
+        const btn = document.getElementById(btnIds[table]);
+        if (btn) btn.classList.toggle('on', activeFilters[table]);
+        if (table === 'ads')    renderAdsTableBody();
+        if (table === 'adsets') renderAdSetsTableBody();
+        if (table === 'camps')  renderCampaignsTableBody();
+    }
+
     // ── Ads Table ────────────────────────────────────────────────────────────────
     let currentAdsData = [];
     let currentSortCol = 'spend';
@@ -1263,7 +1286,8 @@
             const ind = document.getElementById('sort-ind-' + c);
             if (ind) ind.textContent = c === currentSortCol ? (currentSortDesc ? '▼' : '▲') : '';
         });
-        const data = [...currentAdsData].sort((a, b) => {
+        const filtered = activeFilters.ads ? currentAdsData.filter(a => a.ad_status === 'ACTIVE') : currentAdsData;
+        const data = [...filtered].sort((a, b) => {
             const va = a[currentSortCol], vb = b[currentSortCol];
             if (typeof va === 'string') return currentSortDesc ? vb.localeCompare(va) : va.localeCompare(vb);
             return currentSortDesc ? (vb - va) : (va - vb);
@@ -1326,7 +1350,8 @@
             const ind = document.getElementById('sort-ind-set-' + c);
             if (ind) ind.textContent = c === currentAdSetSortCol ? (currentAdSetSortDesc ? '▼' : '▲') : '';
         });
-        const data = [...currentAdSetsData].sort((a, b) => {
+        const filteredSets = activeFilters.adsets ? currentAdSetsData.filter(s => s.ad_status === 'ACTIVE') : currentAdSetsData;
+        const data = [...filteredSets].sort((a, b) => {
             const va = a[currentAdSetSortCol], vb = b[currentAdSetSortCol];
             if (typeof va === 'string') return currentAdSetSortDesc ? vb.localeCompare(va) : va.localeCompare(vb);
             return currentAdSetSortDesc ? (vb - va) : (va - vb);
@@ -1389,7 +1414,8 @@
             const ind = document.getElementById('sort-ind-camp-' + c);
             if (ind) ind.textContent = c === currentCampSortCol ? (currentCampSortDesc ? '▼' : '▲') : '';
         });
-        const data = [...currentCampaignsData].sort((a, b) => {
+        const filteredCamps = activeFilters.camps ? currentCampaignsData.filter(c => c.ad_status === 'ACTIVE') : currentCampaignsData;
+        const data = [...filteredCamps].sort((a, b) => {
             const va = a[currentCampSortCol], vb = b[currentCampSortCol];
             if (typeof va === 'string') return currentCampSortDesc ? vb.localeCompare(va) : va.localeCompare(vb);
             return currentCampSortDesc ? (vb - va) : (va - vb);

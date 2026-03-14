@@ -33,7 +33,7 @@ app.register_blueprint(optimization_bp)
 from modules.cruzamento import cruzamento_bp
 app.register_blueprint(cruzamento_bp)
 
-VERSION = "v2.2.8"
+VERSION = "v2.2.9"
 
 @app.context_processor
 def inject_version():
