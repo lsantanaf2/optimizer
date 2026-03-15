@@ -95,7 +95,7 @@ def api_anuncios_data(account_id):
                 'access_token': token,
             }
             if since and until:
-                params['time_range'] = json.dumps({'since': since, 'until': until})
+                params['time_range'] = json.dumps({'since': since, 'until': until}, separators=(',', ':'))
             else:
                 params['date_preset'] = date_preset
             return _paginate(f'{BASE_URL}/{account_id}/insights', params)
