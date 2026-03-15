@@ -879,7 +879,7 @@
     // Nota: IS_CLIENT apenas define o preset inicial; o DRP é sempre interativo
 
     function todayDate() { const d = new Date(); d.setHours(0,0,0,0); return d; }
-    function dateStr(d) { return d.toISOString().split('T')[0]; }
+    function dateStr(d) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
     function datePT(d) { return `${d.getDate()} de ${MONTHS_PT[d.getMonth()]} de ${d.getFullYear()}`; }
     function sameDay(a, b) { return a && b && dateStr(a) === dateStr(b); }
 

@@ -15,6 +15,8 @@ import time
 import requests
 import concurrent.futures
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
+_BR_TZ = ZoneInfo('America/Sao_Paulo')
 
 from flask import Blueprint, jsonify, render_template, request, session, redirect, url_for
 
@@ -814,7 +816,7 @@ def api_cruzamento_data():
                 'wons_count':     resultado['total_wons'],
                 'elapsed_sec':    elapsed,
                 'date_preset':    date_preset,
-                'timestamp':      datetime.now().isoformat(),
+                'timestamp':      datetime.now(_BR_TZ).isoformat(),
             }
         })
 
