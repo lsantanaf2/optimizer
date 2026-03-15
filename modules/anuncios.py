@@ -80,27 +80,39 @@ def api_anuncios_data(account_id):
     date_preset = request.args.get('date_preset', 'last_7d')
 
     try:
-        # ── 1. Insights ────────────────────────────────────────────────────────
+        def _build_date_params(p):
+            if since and until:
+                p['time_range'] = json.dumps({'since': since, 'until': until}, separators=(',', ':'))
+            else:
+                p['date_preset'] = date_preset
+
+        # ── 1. Insights core (sempre funciona) ─────────────────────────────────
         def fetch_insights():
-            fields = (
-                'ad_id,ad_name,spend,impressions,clicks,ctr,'
-                'actions,'
-                'video_3_sec_watched_actions,'
-                'video_p75_watched_actions'
-            )
             params = {
                 'level': 'ad',
-                'fields': fields,
+                'fields': 'ad_id,ad_name,spend,impressions,clicks,ctr,actions',
                 'limit': 500,
                 'access_token': token,
             }
-            if since and until:
-                params['time_range'] = json.dumps({'since': since, 'until': until}, separators=(',', ':'))
-            else:
-                params['date_preset'] = date_preset
+            _build_date_params(params)
             return _paginate(f'{BASE_URL}/{account_id}/insights', params)
 
-        # ── 2. Effective status de todos os ads ────────────────────────────────
+        # ── 2. Insights de vídeo (opcional — nem todas as contas suportam) ──────
+        def fetch_video_insights():
+            params = {
+                'level': 'ad',
+                'fields': 'ad_id,video_play_actions,video_p75_watched_actions',
+                'limit': 500,
+                'access_token': token,
+            }
+            _build_date_params(params)
+            try:
+                return _paginate(f'{BASE_URL}/{account_id}/insights', params)
+            except Exception as e:
+                print(f'⚠️ [anuncios] video insights indisponível: {e}')
+                return []
+
+        # ── 3. Effective status de todos os ads ────────────────────────────────
         def fetch_effective_status():
             params = {
                 'fields': 'id,effective_status',
@@ -109,16 +121,27 @@ def api_anuncios_data(account_id):
             }
             return _paginate(f'{BASE_URL}/{account_id}/ads', params)
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
-            f_ins = ex.submit(fetch_insights)
-            f_eff = ex.submit(fetch_effective_status)
-            insights    = f_ins.result()
-            ads_status  = f_eff.result()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as ex:
+            f_ins   = ex.submit(fetch_insights)
+            f_vid   = ex.submit(fetch_video_insights)
+            f_eff   = ex.submit(fetch_effective_status)
+            insights     = f_ins.result()
+            video_rows   = f_vid.result()
+            ads_status   = f_eff.result()
 
-        # ── 3. Mapa ad_id → effective_status ──────────────────────────────────
+        # ── 4. Mapas auxiliares ────────────────────────────────────────────────
         status_map = {ad['id']: ad.get('effective_status', 'UNKNOWN') for ad in ads_status}
 
-        # ── 4. Normaliza cada linha de insight ─────────────────────────────────
+        # Mapa ad_id → {video_3s, video_p75}
+        video_map = {}
+        for v in video_rows:
+            vid = v.get('ad_id', '')
+            video_map[vid] = {
+                'video_3s':  _action_value(v.get('video_play_actions'),       'video_view'),
+                'video_p75': _action_value(v.get('video_p75_watched_actions'), 'video_view'),
+            }
+
+        # ── 5. Normaliza cada linha de insight ─────────────────────────────────
         result = []
         for item in insights:
             ad_id = item.get('ad_id', '')
@@ -127,8 +150,9 @@ def api_anuncios_data(account_id):
             if purchases == 0:
                 purchases = _action_value(item.get('actions'), 'omni_purchase')
 
-            video_3s  = _action_value(item.get('video_3_sec_watched_actions'), 'video_view')
-            video_p75 = _action_value(item.get('video_p75_watched_actions'),   'video_view')
+            vid       = video_map.get(ad_id, {})
+            video_3s  = vid.get('video_3s',  0.0)
+            video_p75 = vid.get('video_p75', 0.0)
 
             result.append({
                 'ad_id':            ad_id,
