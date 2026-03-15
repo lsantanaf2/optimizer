@@ -1082,6 +1082,9 @@
             if (json.success) {
                 btn.classList.toggle('active');
                 btn.classList.toggle('paused');
+                // Atualiza allData para que reordenações futuras usem o status correto
+                const item = allData.find(d => String(d.id) === String(entityId));
+                if (item) item.status = newStatus;
                 mostrarToast(`✅ ${newStatus === 'ACTIVE' ? 'Ativado' : 'Pausado'}`);
             } else {
                 mostrarToast('❌ ' + json.error);
@@ -1132,6 +1135,9 @@
                 input.dataset.original = newBudget.toFixed(2);
                 btn.style.display = 'none';
                 btn.textContent = '✓';
+                // Atualiza allData para que reordenações futuras usem o orçamento correto
+                const item = allData.find(d => String(d.id) === String(entityId));
+                if (item) item.daily_budget = newBudget;
                 mostrarToast(`✅ Verba atualizada: R$ ${newBudget.toFixed(2)}/dia`);
             } else {
                 mostrarToast('❌ ' + json.error);
