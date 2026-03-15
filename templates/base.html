@@ -45,6 +45,13 @@
                     title="FB Ads × Google Sheets">
                     <span class="nav-icon">🔀</span>
                 </a>
+
+                <!-- Anúncios -->
+                <a href="{{ url_for('anuncios.anuncios_page', account_id=session.get('account_id')) if session.get('account_id') else url_for('listar_contas') }}"
+                    class="nav-item {% if request.endpoint == 'anuncios.anuncios_page' %}active{% endif %}"
+                    title="Anúncios">
+                    <span class="nav-icon">📣</span>
+                </a>
             </nav>
             <div class="sidebar-footer">
                 <a href="{{ url_for('logout') }}" class="nav-item" title="Sair">

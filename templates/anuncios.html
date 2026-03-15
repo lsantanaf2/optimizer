@@ -1,0 +1,768 @@
+{% extends "base.html" %}
+
+{% block title %}Anúncios — OPTIMIZER{% endblock %}
+
+{% block breadcrumb %}
+<span>Anúncios</span> / <span style="color:var(--text-primary)">Insights Consolidados</span>
+{% endblock %}
+
+{% block content %}
+<style>
+    .container {
+        width: 90% !important;
+        max-width: 1800px !important;
+        padding: 0 20px !important;
+        margin: 16px auto !important;
+    }
+
+    /* ── Controls bar ── */
+    .ads-controls {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-bottom: 14px;
+    }
+    .ads-left  { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .ads-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+    .ads-title {
+        font-size: 16px; font-weight: 700;
+        color: var(--text-primary); margin: 0;
+    }
+
+    /* CPA Alvo input */
+    .cpa-alvo-wrap {
+        display: flex; align-items: center; gap: 6px;
+    }
+    .cpa-alvo-wrap label {
+        font-size: 11px; color: var(--text-muted);
+        font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px;
+        white-space: nowrap;
+    }
+    .cpa-alvo-wrap input {
+        width: 80px; padding: 5px 8px;
+        background: var(--bg-deep, #0e0e10); border: 1px solid var(--border);
+        border-radius: var(--radius-sm); color: var(--text-primary);
+        font-family: var(--font-sans, inherit); font-size: 12px;
+        text-align: right;
+    }
+    .cpa-alvo-wrap input:focus { outline: none; border-color: var(--accent); }
+
+    /* Apenas Ativos toggle */
+    .ads-only-active {
+        display: flex; align-items: center; gap: 6px;
+        cursor: pointer; font-size: 12px;
+        color: var(--text-secondary); font-weight: 600;
+        user-select: none;
+    }
+    .ads-only-active input[type="checkbox"] {
+        cursor: pointer; accent-color: var(--accent);
+        width: 14px; height: 14px;
+    }
+
+    /* Refresh button */
+    .btn-refresh {
+        padding: 6px 14px;
+        border: 1px solid var(--border); border-radius: var(--radius-sm);
+        background: var(--bg-card); color: var(--text-primary);
+        cursor: pointer; font-size: 12px; font-weight: 600; transition: all .15s;
+    }
+    .btn-refresh:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ── Date Range Picker (idêntico ao cruzamento.html) ── */
+    .drp-wrap { position: relative; }
+    .drp-trigger {
+        display: flex; align-items: center; gap: 8px;
+        padding: 6px 14px;
+        background: var(--bg-surface, var(--card-bg));
+        border: 1px solid var(--border); border-radius: var(--radius-sm);
+        color: var(--text-primary); font-family: var(--font-sans, inherit);
+        font-size: 12px; font-weight: 500; cursor: pointer;
+        transition: all 0.15s; white-space: nowrap;
+    }
+    .drp-trigger:hover { border-color: var(--accent); }
+    .drp-arrow { font-size: 10px; color: var(--text-muted); }
+    .drp-dropdown {
+        display: none; position: absolute;
+        top: calc(100% + 6px); right: 0; z-index: 1000;
+        background: var(--bg-surface, var(--card-bg));
+        border: 1px solid var(--border); border-radius: var(--radius-md);
+        box-shadow: 0 12px 40px rgba(0,0,0,0.5); min-width: 620px;
+    }
+    .drp-dropdown.open { display: block; }
+    .drp-body { display: flex; }
+    .drp-presets {
+        width: 160px; border-right: 1px solid var(--border);
+        padding: 12px 0; display: flex; flex-direction: column; flex-shrink: 0;
+    }
+    .drp-presets-title {
+        padding: 4px 16px 8px; font-size: 10px;
+        text-transform: uppercase; letter-spacing: 0.6px;
+        color: var(--text-muted); font-weight: 700;
+    }
+    .drp-preset {
+        display: flex; align-items: center; gap: 8px;
+        padding: 5px 16px; font-size: 12px; color: var(--text-secondary);
+        cursor: pointer; transition: all 0.1s; border: none; background: none;
+    }
+    .drp-preset:hover { background: var(--card-bg-hover, rgba(255,255,255,0.05)); color: var(--text-primary); }
+    .drp-preset.active { background: #0891b215; color: var(--accent); }
+    .drp-preset input[type="radio"] { width: 13px; height: 13px; accent-color: var(--accent); margin: 0; cursor: pointer; }
+    .drp-cal-area { display: flex; flex-direction: column; flex: 1; }
+    .drp-cals { display: flex; gap: 0; padding: 12px 16px; flex: 1; }
+    .drp-cal { flex: 1; }
+    .drp-cal-header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 0 4px 10px; font-size: 12px; font-weight: 600; color: var(--text-primary);
+    }
+    .drp-cal-nav {
+        background: none; border: none; color: var(--text-muted);
+        font-size: 16px; cursor: pointer; padding: 2px 6px;
+        border-radius: 4px; transition: all 0.15s;
+    }
+    .drp-cal-nav:hover { background: var(--card-bg-hover, rgba(255,255,255,0.05)); color: var(--text-primary); }
+    .drp-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; text-align: center; }
+    .drp-cal-dow { font-size: 10px; font-weight: 700; color: var(--text-muted); padding: 4px 0; text-transform: uppercase; letter-spacing: 0.4px; }
+    .drp-cal-day { font-size: 12px; padding: 6px 2px; cursor: pointer; border-radius: 4px; color: var(--text-secondary); transition: all 0.1s; }
+    .drp-cal-day:hover { background: var(--card-bg-hover, rgba(255,255,255,0.05)); color: var(--text-primary); }
+    .drp-cal-day.other-month { color: var(--text-muted); opacity: 0.3; }
+    .drp-cal-day.today { font-weight: 700; color: var(--accent); }
+    .drp-cal-day.in-range { background: #0891b220; border-radius: 0; color: var(--text-primary); }
+    .drp-cal-day.range-start { background: #0891b2; color: #fff; border-radius: 6px 0 0 6px; font-weight: 700; }
+    .drp-cal-day.range-end { background: #0891b2; color: #fff; border-radius: 0 6px 6px 0; font-weight: 700; }
+    .drp-cal-day.range-start.range-end { border-radius: 6px; }
+    .drp-cal-day.disabled { opacity: 0.2; pointer-events: none; }
+    .drp-inline-footer {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 12px; padding: 10px 16px; border-top: 1px solid var(--border);
+    }
+    .drp-footer-dates { display: flex; align-items: center; gap: 6px; }
+    .drp-date-input {
+        width: 120px; padding: 5px 8px;
+        background: var(--bg-deep, #0e0e10); border: 1px solid var(--border);
+        border-radius: 4px; color: var(--text-primary);
+        font-family: var(--font-sans, inherit); font-size: 11px; text-align: center;
+    }
+    .drp-footer-btns { display: flex; gap: 8px; }
+    .drp-btn-cancel {
+        padding: 6px 16px; background: var(--bg-deep, #0e0e10);
+        border: 1px solid var(--border); border-radius: 4px;
+        color: var(--text-secondary); font-family: var(--font-sans, inherit);
+        font-size: 12px; cursor: pointer; transition: all 0.15s;
+    }
+    .drp-btn-cancel:hover { border-color: var(--text-muted); color: var(--text-primary); }
+    .drp-btn-apply {
+        padding: 6px 20px; background: #0891b2; border: none; border-radius: 4px;
+        color: #fff; font-family: var(--font-sans, inherit); font-size: 12px;
+        font-weight: 600; cursor: pointer; transition: all 0.15s;
+    }
+    .drp-btn-apply:hover { background: #06b6d4; }
+
+    /* ── Table ── */
+    .ads-table-wrap {
+        overflow-x: auto; overflow-y: auto;
+        max-height: calc(100vh - 220px);
+        border: 1px solid var(--border); border-radius: var(--radius-md);
+    }
+    .ads-table {
+        width: 100%; border-collapse: collapse; font-size: 12px;
+    }
+    .ads-table thead th {
+        position: sticky; top: 0; z-index: 10;
+        padding: 10px 12px; text-align: left;
+        background: var(--bg-deep, #0e0e10);
+        color: var(--text-muted); font-weight: 700;
+        text-transform: uppercase; letter-spacing: 0.5px;
+        font-size: 10px; border-bottom: 1px solid var(--border);
+        cursor: pointer; user-select: none; white-space: nowrap;
+    }
+    .ads-table thead th:hover { color: var(--text-primary); }
+    .ads-table thead th.sort-active { color: var(--accent); }
+    .ads-table tbody tr {
+        border-bottom: 1px solid var(--border);
+        transition: background 0.1s;
+    }
+    .ads-table tbody tr:hover { background: rgba(255,255,255,0.025); }
+    .ads-table tbody td {
+        padding: 9px 12px; color: var(--text-secondary);
+        vertical-align: middle;
+    }
+    .ads-table tbody td.td-name {
+        color: var(--text-primary); font-weight: 500;
+        max-width: 360px; overflow: hidden;
+        text-overflow: ellipsis; white-space: nowrap;
+    }
+    /* CPA condicional */
+    .cpa-cell.cpa-ok  { color: #22c55e; font-weight: 700; }
+    .cpa-cell.cpa-bad { color: #ef4444; font-weight: 700; }
+    .cpa-cell.cpa-neutral { color: var(--text-muted); }
+
+    /* Botão desativar */
+    .btn-kill {
+        padding: 4px 12px; border: 1px solid #ef4444;
+        border-radius: var(--radius-sm); background: transparent;
+        color: #ef4444; font-size: 11px; font-weight: 700;
+        cursor: pointer; transition: all .15s; white-space: nowrap;
+    }
+    .btn-kill:hover { background: #ef4444; color: #fff; }
+    .btn-kill:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ── Loading / Error ── */
+    .ads-state {
+        display: flex; flex-direction: column;
+        align-items: center; justify-content: center;
+        padding: 60px 20px; gap: 12px;
+        color: var(--text-muted); font-size: 13px;
+    }
+    .ads-spinner {
+        width: 28px; height: 28px;
+        border: 3px solid var(--border);
+        border-top-color: var(--accent);
+        border-radius: 50%;
+        animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Modal Kill Switch ── */
+    .modal-backdrop {
+        display: none; position: fixed; inset: 0;
+        background: rgba(0,0,0,0.6); z-index: 2000;
+        align-items: center; justify-content: center;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal-box {
+        background: var(--bg-card); border: 1px solid var(--border);
+        border-radius: var(--radius-md); padding: 28px 32px;
+        max-width: 480px; width: 90%; box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+    }
+    .modal-title { font-size: 15px; font-weight: 700; color: var(--text-primary); margin-bottom: 10px; }
+    .modal-body  { font-size: 13px; color: var(--text-secondary); margin-bottom: 20px; line-height: 1.6; }
+    .modal-body strong { color: var(--text-primary); }
+    .modal-body .modal-count { color: #ef4444; font-weight: 700; }
+    .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+    .btn-modal-cancel {
+        padding: 8px 20px; border: 1px solid var(--border);
+        border-radius: var(--radius-sm); background: transparent;
+        color: var(--text-secondary); font-size: 13px; cursor: pointer;
+    }
+    .btn-modal-cancel:hover { color: var(--text-primary); }
+    .btn-modal-confirm {
+        padding: 8px 20px; border: none; border-radius: var(--radius-sm);
+        background: #ef4444; color: #fff; font-size: 13px;
+        font-weight: 700; cursor: pointer; transition: background .15s;
+    }
+    .btn-modal-confirm:hover { background: #dc2626; }
+    .btn-modal-confirm:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ── Contador ── */
+    .ads-count {
+        font-size: 11px; color: var(--text-muted);
+        padding: 6px 0 4px;
+    }
+</style>
+
+<!-- Controls -->
+<div class="ads-controls">
+    <div class="ads-left">
+        <h2 class="ads-title">📣 Anúncios</h2>
+        <div style="width:1px;height:20px;background:var(--border);"></div>
+        <!-- CPA Alvo -->
+        <div class="cpa-alvo-wrap">
+            <label for="cpa-alvo">CPA Alvo (R$)</label>
+            <input type="number" id="cpa-alvo" value="150" step="1" min="0"
+                   oninput="renderTable()" placeholder="Ex: 150">
+        </div>
+        <div style="width:1px;height:20px;background:var(--border);"></div>
+        <!-- Apenas Ativos -->
+        <label class="ads-only-active">
+            <input type="checkbox" id="only-active" checked onchange="renderTable()">
+            Apenas Ativos
+        </label>
+    </div>
+    <div class="ads-right">
+        <!-- DRP -->
+        <div class="drp-wrap" id="drp-wrap">
+            <button class="drp-trigger" onclick="toggleDatePicker()">
+                📅 <span id="drp-label">Carregando…</span>
+                <span class="drp-arrow">▾</span>
+            </button>
+            <div class="drp-dropdown" id="drp-dropdown">
+                <div class="drp-body">
+                    <div class="drp-presets">
+                        <div class="drp-presets-title">Período</div>
+                        <button class="drp-preset" data-preset="today">     <input type="radio" name="drp"> Hoje</button>
+                        <button class="drp-preset" data-preset="yesterday"> <input type="radio" name="drp"> Ontem</button>
+                        <button class="drp-preset" data-preset="last_3d">   <input type="radio" name="drp"> 3 dias</button>
+                        <button class="drp-preset" data-preset="last_7d">   <input type="radio" name="drp"> 7 dias</button>
+                        <button class="drp-preset" data-preset="last_14d">  <input type="radio" name="drp"> 14 dias</button>
+                        <button class="drp-preset" data-preset="last_30d">  <input type="radio" name="drp"> 30 dias</button>
+                        <button class="drp-preset" data-preset="this_month"><input type="radio" name="drp"> Este mês</button>
+                        <button class="drp-preset" data-preset="last_month"><input type="radio" name="drp"> Mês passado</button>
+                        <button class="drp-preset" data-preset="custom">    <input type="radio" name="drp"> Personalizado</button>
+                    </div>
+                    <div class="drp-cal-area">
+                        <div class="drp-cals">
+                            <div class="drp-cal" id="drp-cal-left"></div>
+                            <div class="drp-cal" id="drp-cal-right"></div>
+                        </div>
+                        <div class="drp-inline-footer">
+                            <div class="drp-footer-dates">
+                                <input class="drp-date-input" id="drp-since-display" readonly placeholder="Data inicial">
+                                <span style="color:var(--text-muted);font-size:11px;">→</span>
+                                <input class="drp-date-input" id="drp-until-display" readonly placeholder="Data final">
+                            </div>
+                            <div class="drp-footer-btns">
+                                <button class="drp-btn-cancel" onclick="cancelDatePicker()">Cancelar</button>
+                                <button class="drp-btn-apply"  onclick="applyDatePicker()">Aplicar</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- Refresh -->
+        <button class="btn-refresh" onclick="loadData()">🔄 Atualizar</button>
+    </div>
+</div>
+
+<!-- Contagem -->
+<div class="ads-count" id="ads-count"></div>
+
+<!-- Tabela -->
+<div class="ads-table-wrap" id="ads-table-wrap">
+    <!-- Loading state -->
+    <div class="ads-state" id="ads-loading">
+        <div class="ads-spinner"></div>
+        Buscando dados da Meta Ads em tempo real…
+    </div>
+    <!-- Error state -->
+    <div class="ads-state" id="ads-error" style="display:none;">
+        <div style="font-size:32px;">⚠️</div>
+        <div id="ads-error-msg">Erro ao carregar dados.</div>
+    </div>
+    <!-- Table -->
+    <table class="ads-table" id="ads-table" style="display:none;">
+        <thead>
+            <tr>
+                <th onclick="sortBy('ad_name')"    id="th-ad_name">Nome do Anúncio <span id="arr-ad_name"></span></th>
+                <th onclick="sortBy('spend')"      id="th-spend">Valor Gasto <span id="arr-spend"></span></th>
+                <th onclick="sortBy('impressions')"id="th-impressions">Impressões <span id="arr-impressions"></span></th>
+                <th onclick="sortBy('purchases')"  id="th-purchases">Compras <span id="arr-purchases"></span></th>
+                <th onclick="sortBy('cpa')"        id="th-cpa">CPA <span id="arr-cpa"></span></th>
+                <th onclick="sortBy('ctr')"        id="th-ctr">CTR <span id="arr-ctr"></span></th>
+                <th onclick="sortBy('hook_rate')"  id="th-hook_rate">Hook Rate <span id="arr-hook_rate"></span></th>
+                <th onclick="sortBy('hold_rate')"  id="th-hold_rate">Hold Rate <span id="arr-hold_rate"></span></th>
+                <th style="cursor:default;">Ações</th>
+            </tr>
+        </thead>
+        <tbody id="ads-tbody"></tbody>
+    </table>
+</div>
+
+<!-- Modal Kill Switch -->
+<div class="modal-backdrop" id="kill-modal">
+    <div class="modal-box">
+        <div class="modal-title">⚠️ Confirmar Desativação</div>
+        <div class="modal-body" id="kill-modal-body"></div>
+        <div class="modal-actions">
+            <button class="btn-modal-cancel" onclick="closeKillModal()">Cancelar</button>
+            <button class="btn-modal-confirm" id="kill-confirm-btn" onclick="confirmKill()">Desativar</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const ACCOUNT_ID = '{{ account_id }}';
+
+    // ── DRP State ────────────────────────────────────────────────────────────
+    const MONTHS_PT = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+    const DAYS_PT   = ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
+
+    let drpOpen = false;
+    let drpPreset    = 'last_7d';
+    let drpTempSince = null, drpTempUntil = null;
+    let drpClickState = 0;
+    let drpLeftMonth  = null, drpRightMonth = null;
+    let appliedPreset = 'last_7d';
+    let appliedSince  = null, appliedUntil = null;
+
+    function todayDate() { const d = new Date(); d.setHours(0,0,0,0); return d; }
+    function dateStr(d)  { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+    function datePT(d)   { return `${d.getDate()} de ${MONTHS_PT[d.getMonth()]} de ${d.getFullYear()}`; }
+    function sameDay(a,b){ return a && b && dateStr(a) === dateStr(b); }
+
+    function presetToDates(preset) {
+        const today = todayDate();
+        switch (preset) {
+            case 'today':       return { since: new Date(today), until: new Date(today) };
+            case 'yesterday':   return { since: new Date(today - 86400000), until: new Date(today - 86400000) };
+            case 'last_3d':     return { since: new Date(today - 2*86400000), until: new Date(today) };
+            case 'last_7d':     return { since: new Date(today - 6*86400000), until: new Date(today) };
+            case 'last_14d':    return { since: new Date(today - 13*86400000), until: new Date(today) };
+            case 'last_30d':    return { since: new Date(today - 29*86400000), until: new Date(today) };
+            case 'this_month':  return { since: new Date(today.getFullYear(), today.getMonth(), 1), until: new Date(today) };
+            case 'last_month':  return {
+                since: new Date(today.getFullYear(), today.getMonth()-1, 1),
+                until: new Date(today.getFullYear(), today.getMonth(), 0)
+            };
+            default: return { since: new Date(today - 6*86400000), until: new Date(today) };
+        }
+    }
+
+    function getDateParams() {
+        const s = appliedSince ? dateStr(appliedSince) : null;
+        const u = appliedUntil ? dateStr(appliedUntil) : null;
+        if (s && u) return `since=${s}&until=${u}`;
+        return `date_preset=${appliedPreset}`;
+    }
+
+    function initDRP() {
+        const { since, until } = presetToDates(appliedPreset);
+        appliedSince = since; appliedUntil = until;
+        drpTempSince = new Date(since); drpTempUntil = new Date(until);
+        const today = todayDate();
+        drpLeftMonth  = { year: today.getMonth() === 0 ? today.getFullYear()-1 : today.getFullYear(), month: today.getMonth() === 0 ? 11 : today.getMonth()-1 };
+        drpRightMonth = { year: today.getFullYear(), month: today.getMonth() };
+        updateTriggerLabel();
+    }
+
+    function updateTriggerLabel() {
+        const label = document.getElementById('drp-label');
+        if (!label) return;
+        const s = appliedSince, u = appliedUntil;
+        if (s && u) label.textContent = sameDay(s, u) ? datePT(s) : `${datePT(s)} → ${datePT(u)}`;
+    }
+
+    function toggleDatePicker() {
+        drpOpen = !drpOpen;
+        document.getElementById('drp-dropdown').classList.toggle('open', drpOpen);
+        if (drpOpen) {
+            drpPreset = appliedPreset;
+            drpTempSince = appliedSince ? new Date(appliedSince) : null;
+            drpTempUntil = appliedUntil ? new Date(appliedUntil) : null;
+            drpClickState = 0;
+            highlightPreset(); renderCalendars(); updateFooterDates();
+        }
+    }
+
+    function cancelDatePicker() {
+        drpOpen = false;
+        document.getElementById('drp-dropdown').classList.remove('open');
+    }
+
+    function applyDatePicker() {
+        appliedPreset = drpPreset;
+        if (drpPreset === 'custom') {
+            if (!drpTempSince || !drpTempUntil) return;
+            appliedSince = new Date(drpTempSince); appliedUntil = new Date(drpTempUntil);
+        } else {
+            const { since, until } = presetToDates(drpPreset);
+            appliedSince = since; appliedUntil = until;
+        }
+        drpOpen = false;
+        document.getElementById('drp-dropdown').classList.remove('open');
+        updateTriggerLabel();
+        loadData();
+    }
+
+    function highlightPreset() {
+        document.querySelectorAll('.drp-preset').forEach(el => {
+            const val = el.dataset.preset;
+            el.classList.toggle('active', val === drpPreset);
+            el.querySelector('input').checked = val === drpPreset;
+        });
+    }
+
+    document.addEventListener('click', (e) => {
+        const preset = e.target.closest('.drp-preset');
+        if (preset) {
+            const val = preset.dataset.preset;
+            drpPreset = val; highlightPreset();
+            if (val !== 'custom') {
+                const { since, until } = presetToDates(val);
+                drpTempSince = since; drpTempUntil = until; drpClickState = 0;
+                drpLeftMonth = { year: since.getFullYear(), month: since.getMonth() };
+                const nm = since.getMonth() + 1;
+                drpRightMonth = { year: nm > 11 ? since.getFullYear()+1 : since.getFullYear(), month: nm > 11 ? 0 : nm };
+                if (until.getFullYear() > drpRightMonth.year || (until.getFullYear() === drpRightMonth.year && until.getMonth() > drpRightMonth.month)) {
+                    drpRightMonth = { year: until.getFullYear(), month: until.getMonth() };
+                    const pm = until.getMonth() - 1;
+                    drpLeftMonth = { year: pm < 0 ? until.getFullYear()-1 : until.getFullYear(), month: pm < 0 ? 11 : pm };
+                }
+            } else { drpClickState = 0; }
+            renderCalendars(); updateFooterDates();
+        }
+        if (drpOpen && !e.target.closest('#drp-wrap')) cancelDatePicker();
+    });
+
+    function updateFooterDates() {
+        document.getElementById('drp-since-display').value = drpTempSince ? datePT(drpTempSince) : '';
+        document.getElementById('drp-until-display').value = drpTempUntil ? datePT(drpTempUntil) : '';
+    }
+
+    function renderCalendars() {
+        renderOneCalendar('drp-cal-left',  drpLeftMonth,  'left');
+        renderOneCalendar('drp-cal-right', drpRightMonth, 'right');
+    }
+
+    function renderOneCalendar(containerId, monthObj, side) {
+        const container = document.getElementById(containerId);
+        if (!container || !monthObj) return;
+        const { year, month } = monthObj;
+        const today = todayDate();
+        let html = `<div class="drp-cal-header">`;
+        html += side === 'left'  ? `<button class="drp-cal-nav" onclick="event.stopPropagation();navMonth(-1)">‹</button>` : `<span></span>`;
+        html += `<span>${MONTHS_PT[month]} ${year}</span>`;
+        html += side === 'right' ? `<button class="drp-cal-nav" onclick="event.stopPropagation();navMonth(1)">›</button>`  : `<span></span>`;
+        html += `</div><div class="drp-cal-grid">`;
+        DAYS_PT.forEach(d => { html += `<div class="drp-cal-dow">${d}</div>`; });
+        let startDow = new Date(year, month, 1).getDay();
+        startDow = startDow === 0 ? 6 : startDow - 1;
+        const daysInMonth = new Date(year, month+1, 0).getDate();
+        const prevDays    = new Date(year, month,   0).getDate();
+        for (let i = startDow-1; i >= 0; i--) html += `<div class="drp-cal-day other-month">${prevDays-i}</div>`;
+        for (let d = 1; d <= daysInMonth; d++) {
+            const td  = new Date(year, month, d);
+            const cls = ['drp-cal-day'];
+            if (sameDay(td, today)) cls.push('today');
+            if (td > today) cls.push('disabled');
+            if (drpTempSince && drpTempUntil) {
+                if (sameDay(td, drpTempSince)) cls.push('range-start');
+                if (sameDay(td, drpTempUntil)) cls.push('range-end');
+                if (td > drpTempSince && td < drpTempUntil) cls.push('in-range');
+            } else if (drpTempSince && sameDay(td, drpTempSince)) cls.push('range-start','range-end');
+            html += `<div class="${cls.join(' ')}" onclick="event.stopPropagation();onDayClick('${dateStr(td)}')">${d}</div>`;
+        }
+        const remaining = (startDow + daysInMonth) % 7 === 0 ? 0 : 7 - ((startDow + daysInMonth) % 7);
+        for (let i = 1; i <= remaining; i++) html += `<div class="drp-cal-day other-month">${i}</div>`;
+        html += `</div>`;
+        container.innerHTML = html;
+    }
+
+    function navMonth(dir) {
+        [drpLeftMonth, drpRightMonth].forEach(m => {
+            m.month += dir;
+            if (m.month < 0)  { m.month = 11; m.year--; }
+            if (m.month > 11) { m.month = 0;  m.year++; }
+        });
+        renderCalendars();
+    }
+
+    function onDayClick(ds) {
+        const clicked = new Date(ds + 'T00:00:00');
+        drpPreset = 'custom'; highlightPreset();
+        if (drpClickState === 0) {
+            drpTempSince = clicked; drpTempUntil = null; drpClickState = 1;
+        } else {
+            if (clicked < drpTempSince) { drpTempUntil = new Date(drpTempSince); drpTempSince = clicked; }
+            else drpTempUntil = clicked;
+            drpClickState = 0;
+        }
+        renderCalendars(); updateFooterDates();
+    }
+
+    // ── Formatters ────────────────────────────────────────────────────────────
+    function fmtR(v)    { if (v == null || v === 0) return '—'; return 'R$ ' + Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+    function fmtN(v)    { if (v == null || v === 0) return '—'; return Number(v).toLocaleString('pt-BR'); }
+    function fmtPct(v)  { if (v == null) return '—'; return Number(v).toFixed(2) + '%'; }
+
+    // ── State ─────────────────────────────────────────────────────────────────
+    let rawData = [];   // dados brutos da API (array por ad_id)
+    let sortKey = 'spend';
+    let sortAsc = false;
+
+    // ── Consolidação por ad_name ──────────────────────────────────────────────
+    function consolidate(raw) {
+        const map = {};
+        for (const item of raw) {
+            const name = item.ad_name;
+            if (!map[name]) {
+                map[name] = {
+                    ad_name:      name,
+                    ad_ids:       [],
+                    spend:        0,
+                    impressions:  0,
+                    clicks:       0,
+                    purchases:    0,
+                    video_3s:     0,
+                    video_p75:    0,
+                    // effective_status: ACTIVE somente se TODOS os IDs forem ACTIVE
+                    all_active:   true,
+                };
+            }
+            const g = map[name];
+            g.ad_ids.push(item.ad_id);
+            g.spend       += item.spend;
+            g.impressions += item.impressions;
+            g.clicks      += item.clicks;
+            g.purchases   += item.purchases;
+            g.video_3s    += item.video_3s;
+            g.video_p75   += item.video_p75;
+            if (item.effective_status !== 'ACTIVE') g.all_active = false;
+        }
+
+        // Calcular métricas derivadas
+        return Object.values(map).map(g => {
+            const cpa       = g.purchases > 0 ? g.spend / g.purchases : null;
+            const ctr       = g.impressions > 0 ? (g.clicks / g.impressions) * 100 : null;
+            const hook_rate = g.impressions > 0 ? (g.video_3s  / g.impressions) * 100 : null;
+            const hold_rate = g.video_3s    > 0 ? (g.video_p75 / g.video_3s)   * 100 : null;
+            return { ...g, cpa, ctr, hook_rate, hold_rate };
+        });
+    }
+
+    // ── Carregar dados ────────────────────────────────────────────────────────
+    async function loadData() {
+        document.getElementById('ads-loading').style.display = 'flex';
+        document.getElementById('ads-error').style.display   = 'none';
+        document.getElementById('ads-table').style.display   = 'none';
+        document.getElementById('ads-count').textContent     = '';
+
+        try {
+            const url = `/api/account/${ACCOUNT_ID}/anuncios-data?${getDateParams()}`;
+            const resp = await fetch(url);
+            const json = await resp.json();
+            if (!json.success) throw new Error(json.error || 'Erro desconhecido');
+            rawData = json.data || [];
+            renderTable();
+        } catch (e) {
+            document.getElementById('ads-loading').style.display   = 'none';
+            document.getElementById('ads-error').style.display     = 'flex';
+            document.getElementById('ads-error-msg').textContent   = '❌ ' + e.message;
+        }
+    }
+
+    // ── Renderizar tabela ─────────────────────────────────────────────────────
+    function renderTable() {
+        const onlyActive = document.getElementById('only-active').checked;
+        const cpaAlvo    = parseFloat(document.getElementById('cpa-alvo').value) || null;
+
+        let data = consolidate(rawData);
+
+        // Filtro "Apenas Ativos"
+        if (onlyActive) data = data.filter(d => d.all_active);
+
+        // Ordenação
+        data.sort((a, b) => {
+            let va = a[sortKey], vb = b[sortKey];
+            if (va == null) va = sortAsc ? Infinity  : -Infinity;
+            if (vb == null) vb = sortAsc ? Infinity  : -Infinity;
+            if (typeof va === 'string') return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+            return sortAsc ? va - vb : vb - va;
+        });
+
+        // Atualizar setas de cabeçalho
+        ['ad_name','spend','impressions','purchases','cpa','ctr','hook_rate','hold_rate'].forEach(k => {
+            const el = document.getElementById(`arr-${k}`);
+            if (!el) return;
+            const th = document.getElementById(`th-${k}`);
+            if (k === sortKey) {
+                el.textContent = sortAsc ? ' ▲' : ' ▼';
+                if (th) th.classList.add('sort-active');
+            } else {
+                el.textContent = '';
+                if (th) th.classList.remove('sort-active');
+            }
+        });
+
+        // Gerar linhas
+        let html = '';
+        for (const row of data) {
+            const cpa = row.cpa;
+            let cpaClass = 'cpa-neutral';
+            let cpaText  = '—';
+            if (cpa != null && cpa > 0) {
+                cpaText = fmtR(cpa);
+                if (cpaAlvo != null) cpaClass = cpa <= cpaAlvo ? 'cpa-ok' : 'cpa-bad';
+            }
+
+            const idsJson = JSON.stringify(row.ad_ids).replace(/"/g, '&quot;');
+            const nameEsc = row.ad_name.replace(/'/g, '\\\'').replace(/"/g, '&quot;');
+
+            html += `<tr>
+                <td class="td-name" title="${nameEsc}">${row.ad_name}</td>
+                <td>${fmtR(row.spend)}</td>
+                <td>${fmtN(row.impressions)}</td>
+                <td>${row.purchases > 0 ? fmtN(row.purchases) : '—'}</td>
+                <td class="cpa-cell ${cpaClass}">${cpaText}</td>
+                <td>${fmtPct(row.ctr)}</td>
+                <td>${fmtPct(row.hook_rate)}</td>
+                <td>${fmtPct(row.hold_rate)}</td>
+                <td><button class="btn-kill" onclick="openKillModal('${nameEsc}', ${idsJson})">Desativar</button></td>
+            </tr>`;
+        }
+
+        const tbody = document.getElementById('ads-tbody');
+        tbody.innerHTML = html || '<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--text-muted);">Nenhum anúncio encontrado para o período.</td></tr>';
+
+        document.getElementById('ads-loading').style.display = 'none';
+        document.getElementById('ads-table').style.display   = 'table';
+        document.getElementById('ads-count').textContent     = `${data.length} anúncio${data.length !== 1 ? 's' : ''}`;
+    }
+
+    // ── Ordenação ─────────────────────────────────────────────────────────────
+    function sortBy(key) {
+        if (sortKey === key) sortAsc = !sortAsc;
+        else { sortKey = key; sortAsc = key === 'ad_name'; }
+        renderTable();
+    }
+
+    // ── Kill Switch ───────────────────────────────────────────────────────────
+    let killTargetName = '';
+    let killTargetIds  = [];
+
+    function openKillModal(adName, adIds) {
+        killTargetName = adName;
+        killTargetIds  = adIds;
+        const body = document.getElementById('kill-modal-body');
+        body.innerHTML = `Deseja pausar <strong>${adName}</strong>?<br>
+            Isso enviará requisições para <span class="modal-count">${adIds.length} anúncio${adIds.length !== 1 ? 's' : ''}</span> individual${adIds.length !== 1 ? 'is' : ''} na API da Meta.`;
+        document.getElementById('kill-confirm-btn').disabled = false;
+        document.getElementById('kill-modal').classList.add('open');
+    }
+
+    function closeKillModal() {
+        document.getElementById('kill-modal').classList.remove('open');
+        killTargetName = ''; killTargetIds = [];
+    }
+
+    async function confirmKill() {
+        const btn = document.getElementById('kill-confirm-btn');
+        btn.disabled = true;
+        btn.textContent = '⏳ Pausando…';
+
+        let ok = 0, fail = 0;
+        for (const adId of killTargetIds) {
+            try {
+                const resp = await fetch(`/api/account/${ACCOUNT_ID}/entity/status`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ entity_id: adId, entity_type: 'ad', status: 'PAUSED' })
+                });
+                const json = await resp.json();
+                if (json.success) ok++;
+                else fail++;
+            } catch (_) { fail++; }
+        }
+
+        closeKillModal();
+        btn.textContent = 'Desativar';
+
+        if (fail === 0)      mostrarToast(`✅ ${ok} anúncio${ok !== 1 ? 's' : ''} pausado${ok !== 1 ? 's' : ''} com sucesso`);
+        else if (ok === 0)   mostrarToast(`❌ Falha ao pausar todos os anúncios`);
+        else                 mostrarToast(`⚠️ ${ok} pausado${ok !== 1 ? 's' : ''}, ${fail} com falha`);
+
+        // Atualiza effective_status localmente para refletir imediatamente
+        for (const item of rawData) {
+            if (killTargetIds.includes(item.ad_id)) item.effective_status = 'PAUSED';
+        }
+        renderTable();
+    }
+
+    // ── Init ──────────────────────────────────────────────────────────────────
+    initDRP();
+    loadData();
+</script>
+{% endblock %}
