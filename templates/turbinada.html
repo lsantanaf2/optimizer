@@ -1148,5 +1148,20 @@
     // Inicializar períodos padrão e carregar dados
     initDefaultPeriods();
     loadData();
+
+    // Detector de virada de dia: se a página ficar aberta overnight,
+    // reinicializa os períodos para que "Hoje" e "Ontem" não fiquem stale
+    (function watchDayChange() {
+        const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+        let lastDate = fmt(new Date());
+        setInterval(() => {
+            const nowDate = fmt(new Date());
+            if (nowDate !== lastDate) {
+                lastDate = nowDate;
+                initDefaultPeriods();
+                loadData();
+            }
+        }, 60000); // checa a cada 1 minuto
+    })();
 </script>
 {% endblock %}

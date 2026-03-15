@@ -134,6 +134,8 @@ class MetaUploader:
         yesterday = today - timedelta(days=1)
 
         # Períodos: aceitar dinâmicos do frontend ou usar padrão
+        # 'hoje' e 'ontem' são SEMPRE recalculados no servidor (timezone correto)
+        # independente do que o frontend enviou — evita stale dates se página ficar aberta overnight
         if not periods:
             periods = {
                 'p7d':   {'since': (today - timedelta(days=7)).isoformat(), 'until': yesterday.isoformat()},
@@ -141,6 +143,12 @@ class MetaUploader:
                 'ontem': {'since': yesterday.isoformat(), 'until': yesterday.isoformat()},
                 'hoje':  {'since': today.isoformat(), 'until': today.isoformat()},
             }
+        else:
+            # Sempre sobrescreve hoje/ontem com datas corretas do servidor
+            if 'hoje' in periods:
+                periods['hoje'] = {'since': today.isoformat(), 'until': today.isoformat()}
+            if 'ontem' in periods:
+                periods['ontem'] = {'since': yesterday.isoformat(), 'until': yesterday.isoformat()}
 
         # Determinar quais statuses incluir
         if status_filter and status_filter.upper() == 'ACTIVE':
