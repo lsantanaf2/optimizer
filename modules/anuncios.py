@@ -179,15 +179,24 @@ def api_anuncios_data(account_id):
                 }
 
         # ── PASSO 5: Monta resultado normalizado ───────────────────────────────
+        # DEBUG: loga action_types dos primeiros 3 insights para diagnóstico
+        for dbg in insights[:3]:
+            action_types = [a.get('action_type') for a in (dbg.get('actions') or [])]
+            print(f'🔍 [anuncios][debug] ad_id={dbg.get("ad_id")} actions={action_types}')
+
         result = []
         for item in insights:
             ad_id = item.get('ad_id', '')
             vid   = video_map.get(ad_id, {})
 
-            # Prioridade: pixel específico > purchase genérico (mesmo padrão do meta_api.py)
-            purchases = _action_value(item.get('actions'), 'offsite_conversion.fb_pixel_purchase')
-            if purchases == 0:
-                purchases = _action_value(item.get('actions'), 'purchase')
+            # Tenta todos os action_types conhecidos de compra, em ordem de prioridade
+            actions = item.get('actions') or []
+            purchases = (
+                _action_value(actions, 'offsite_conversion.fb_pixel_purchase') or
+                _action_value(actions, 'onsite_conversion.purchase') or
+                _action_value(actions, 'purchase') or
+                _action_value(actions, 'omni_purchase')
+            )
 
             result.append({
                 'ad_id':            ad_id,
