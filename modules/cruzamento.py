@@ -274,7 +274,7 @@ def fetch_ads_status(account_id, access_token):
     return status_map
 
 # ── Processamento: Duplo Join em Memória ──────────────────────────────────────
-def processar_cruzamento(fb_ads, mqls_rows, wons_rows):
+def processar_cruzamento(fb_ads, mqls_rows, wons_rows, mqls_all=None):
     """
     Passo 1: MQLs × Wons por 'Deal ID'  → enriquece cada lead com venda
     Passo 2: leads × FB ads por utm_content (norm) ↔ ad_name (norm)
@@ -328,6 +328,39 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows):
             'valor_venda':   won_data.get('valor', 0.0),
         }
         leads_enriquecidos.append(lead)
+
+    # Guarda contagem de MQLs dentro do período (para total_mqls no retorno)
+    mqls_in_period_count = len(leads_enriquecidos)
+
+    # ── Recuperar wons do período cujo MQL foi criado ANTES do período ─────────
+    # Wons filtradas por "Data de fechamento" podem referenciar um MQL
+    # criado fora do filtro → não aparecem em leads_enriquecidos acima,
+    # mas devem ser atribuídos à sua campanha/adset/ad para consistência.
+    if mqls_all:
+        leads_ids_in_period = {l['deal_id'] for l in leads_enriquecidos}
+        mqls_all_by_deal = {
+            _norm(row.get('Deal ID', '')): row
+            for row in mqls_all
+            if _norm(row.get('Deal ID', ''))
+        }
+        for deal_id, won_data in wons_idx.items():
+            if deal_id not in leads_ids_in_period:
+                mql_row = mqls_all_by_deal.get(deal_id)
+                if mql_row:
+                    produto = _norm(mql_row.get('Produto indicado', ''))
+                    is_a = _is_produto_a(produto)
+                    leads_enriquecidos.append({
+                        'deal_id':      deal_id,
+                        'produto':      produto,
+                        'is_a':         is_a,
+                        'utm_campaign': _norm(mql_row.get('utm_campaign', '')),
+                        'utm_content':  _norm(mql_row.get('utm_content', '')),
+                        'utm_medium':   _norm(mql_row.get('utm_medium', '')),
+                        'utm_source':   _norm(mql_row.get('utm_source', '')),
+                        'utm_term':     _norm(mql_row.get('utm_term', '')),
+                        'vendeu':       True,
+                        'valor_venda':  won_data['valor'],
+                    })
 
     # ── Passo 2: Indexar leads ─────────────────
     leads_by_term = {}
@@ -654,7 +687,7 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows):
         'campaigns_consolidated': campaigns_consolidated,
         'organicos':             organico_metrics,
         'total_leads':           len(leads_enriquecidos),
-        'total_mqls':            len(mqls_rows),
+        'total_mqls':            mqls_in_period_count,
         'total_wons':            len(wons_rows),
         'fat_total_sheets':      round(fat_total_sheets, 2),
         'by_date':               by_date,
@@ -812,7 +845,7 @@ def api_cruzamento_data():
         # Wons: filtra por 'Data de fechamento'
         wons_rows = filter_rows_by_date(wons_rows_all, 'Data de fechamento', since_d, until_d)
 
-        resultado = processar_cruzamento(fb_ads, mqls_rows, wons_rows)
+        resultado = processar_cruzamento(fb_ads, mqls_rows, wons_rows, mqls_all=mqls_rows_all)
         elapsed = round(time.time() - t0, 2)
 
         return jsonify({
