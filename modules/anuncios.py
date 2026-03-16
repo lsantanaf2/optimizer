@@ -2,10 +2,13 @@
 Página de Anúncios — Insights consolidados por ad_name em tempo real.
 
 Pipeline:
-  1. Insights (level=ad, período) com ad{effective_status} incluso
-     → retorna APENAS ads com gasto no período + status atual de cada um
-  2. Insights de vídeo (mesmos params) → try/except, graceful fallback
+  1. Insights (level=ad, período) → apenas ads com gasto no período
+  2. Parallel: batch-fetch effective_status + video insights
   3. Backend retorna lista raw; frontend consolida por ad_name (pivot)
+
+Nota: o endpoint /insights não aceita ad{effective_status} como campo,
+por isso o status é buscado via GET /v22.0?ids=...&fields=effective_status
+em paralelo com o request de vídeo.
 """
 
 import json
@@ -69,6 +72,39 @@ def _purchases(actions):
     )
 
 
+def _batch_effective_status(ad_ids, token, chunk_size=50):
+    """
+    Busca effective_status dos ad_ids via GET /v22.0?ids=id1,id2,...
+    Retorna dict {ad_id: effective_status}.
+    """
+    status_map = {}
+    chunks = [ad_ids[i:i+chunk_size] for i in range(0, len(ad_ids), chunk_size)]
+
+    def fetch_chunk(chunk):
+        resp = requests.get(
+            BASE_URL,
+            params={
+                'ids':          ','.join(chunk),
+                'fields':       'id,effective_status',
+                'access_token': token,
+            },
+            timeout=30,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, len(chunks) or 1)) as ex:
+        futures = [ex.submit(fetch_chunk, c) for c in chunks]
+        for f in concurrent.futures.as_completed(futures):
+            try:
+                for ad_id, obj in f.result().items():
+                    status_map[ad_id] = obj.get('effective_status', 'UNKNOWN')
+            except Exception as e:
+                print(f'⚠️ [anuncios] batch status chunk falhou: {e}')
+
+    return status_map
+
+
 # ── Rotas ──────────────────────────────────────────────────────────────────────
 
 @anuncios_bp.route('/account/<account_id>/anuncios')
@@ -98,12 +134,10 @@ def api_anuncios_data(account_id):
         return {'date_preset': date_preset}
 
     try:
-        # ── PASSO 1: Insights core + effective_status no mesmo request ─────────
-        # ad{effective_status} traz o status atual do ad junto com os insights,
-        # sem precisar de um batch call separado.
+        # ── PASSO 1: Insights core ─────────────────────────────────────────────
         core_params = {
             'level':        'ad',
-            'fields':       'ad_id,ad_name,spend,impressions,clicks,ctr,actions,ad{effective_status}',
+            'fields':       'ad_id,ad_name,spend,impressions,clicks,ctr,actions',
             'limit':        500,
             'access_token': token,
             **_date_params(),
@@ -114,7 +148,9 @@ def api_anuncios_data(account_id):
         if not insights:
             return jsonify({'success': True, 'data': []})
 
-        # ── PASSO 2: Insights de vídeo em paralelo (graceful fallback) ─────────
+        ad_ids = list({item['ad_id'] for item in insights if item.get('ad_id')})
+
+        # ── PASSO 2: Parallel — effective_status + video ───────────────────────
         def fetch_video():
             video_params = {
                 'level':        'ad',
@@ -129,8 +165,10 @@ def api_anuncios_data(account_id):
                 print(f'⚠️ [anuncios] video insights indisponível: {e}')
                 return []
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
-            f_video = ex.submit(fetch_video)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
+            f_status = ex.submit(_batch_effective_status, ad_ids, token)
+            f_video  = ex.submit(fetch_video)
+            status_map = f_status.result()
             video_rows = f_video.result()
 
         # ── PASSO 3: Mapa de vídeo por ad_id ──────────────────────────────────
@@ -147,12 +185,8 @@ def api_anuncios_data(account_id):
         result = []
         for item in insights:
             ad_id   = item.get('ad_id', '')
-            vid     = video_map.get(ad_id, {})
             actions = item.get('actions') or []
-
-            # effective_status vem embutido no campo ad{effective_status}
-            ad_obj           = item.get('ad') or {}
-            effective_status = ad_obj.get('effective_status', 'UNKNOWN')
+            vid     = video_map.get(ad_id, {})
 
             result.append({
                 'ad_id':            ad_id,
@@ -164,7 +198,7 @@ def api_anuncios_data(account_id):
                 'purchases':        _purchases(actions),
                 'video_3s':         vid.get('video_3s',  0.0),
                 'video_p75':        vid.get('video_p75', 0.0),
-                'effective_status': effective_status,
+                'effective_status': status_map.get(ad_id, 'UNKNOWN'),
             })
 
         print(f'✅ [anuncios] retornando {len(result)} registros')
