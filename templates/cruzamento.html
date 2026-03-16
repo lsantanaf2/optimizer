@@ -1620,17 +1620,20 @@
         });
         const cplData = sorted.map(d => d.cpl);
 
+        // Normaliza string removendo acentos para comparação
+        const normStr = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
         // Agrupa produtos por dia: NC = Negócios Creators, VT = Vinci Track
         const ncData = sorted.map(d => {
             const prods = d.produtos || {};
             return Object.entries(prods)
-                .filter(([k]) => /negoc/i.test(k))
+                .filter(([k]) => /negoc/.test(normStr(k)))
                 .reduce((s, [, v]) => s + v, 0);
         });
         const vtData = sorted.map(d => {
             const prods = d.produtos || {};
             return Object.entries(prods)
-                .filter(([k]) => /vinci/i.test(k))
+                .filter(([k]) => /vinci/.test(normStr(k)))
                 .reduce((s, [, v]) => s + v, 0);
         });
 
