@@ -1,9 +1,8 @@
-# Secrets - NUNCA incluir na imagem Docker
+# Secrets locais - não devem entrar na imagem
 notepad.env
 .env
-token.json
-google_credentials.json
 .env.*
+token.json
 
 # Git
 .git
