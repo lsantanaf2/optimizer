@@ -1,10 +1,11 @@
 """
 Página de Anúncios — Insights consolidados por ad_name em tempo real.
 
-Fluxo:
-  1. Fetch paralelo: insights por anúncio + effective_status de cada ad
-  2. Merge por ad_id → enriquece cada insight com effective_status
-  3. Retorna lista raw; frontend faz consolidação por ad_name via reduce()
+Pipeline:
+  1. Insights (level=ad, período) → apenas ads com gasto no período
+  2. Extrai ad_ids → batch-fetch effective_status via ?ids=id1,id2,...
+  3. Insights de vídeo (mesmos params) → try/except, graceful fallback
+  4. Backend retorna lista raw; frontend faz consolidação por ad_name
 """
 
 import os
@@ -14,16 +15,17 @@ import requests
 
 from flask import Blueprint, jsonify, render_template, request, session, redirect, url_for
 
-# ── Blueprint ──────────────────────────────────────────────────────────────────
 anuncios_bp = Blueprint('anuncios', __name__)
 
-APP_ID     = os.getenv('APP_ID')
+APP_ID   = os.getenv('APP_ID')
 APP_SECRET = os.getenv('APP_SECRET')
-BASE_URL   = 'https://graph.facebook.com/v22.0'
+BASE_URL = 'https://graph.facebook.com/v22.0'
 
 
-# ── Helper: paginação automática ──────────────────────────────────────────────
-def _paginate(url, params, timeout=30):
+# ── Helpers ────────────────────────────────────────────────────────────────────
+
+def _paginate(url, params, timeout=45):
+    """Itera paginação cursor da Meta API e retorna lista flat."""
     results = []
     next_url = url
     cur_params = dict(params)
@@ -32,9 +34,9 @@ def _paginate(url, params, timeout=30):
         resp.raise_for_status()
         data = resp.json()
         results.extend(data.get('data', []))
-        paging = data.get('paging', {})
+        paging  = data.get('paging', {})
         cursors = paging.get('cursors', {})
-        after = cursors.get('after')
+        after   = cursors.get('after')
         if after:
             cur_params = dict(params)
             cur_params['after'] = after
@@ -48,7 +50,7 @@ def _paginate(url, params, timeout=30):
 
 
 def _action_value(action_list, action_type):
-    """Extrai o valor de uma action pelo action_type."""
+    """Extrai valor numérico de um action_type dentro de uma lista de actions."""
     if not action_list:
         return 0.0
     for a in action_list:
@@ -57,7 +59,43 @@ def _action_value(action_list, action_type):
     return 0.0
 
 
-# ── Rotas ─────────────────────────────────────────────────────────────────────
+def _batch_effective_status(ad_ids, token, chunk_size=50):
+    """
+    Busca effective_status de uma lista de ad_ids usando o endpoint batch
+    da Meta API: GET /v22.0?ids=id1,id2,...&fields=id,effective_status
+    Retorna dict {ad_id: effective_status}.
+    """
+    status_map = {}
+    chunks = [ad_ids[i:i+chunk_size] for i in range(0, len(ad_ids), chunk_size)]
+
+    def fetch_chunk(chunk):
+        resp = requests.get(
+            BASE_URL,
+            params={
+                'ids':          ','.join(chunk),
+                'fields':       'id,effective_status',
+                'access_token': token,
+            },
+            timeout=30,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, len(chunks) or 1)) as ex:
+        futures = [ex.submit(fetch_chunk, c) for c in chunks]
+        for f in concurrent.futures.as_completed(futures):
+            try:
+                batch_result = f.result()
+                for ad_id, obj in batch_result.items():
+                    status_map[ad_id] = obj.get('effective_status', 'UNKNOWN')
+            except Exception as e:
+                print(f'⚠️ [anuncios] batch status chunk falhou: {e}')
+
+    return status_map
+
+
+# ── Rotas ──────────────────────────────────────────────────────────────────────
+
 @anuncios_bp.route('/account/<account_id>/anuncios')
 def anuncios_page(account_id):
     from app import obter_token
@@ -79,80 +117,76 @@ def api_anuncios_data(account_id):
     until       = request.args.get('until')
     date_preset = request.args.get('date_preset', 'last_7d')
 
+    def _date_params():
+        """Retorna dict com parâmetros de data para a Meta API."""
+        if since and until:
+            return {'time_range': json.dumps({'since': since, 'until': until}, separators=(',', ':'))}
+        return {'date_preset': date_preset}
+
     try:
-        def _build_date_params(p):
-            if since and until:
-                p['time_range'] = json.dumps({'since': since, 'until': until}, separators=(',', ':'))
-            else:
-                p['date_preset'] = date_preset
+        # ── PASSO 1: Insights core ─────────────────────────────────────────────
+        # level=ad com período → retorna APENAS ads que tiveram gasto no período
+        core_params = {
+            'level':        'ad',
+            'fields':       'ad_id,ad_name,spend,impressions,clicks,ctr,actions',
+            'limit':        500,
+            'access_token': token,
+            **_date_params(),
+        }
+        insights = _paginate(f'{BASE_URL}/{account_id}/insights', core_params)
 
-        # ── 1. Insights core (sempre funciona) ─────────────────────────────────
-        def fetch_insights():
-            params = {
-                'level': 'ad',
-                'fields': 'ad_id,ad_name,spend,impressions,clicks,ctr,actions',
-                'limit': 500,
-                'access_token': token,
-            }
-            _build_date_params(params)
-            return _paginate(f'{BASE_URL}/{account_id}/insights', params)
+        if not insights:
+            return jsonify({'success': True, 'data': []})
 
-        # ── 2. Insights de vídeo (opcional — nem todas as contas suportam) ──────
-        def fetch_video_insights():
-            params = {
-                'level': 'ad',
-                'fields': 'ad_id,video_play_actions,video_p75_watched_actions',
-                'limit': 500,
+        # ── PASSO 2: Extrair ad_ids únicos dos insights ────────────────────────
+        ad_ids = list({item['ad_id'] for item in insights if item.get('ad_id')})
+        print(f'ℹ️ [anuncios] {len(insights)} linhas de insight, {len(ad_ids)} ad_ids únicos')
+
+        # ── PASSO 3: Parallel — effective_status (batch) + video (insights) ────
+        def fetch_video():
+            """
+            Insights de vídeo para os mesmos ad_ids e período.
+            Usa video_play_actions (3s views) e video_p75_watched_actions (75%).
+            Falha silenciosamente se a conta não suportar.
+            """
+            video_params = {
+                'level':        'ad',
+                'fields':       'ad_id,video_play_actions,video_p75_watched_actions',
+                'limit':        500,
                 'access_token': token,
+                **_date_params(),
             }
-            _build_date_params(params)
             try:
-                return _paginate(f'{BASE_URL}/{account_id}/insights', params)
+                return _paginate(f'{BASE_URL}/{account_id}/insights', video_params)
             except Exception as e:
                 print(f'⚠️ [anuncios] video insights indisponível: {e}')
                 return []
 
-        # ── 3. Effective status de todos os ads ────────────────────────────────
-        def fetch_effective_status():
-            params = {
-                'fields': 'id,effective_status',
-                'limit': 500,
-                'access_token': token,
-            }
-            return _paginate(f'{BASE_URL}/{account_id}/ads', params)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
+            f_status = ex.submit(_batch_effective_status, ad_ids, token)
+            f_video  = ex.submit(fetch_video)
+            status_map = f_status.result()
+            video_rows = f_video.result()
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as ex:
-            f_ins   = ex.submit(fetch_insights)
-            f_vid   = ex.submit(fetch_video_insights)
-            f_eff   = ex.submit(fetch_effective_status)
-            insights     = f_ins.result()
-            video_rows   = f_vid.result()
-            ads_status   = f_eff.result()
-
-        # ── 4. Mapas auxiliares ────────────────────────────────────────────────
-        status_map = {ad['id']: ad.get('effective_status', 'UNKNOWN') for ad in ads_status}
-
-        # Mapa ad_id → {video_3s, video_p75}
+        # ── PASSO 4: Mapa de vídeo por ad_id ──────────────────────────────────
         video_map = {}
         for v in video_rows:
             vid = v.get('ad_id', '')
-            video_map[vid] = {
-                'video_3s':  _action_value(v.get('video_play_actions'),       'video_view'),
-                'video_p75': _action_value(v.get('video_p75_watched_actions'), 'video_view'),
-            }
+            if vid:
+                video_map[vid] = {
+                    'video_3s':  _action_value(v.get('video_play_actions'),        'video_view'),
+                    'video_p75': _action_value(v.get('video_p75_watched_actions'), 'video_view'),
+                }
 
-        # ── 5. Normaliza cada linha de insight ─────────────────────────────────
+        # ── PASSO 5: Monta resultado normalizado ───────────────────────────────
         result = []
         for item in insights:
             ad_id = item.get('ad_id', '')
+            vid   = video_map.get(ad_id, {})
 
             purchases = _action_value(item.get('actions'), 'purchase')
             if purchases == 0:
                 purchases = _action_value(item.get('actions'), 'omni_purchase')
-
-            vid       = video_map.get(ad_id, {})
-            video_3s  = vid.get('video_3s',  0.0)
-            video_p75 = vid.get('video_p75', 0.0)
 
             result.append({
                 'ad_id':            ad_id,
@@ -162,11 +196,12 @@ def api_anuncios_data(account_id):
                 'clicks':           int(item.get('clicks', 0) or 0),
                 'ctr':              float(item.get('ctr', 0) or 0),
                 'purchases':        purchases,
-                'video_3s':         video_3s,
-                'video_p75':        video_p75,
+                'video_3s':         vid.get('video_3s',  0.0),
+                'video_p75':        vid.get('video_p75', 0.0),
                 'effective_status': status_map.get(ad_id, 'UNKNOWN'),
             })
 
+        print(f'✅ [anuncios] retornando {len(result)} registros')
         return jsonify({'success': True, 'data': result})
 
     except Exception as e:
