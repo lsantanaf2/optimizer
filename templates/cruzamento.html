@@ -1647,8 +1647,8 @@
                         type: 'bar',
                         label: 'Vinci Track',
                         data: vtData,
-                        backgroundColor: 'rgba(74,43,0,0.75)',
-                        borderColor: '#4a2b00',
+                        backgroundColor: 'rgba(139,92,246,0.55)',
+                        borderColor: '#8b5cf6',
                         borderWidth: 1,
                         borderRadius: 0,
                         stack: 'mql',
@@ -1671,11 +1671,11 @@
                         type: 'line',
                         label: 'CPL (R$)',
                         data: cplData,
-                        borderColor: '#8b5cf6',
-                        backgroundColor: 'rgba(139,92,246,0.10)',
+                        borderColor: '#ef6fa3',
+                        backgroundColor: 'rgba(239,111,163,0.10)',
                         borderWidth: 2,
                         pointRadius: 3,
-                        pointBackgroundColor: '#8b5cf6',
+                        pointBackgroundColor: '#ef6fa3',
                         fill: true,
                         tension: 0.35,
                         spanGaps: true,
@@ -1716,9 +1716,9 @@
                     },
                     yCpl: {
                         type: 'linear', position: 'left',
-                        ticks: { color: '#8b5cf6', font: { family: 'Lexend', size: 10 }, callback: v => 'R$ ' + v.toFixed(0) },
+                        ticks: { color: '#ef6fa3', font: { family: 'Lexend', size: 10 }, callback: v => 'R$ ' + v.toFixed(0) },
                         grid:  { display: false },
-                        title: { display: true, text: 'CPL', color: '#8b5cf6', font: { family: 'Lexend', size: 10 } }
+                        title: { display: true, text: 'CPL', color: '#ef6fa3', font: { family: 'Lexend', size: 10 } }
                     }
                 }
             }

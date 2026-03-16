@@ -43,7 +43,7 @@ app.register_blueprint(cruzamento_bp)
 from modules.anuncios import anuncios_bp
 app.register_blueprint(anuncios_bp)
 
-VERSION = "v2.3.23"
+VERSION = "v2.3.24"
 
 @app.context_processor
 def inject_version():
