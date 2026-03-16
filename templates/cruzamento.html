@@ -878,11 +878,11 @@
     const DAYS_PT = ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
 
     let drpOpen = false;
-    let drpPreset = IS_CLIENT ? (LOCKED_PERIOD || 'this_month') : 'last_7d';
+    let drpPreset = IS_CLIENT ? (LOCKED_PERIOD || 'this_month') : 'this_month';
     let drpTempSince = null, drpTempUntil = null;
     let drpClickState = 0;
     let drpLeftMonth = null, drpRightMonth = null;
-    let appliedPreset = IS_CLIENT ? (LOCKED_PERIOD || 'this_month') : 'last_7d';
+    let appliedPreset = IS_CLIENT ? (LOCKED_PERIOD || 'this_month') : 'this_month';
     let appliedSince = null, appliedUntil = null;
     // Nota: IS_CLIENT apenas define o preset inicial; o DRP é sempre interativo
 
