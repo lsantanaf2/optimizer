@@ -1618,8 +1618,21 @@
             const [y, m, dd] = d.date.split('-');
             return `${dd}/${m}/${y.slice(2)}`;
         });
-        const mqlData = sorted.map(d => d.mqls);
         const cplData = sorted.map(d => d.cpl);
+
+        // Agrupa produtos por dia: NC = Negócios Creators, VT = Vinci Track
+        const ncData = sorted.map(d => {
+            const prods = d.produtos || {};
+            return Object.entries(prods)
+                .filter(([k]) => /negoc/i.test(k))
+                .reduce((s, [, v]) => s + v, 0);
+        });
+        const vtData = sorted.map(d => {
+            const prods = d.produtos || {};
+            return Object.entries(prods)
+                .filter(([k]) => /vinci/i.test(k))
+                .reduce((s, [, v]) => s + v, 0);
+        });
 
         if (timelineChart) { timelineChart.destroy(); timelineChart = null; }
         const ctx = document.getElementById('timeline-chart').getContext('2d');
@@ -1629,12 +1642,25 @@
                 datasets: [
                     {
                         type: 'bar',
-                        label: 'MQLs',
-                        data: mqlData,
-                        backgroundColor: 'rgba(0,242,255,0.25)',
+                        label: 'Negócios Creators',
+                        data: ncData,
+                        backgroundColor: 'rgba(0,242,255,0.55)',
                         borderColor: '#00f2ff',
                         borderWidth: 1,
+                        borderRadius: 0,
+                        stack: 'mql',
+                        yAxisID: 'yMql',
+                        order: 2,
+                    },
+                    {
+                        type: 'bar',
+                        label: 'Vinci Track',
+                        data: vtData,
+                        backgroundColor: 'rgba(255,180,0,0.55)',
+                        borderColor: '#ffb400',
+                        borderWidth: 1,
                         borderRadius: 3,
+                        stack: 'mql',
                         yAxisID: 'yMql',
                         order: 2,
                     },
@@ -1664,19 +1690,23 @@
                     },
                     tooltip: {
                         callbacks: {
-                            label: ctx => ctx.dataset.label === 'CPL (R$)'
-                                ? ` CPL: ${ctx.raw != null ? 'R$ ' + ctx.raw.toFixed(2) : '—'}`
-                                : ` MQLs: ${ctx.raw}`
+                            label: ctx => {
+                                if (ctx.dataset.label === 'CPL (R$)')
+                                    return ` CPL: ${ctx.raw != null ? 'R$ ' + ctx.raw.toFixed(2) : '—'}`;
+                                return ` ${ctx.dataset.label}: ${ctx.raw}`;
+                            }
                         }
                     }
                 },
                 scales: {
                     x: {
                         ticks: { color: '#5a5a6e', font: { family: 'Lexend', size: 10 }, maxRotation: 45 },
-                        grid:  { color: 'rgba(255,255,255,0.04)' }
+                        grid:  { color: 'rgba(255,255,255,0.04)' },
+                        stacked: true
                     },
                     yMql: {
                         type: 'linear', position: 'right',
+                        stacked: true,
                         ticks: { color: '#00f2ff', font: { family: 'Lexend', size: 10 }, stepSize: 1, precision: 0 },
                         grid:  { color: 'rgba(255,255,255,0.04)' },
                         title: { display: true, text: 'MQLs', color: '#00f2ff', font: { family: 'Lexend', size: 10 } }
