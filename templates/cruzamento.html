@@ -407,6 +407,8 @@
     }
     .entity-link:hover { color: var(--accent); }
     .entity-link.selected { color: var(--accent); font-weight: 600; }
+    tr.row-selected { background: rgba(0,242,255,0.08) !important; }
+    tr.row-selected td:first-child .entity-link { color: var(--accent); font-weight: 700; }
 
     /* ── Timeline chart card ── */
     #crz-timeline-container {
@@ -759,6 +761,12 @@
     <div style="padding:16px 20px;">
         <canvas id="timeline-chart" height="90"></canvas>
     </div>
+</div>
+
+<!-- Cascade Filter Badge -->
+<div id="cascade-filter-bar" style="display:flex; align-items:center; gap:8px; margin-bottom:10px; flex-wrap:wrap;">
+    <span id="cascade-filter-badge" class="timeline-filter-badge" style="display:none;"></span>
+    <button class="timeline-reset-btn" id="cascade-reset-btn" onclick="resetCascadeFilter()" style="display:none;">✕ Limpar filtro</button>
 </div>
 
 <!-- Campaigns Consolidadas -->
@@ -1343,6 +1351,14 @@
         renderAdsTableBody();
     }
 
+    function getVisibleAds() {
+        let data = currentAdsData;
+        if (selectedCampaign) data = data.filter(a => a.campaign_name === selectedCampaign);
+        if (selectedAdset) data = data.filter(a => a.adset_name === selectedAdset);
+        if (activeFilters.ads) data = data.filter(a => a.ad_status === 'ACTIVE');
+        return data;
+    }
+
     function renderAdsTableBody() {
         const tbody = document.getElementById('ads-tbody');
         const cols = ['ad_name','spend','receita','roas','mqls','cpl','nc','pct_nc','custo_nc'];
@@ -1350,8 +1366,8 @@
             const ind = document.getElementById('sort-ind-' + c);
             if (ind) ind.textContent = c === currentSortCol ? (currentSortDesc ? '▼' : '▲') : '';
         });
-        const filtered = activeFilters.ads ? currentAdsData.filter(a => a.ad_status === 'ACTIVE') : currentAdsData;
-        const data = [...filtered].sort((a, b) => {
+        const visible = getVisibleAds();
+        const data = [...visible].sort((a, b) => {
             const va = a[currentSortCol], vb = b[currentSortCol];
             if (typeof va === 'string') return currentSortDesc ? vb.localeCompare(va) : va.localeCompare(vb);
             return currentSortDesc ? (vb - va) : (va - vb);
@@ -1369,9 +1385,9 @@
         </tr>`).join('');
 
         let tS = 0, tM = 0, tN = 0, tR = 0;
-        currentAdsData.forEach(a => { tS += a.spend||0; tM += a.mqls||0; tN += a.nc||0; tR += a.receita||0; });
+        visible.forEach(a => { tS += a.spend||0; tM += a.mqls||0; tN += a.nc||0; tR += a.receita||0; });
         document.getElementById('ads-tfoot').innerHTML = `<tr>
-            <td>TOTAL (${currentAdsData.length} anúncio${currentAdsData.length!==1?'s':''})</td>
+            <td>TOTAL (${visible.length} anúncio${visible.length!==1?'s':''})</td>
             <td style="font-weight:600;">${fmtR(tS)}</td>
             <td class="positive">${fmtR(tR)}</td>
             <td>${tS > 0 && tR > 0 ? fmtX(tR/tS) : '—'}</td>
@@ -1407,6 +1423,13 @@
         renderAdSetsTableBody();
     }
 
+    function getVisibleAdSets() {
+        let data = currentAdSetsData;
+        if (selectedCampaign) data = data.filter(s => s.campaign_name === selectedCampaign);
+        if (activeFilters.adsets) data = data.filter(s => s.ad_status === 'ACTIVE');
+        return data;
+    }
+
     function renderAdSetsTableBody() {
         const tbody = document.getElementById('adsets-tbody');
         const cols = ['adset_name','spend','receita','roas','mqls','cpl','nc','pct_nc','custo_nc'];
@@ -1414,14 +1437,16 @@
             const ind = document.getElementById('sort-ind-set-' + c);
             if (ind) ind.textContent = c === currentAdSetSortCol ? (currentAdSetSortDesc ? '▼' : '▲') : '';
         });
-        const filteredSets = activeFilters.adsets ? currentAdSetsData.filter(s => s.ad_status === 'ACTIVE') : currentAdSetsData;
-        const data = [...filteredSets].sort((a, b) => {
+        const visible = getVisibleAdSets();
+        const data = [...visible].sort((a, b) => {
             const va = a[currentAdSetSortCol], vb = b[currentAdSetSortCol];
             if (typeof va === 'string') return currentAdSetSortDesc ? vb.localeCompare(va) : va.localeCompare(vb);
             return currentAdSetSortDesc ? (vb - va) : (va - vb);
         });
-        tbody.innerHTML = data.slice(0, 50).map(s => `<tr>
-            <td style="text-align:left;"><div class="entity-link" style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${s.adset_name}" onclick="setTimelineFilter('adset',${JSON.stringify(s.adset_name).replace(/"/g,'&quot;')})">${s.adset_name}</div></td>
+        tbody.innerHTML = data.slice(0, 50).map(s => {
+            const isSelected = selectedAdset === s.adset_name;
+            return `<tr class="${isSelected ? 'row-selected' : ''}">
+            <td style="text-align:left;"><div class="entity-link" style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${s.adset_name}" onclick="setCascadeFilter('adset',${JSON.stringify(s.adset_name).replace(/"/g,'&quot;')})">${s.adset_name}</div></td>
             <td style="font-weight:600;">${fmtR(s.spend)}</td>
             <td class="positive">${fmtR(s.receita)}</td>
             <td>${fmtX(s.roas)}</td>
@@ -1430,12 +1455,13 @@
             <td style="color:var(--accent);font-weight:600;">${s.nc||'—'}</td>
             <td class="pct">${s.nc > 0 ? s.pct_nc.toFixed(1)+'%' : '—'}</td>
             <td>${s.nc > 0 ? fmtR(s.custo_nc) : '—'}</td>
-        </tr>`).join('');
+        </tr>`;
+        }).join('');
 
         let tS = 0, tM = 0, tN = 0, tR = 0;
-        currentAdSetsData.forEach(s => { tS += s.spend||0; tM += s.mqls||0; tN += s.nc||0; tR += s.receita||0; });
+        visible.forEach(s => { tS += s.spend||0; tM += s.mqls||0; tN += s.nc||0; tR += s.receita||0; });
         document.getElementById('adsets-tfoot').innerHTML = `<tr>
-            <td>TOTAL (${currentAdSetsData.length} conj)</td>
+            <td>TOTAL (${visible.length} conj)</td>
             <td style="font-weight:600;">${fmtR(tS)}</td>
             <td class="positive">${fmtR(tR)}</td>
             <td>${tS > 0 && tR > 0 ? fmtX(tR/tS) : '—'}</td>
@@ -1484,8 +1510,10 @@
             if (typeof va === 'string') return currentCampSortDesc ? vb.localeCompare(va) : va.localeCompare(vb);
             return currentCampSortDesc ? (vb - va) : (va - vb);
         });
-        tbody.innerHTML = data.slice(0, 50).map(c => `<tr>
-            <td style="text-align:left;"><div class="entity-link" style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${c.campaign_name}" onclick="setTimelineFilter('campaign',${JSON.stringify(c.campaign_name).replace(/"/g,'&quot;')})">${c.campaign_name}</div></td>
+        tbody.innerHTML = data.slice(0, 50).map(c => {
+            const isSelected = selectedCampaign === c.campaign_name;
+            return `<tr class="${isSelected ? 'row-selected' : ''}">
+            <td style="text-align:left;"><div class="entity-link" style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${c.campaign_name}" onclick="setCascadeFilter('campaign',${JSON.stringify(c.campaign_name).replace(/"/g,'&quot;')})">${c.campaign_name}</div></td>
             <td style="font-weight:600;">${fmtR(c.spend)}</td>
             <td class="positive">${fmtR(c.receita)}</td>
             <td>${fmtX(c.roas)}</td>
@@ -1494,12 +1522,13 @@
             <td style="color:var(--accent);font-weight:600;">${c.nc||'—'}</td>
             <td class="pct">${c.nc > 0 ? c.pct_nc.toFixed(1)+'%' : '—'}</td>
             <td>${c.nc > 0 ? fmtR(c.custo_nc) : '—'}</td>
-        </tr>`).join('');
+        </tr>`;
+        }).join('');
 
         let tS = 0, tM = 0, tN = 0, tR = 0;
-        currentCampaignsData.forEach(c => { tS += c.spend||0; tM += c.mqls||0; tN += c.nc||0; tR += c.receita||0; });
+        filteredCamps.forEach(c => { tS += c.spend||0; tM += c.mqls||0; tN += c.nc||0; tR += c.receita||0; });
         document.getElementById('campaigns-tfoot').innerHTML = `<tr>
-            <td>TOTAL (${currentCampaignsData.length} camp)</td>
+            <td>TOTAL (${filteredCamps.length} camp)</td>
             <td style="font-weight:600;">${fmtR(tS)}</td>
             <td class="positive">${fmtR(tR)}</td>
             <td>${tS > 0 && tR > 0 ? fmtX(tR/tS) : '—'}</td>
@@ -1511,6 +1540,68 @@
         </tr>`;
     }
 
+
+    // ── Cascade Filter State ─────────────────────────────────────────────────
+    let selectedCampaign = null;
+    let selectedAdset    = null;
+
+    function setCascadeFilter(type, name) {
+        if (type === 'campaign') {
+            // Toggle: clicar de novo na mesma campanha limpa o filtro
+            if (selectedCampaign === name) {
+                selectedCampaign = null;
+                selectedAdset = null;
+            } else {
+                selectedCampaign = name;
+                selectedAdset = null;   // limpa filtro de adset ao trocar campanha
+            }
+            renderCampaignsTableBody();
+            renderAdSetsTableBody();
+            renderAdsTableBody();
+            // Também atualiza o timeline
+            if (selectedCampaign) setTimelineFilter('campaign', selectedCampaign);
+            else resetTimelineFilter();
+        } else if (type === 'adset') {
+            if (selectedAdset === name) {
+                selectedAdset = null;
+            } else {
+                selectedAdset = name;
+            }
+            renderAdSetsTableBody();
+            renderAdsTableBody();
+            if (selectedAdset) setTimelineFilter('adset', selectedAdset);
+            else if (selectedCampaign) setTimelineFilter('campaign', selectedCampaign);
+            else resetTimelineFilter();
+        }
+        updateCascadeBadge();
+    }
+
+    function resetCascadeFilter() {
+        selectedCampaign = null;
+        selectedAdset = null;
+        renderCampaignsTableBody();
+        renderAdSetsTableBody();
+        renderAdsTableBody();
+        resetTimelineFilter();
+        updateCascadeBadge();
+    }
+
+    function updateCascadeBadge() {
+        const badge = document.getElementById('cascade-filter-badge');
+        const btn   = document.getElementById('cascade-reset-btn');
+        if (!badge || !btn) return;
+        if (selectedCampaign || selectedAdset) {
+            const parts = [];
+            if (selectedCampaign) parts.push('Campanha: ' + selectedCampaign);
+            if (selectedAdset) parts.push('Conjunto: ' + selectedAdset);
+            badge.textContent = parts.join(' → ');
+            badge.style.display = '';
+            btn.style.display = '';
+        } else {
+            badge.style.display = 'none';
+            btn.style.display = 'none';
+        }
+    }
 
     // ── KPIs ─────────────────────────────────────────────────────────────────────
     function updateKPIs(data) {
@@ -1546,20 +1637,23 @@
             renderDayTable(json.data.by_date || []);
 
             renderAdsTable((json.data.ads_consolidated || []).map(ad => ({
-                ad_name:      ad.ad_name,
-                spend:        ad.spend,
-                receita:      ad.fat_total || 0,
-                mqls:         ad.leads_total,
-                nc:           ad.leads_a,
-                ad_status:    ad.ad_status
+                ad_name:       ad.ad_name,
+                campaign_name: ad.campaign_name || '',
+                adset_name:    ad.adset_name || '',
+                spend:         ad.spend,
+                receita:       ad.fat_total || 0,
+                mqls:          ad.leads_total,
+                nc:            ad.leads_a,
+                ad_status:     ad.ad_status
             })));
             renderAdSetsTable((json.data.adsets_consolidated || []).map(s => ({
-                adset_name:   s.adset_name,
-                spend:        s.spend,
-                receita:      s.fat_total || 0,
-                mqls:         s.leads_total,
-                nc:           s.leads_a,
-                ad_status:    s.ad_status
+                adset_name:    s.adset_name,
+                campaign_name: s.campaign_name || '',
+                spend:         s.spend,
+                receita:       s.fat_total || 0,
+                mqls:          s.leads_total,
+                nc:            s.leads_a,
+                ad_status:     s.ad_status
             })));
             renderCampaignsTable((json.data.campaigns_consolidated || []).map(c => ({
                 campaign_name: c.campaign_name,
@@ -1569,6 +1663,10 @@
                 nc:            c.leads_a,
                 ad_status:     c.ad_status
             })));
+            // Limpar filtros cascata ao carregar novos dados
+            selectedCampaign = null;
+            selectedAdset = null;
+            updateCascadeBadge();
 
             // Timeline chart
             timelineAllData  = json.data.by_date || [];
