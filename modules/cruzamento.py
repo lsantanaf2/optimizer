@@ -348,15 +348,20 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows):
             leads_by_campaign.setdefault(ucamp, []).append(lead)
 
     # ── Passo 2: Consolidar FB Ads, AdSets e Campaigns ────────────────────────────────
+    # IDs são armazenados para join fallback (UTM pode conter ID em vez de nome)
     fb_ads_by_name = {}
     fb_adsets_by_name = {}
     fb_campaigns_by_name = {}
-    
+
     for ad in fb_ads:
-        name_norm = _norm(ad.get('ad_name', ''))
-        adset_norm = _norm(ad.get('adset_name', ''))
+        name_norm     = _norm(ad.get('ad_name', ''))
+        adset_norm    = _norm(ad.get('adset_name', ''))
         campaign_norm = _norm(ad.get('campaign_name', ''))
-        
+
+        ad_id_raw      = ad.get('ad_id', '')
+        adset_id_raw   = ad.get('adset_id', '')
+        campaign_id_raw= ad.get('campaign_id', '')
+
         # Consolidação Ad
         if name_norm:
             if name_norm not in fb_ads_by_name:
@@ -365,21 +370,24 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows):
                     'campaign_name': ad.get('campaign_name', ''),
                     'adset_name':    ad.get('adset_name', ''),
                     'ad_status':     ad.get('ad_status', 'UNKNOWN'),
+                    'ad_ids':        set(),
                     'spend':         0.0,
                     'impressions':   0,
                     'clicks':        0,
                 }
+            if ad_id_raw:
+                fb_ads_by_name[name_norm]['ad_ids'].add(ad_id_raw)
             fb_ads_by_name[name_norm]['spend']       += ad.get('spend', 0.0)
             fb_ads_by_name[name_norm]['impressions'] += ad.get('impressions', 0)
             fb_ads_by_name[name_norm]['clicks']      += ad.get('clicks', 0)
-            
+
         # Consolidação AdSet
         if adset_norm:
             if adset_norm not in fb_adsets_by_name:
                 fb_adsets_by_name[adset_norm] = {
                     'adset_name':    ad.get('adset_name', 'Desconhecido'),
                     'campaign_name': ad.get('campaign_name', ''),
-                    # Assumimos ACTIVE se qualquer ad dentro for ACTIVE (simplificação)
+                    'adset_id':      adset_id_raw,
                     'ad_status':     ad.get('ad_status', 'PAUSED'),
                     'spend':         0.0,
                     'impressions':   0,
@@ -387,16 +395,16 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows):
                 }
             if ad.get('ad_status') == 'ACTIVE':
                 fb_adsets_by_name[adset_norm]['ad_status'] = 'ACTIVE'
-                
             fb_adsets_by_name[adset_norm]['spend']       += ad.get('spend', 0.0)
             fb_adsets_by_name[adset_norm]['impressions'] += ad.get('impressions', 0)
             fb_adsets_by_name[adset_norm]['clicks']      += ad.get('clicks', 0)
-            
+
         # Consolidação Campaign
         if campaign_norm:
             if campaign_norm not in fb_campaigns_by_name:
                 fb_campaigns_by_name[campaign_norm] = {
                     'campaign_name': ad.get('campaign_name', 'Desconhecida'),
+                    'campaign_id':   campaign_id_raw,
                     'ad_status':     ad.get('ad_status', 'PAUSED'),
                     'spend':         0.0,
                     'impressions':   0,
@@ -404,22 +412,38 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows):
                 }
             if ad.get('ad_status') == 'ACTIVE':
                 fb_campaigns_by_name[campaign_norm]['ad_status'] = 'ACTIVE'
-                
             fb_campaigns_by_name[campaign_norm]['spend']       += ad.get('spend', 0.0)
             fb_campaigns_by_name[campaign_norm]['impressions'] += ad.get('impressions', 0)
             fb_campaigns_by_name[campaign_norm]['clicks']      += ad.get('clicks', 0)
 
-    # ── Passo 3: Cruzar FB com Leads ───────────────────────────
-    ads_consolidated = []
-    adsets_consolidated = []
-    campaigns_consolidated = []
-    
-    # ── 3.1: Cruzar Ads
-    for name_norm, ad_data in fb_ads_by_name.items():
-        matched_leads = leads_by_term.get(name_norm, [])
+    def _join_leads(index, name_key, *id_keys):
+        """
+        Junta leads pelo nome e também por IDs alternativos (fallback).
+        Evita duplicatas por deal_id — resolve o caso em que o UTM foi
+        configurado com o ID da entidade em vez do nome.
+        """
+        combined = list(index.get(name_key, []))
+        seen = {l['deal_id'] for l in combined}
+        for ik in id_keys:
+            if ik:
+                for l in index.get(ik, []):
+                    if l['deal_id'] not in seen:
+                        combined.append(l)
+                        seen.add(l['deal_id'])
+        return combined
 
-        metrics = _calc_metrics(ad_data, matched_leads)
-        
+    # ── Passo 3: Cruzar FB com Leads ───────────────────────────
+    ads_consolidated       = []
+    adsets_consolidated    = []
+    campaigns_consolidated = []
+    matched_deal_ids_ads       = set()
+    matched_deal_ids_adsets    = set()
+    matched_deal_ids_campaigns = set()
+
+    # ── 3.1: Cruzar Ads (utm_term ↔ ad_name ou ad_id)
+    for name_norm, ad_data in fb_ads_by_name.items():
+        m_leads = _join_leads(leads_by_term, name_norm, *ad_data['ad_ids'])
+        metrics = _calc_metrics(ad_data, m_leads)
         ads_consolidated.append({
             'ad_name':       ad_data['ad_name'],
             'campaign_name': ad_data['campaign_name'],
@@ -427,14 +451,12 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows):
             'ad_status':     ad_data['ad_status'],
             **metrics
         })
+        for lead in m_leads:
+            matched_deal_ids_ads.add(lead['deal_id'])
 
-    # Como mudamos a lógica para focar na tabela consolidada por Anúncio,
-    # não recriaremos a hierarquia complexa de 'campaigns -> adsets -> ads' 
-    # apenas o flat array de criativos, já que o frontend já trabalha assim na Tabela de Ads.
-
-    # ── 3.2: Cruzar AdSets
+    # ── 3.2: Cruzar AdSets (utm_content ↔ adset_name ou adset_id)
     for name_norm, adset_data in fb_adsets_by_name.items():
-        m_leads = leads_by_content.get(name_norm, [])
+        m_leads = _join_leads(leads_by_content, name_norm, adset_data.get('adset_id', ''))
         metrics = _calc_metrics(adset_data, m_leads)
         adsets_consolidated.append({
             'adset_name':    adset_data['adset_name'],
@@ -442,33 +464,19 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows):
             'ad_status':     adset_data['ad_status'],
             **metrics
         })
+        for lead in m_leads:
+            matched_deal_ids_adsets.add(lead['deal_id'])
 
-    # ── 3.3: Cruzar Campaigns
+    # ── 3.3: Cruzar Campaigns (utm_campaign ↔ campaign_name ou campaign_id)
     for name_norm, camp_data in fb_campaigns_by_name.items():
-        m_leads = leads_by_campaign.get(name_norm, [])
+        m_leads = _join_leads(leads_by_campaign, name_norm, camp_data.get('campaign_id', ''))
         metrics = _calc_metrics(camp_data, m_leads)
         campaigns_consolidated.append({
             'campaign_name': camp_data['campaign_name'],
             'ad_status':     camp_data['ad_status'],
             **metrics
         })
-
-    # Leads sem match para Ads (via utm_term)
-    matched_deal_ids_ads = set()
-    for ad_data in fb_ads_by_name.values():
-        for lead in leads_by_term.get(_norm(ad_data['ad_name']), []):
-            matched_deal_ids_ads.add(lead['deal_id'])
-            
-    # Leads sem match para AdSets (via utm_content)
-    matched_deal_ids_adsets = set()
-    for adset_data in fb_adsets_by_name.values():
-        for lead in leads_by_content.get(_norm(adset_data['adset_name']), []):
-            matched_deal_ids_adsets.add(lead['deal_id'])
-            
-    # Leads sem match para Campaigns (via utm_campaign)
-    matched_deal_ids_campaigns = set()
-    for camp_data in fb_campaigns_by_name.values():
-        for lead in leads_by_campaign.get(_norm(camp_data['campaign_name']), []):
+        for lead in m_leads:
             matched_deal_ids_campaigns.add(lead['deal_id'])
 
     organicos_ads = [l for l in leads_enriquecidos if l['deal_id'] not in matched_deal_ids_ads]
