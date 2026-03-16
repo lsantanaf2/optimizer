@@ -761,30 +761,30 @@
     </div>
 </div>
 
-<!-- Ads Consolidados -->
-<div class="chart-card crz-ads-container" id="crz-ads-container"
+<!-- Campaigns Consolidadas -->
+<div class="chart-card crz-ads-container" id="crz-campaigns-container"
     style="display:none; margin-bottom: 14px; overflow:hidden; padding:0;">
     <div class="chart-card-title" style="padding:14px 16px 10px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
-        <span>📈 MQLs e Custos por Anúncio</span>
-        <button class="btn-active-filter" id="btn-active-ads" onclick="toggleActiveFilter('ads')">Somente ativos</button>
+        <span>🎯 MQLs e Custos por Campanha</span>
+        <button class="btn-active-filter" id="btn-active-camps" onclick="toggleActiveFilter('camps')">Somente ativos</button>
     </div>
-    <div style="overflow-x:auto; overflow-y:auto; max-height:500px;">
-        <table class="day-table" id="ads-table" style="table-layout: fixed; width: 100%;">
+    <div style="overflow-x:auto; overflow-y:auto; max-height:350px;">
+        <table class="day-table" id="campaigns-table" style="table-layout: fixed; width: 100%;">
             <thead>
                 <tr>
-                    <th class="sortable" onclick="sortAds('ad_name')" style="width: 28%;">Anúncio <span id="sort-ind-ad_name"></span></th>
-                    <th class="sortable" style="text-align:right; width: 9%;" onclick="sortAds('spend')">Investimento <span id="sort-ind-spend">▼</span></th>
-                    <th class="sortable" style="text-align:right; width: 9%;" onclick="sortAds('receita')">Receita <span id="sort-ind-receita"></span></th>
-                    <th class="sortable" style="text-align:right; width: 8%;" onclick="sortAds('roas')">ROAS <span id="sort-ind-roas"></span></th>
-                    <th class="sortable" style="text-align:right; width: 8%;" onclick="sortAds('mqls')">MQLs <span id="sort-ind-mqls"></span></th>
-                    <th class="sortable" style="text-align:right; width: 9%;" onclick="sortAds('cpl')">Custo / MQL <span id="sort-ind-cpl"></span></th>
-                    <th class="sortable" style="text-align:right; width: 8%;" onclick="sortAds('nc')">NC <span id="sort-ind-nc"></span></th>
-                    <th class="sortable" style="text-align:right; width: 8%;" onclick="sortAds('pct_nc')">%&nbsp;NC <span id="sort-ind-pct_nc"></span></th>
-                    <th class="sortable" style="text-align:right; width: 13%;" onclick="sortAds('custo_nc')">Custo / NC <span id="sort-ind-custo_nc"></span></th>
+                    <th class="sortable" onclick="sortCampaigns('campaign_name')" style="width: 28%;">Campanha <span id="sort-ind-camp-campaign_name"></span></th>
+                    <th class="sortable" style="text-align:right; width: 9%;" onclick="sortCampaigns('spend')">Investimento <span id="sort-ind-camp-spend">▼</span></th>
+                    <th class="sortable" style="text-align:right; width: 9%;" onclick="sortCampaigns('receita')">Receita <span id="sort-ind-camp-receita"></span></th>
+                    <th class="sortable" style="text-align:right; width: 8%;" onclick="sortCampaigns('roas')">ROAS <span id="sort-ind-camp-roas"></span></th>
+                    <th class="sortable" style="text-align:right; width: 8%;" onclick="sortCampaigns('mqls')">MQLs <span id="sort-ind-camp-mqls"></span></th>
+                    <th class="sortable" style="text-align:right; width: 9%;" onclick="sortCampaigns('cpl')">Custo / MQL <span id="sort-ind-camp-cpl"></span></th>
+                    <th class="sortable" style="text-align:right; width: 8%;" onclick="sortCampaigns('nc')">NC <span id="sort-ind-camp-nc"></span></th>
+                    <th class="sortable" style="text-align:right; width: 8%;" onclick="sortCampaigns('pct_nc')">%&nbsp;NC <span id="sort-ind-camp-pct_nc"></span></th>
+                    <th class="sortable" style="text-align:right; width: 13%;" onclick="sortCampaigns('custo_nc')">Custo / NC <span id="sort-ind-camp-custo_nc"></span></th>
                 </tr>
             </thead>
-            <tbody id="ads-tbody"></tbody>
-            <tfoot id="ads-tfoot"></tfoot>
+            <tbody id="campaigns-tbody"></tbody>
+            <tfoot id="campaigns-tfoot"></tfoot>
         </table>
     </div>
 </div>
@@ -817,30 +817,30 @@
     </div>
 </div>
 
-<!-- Campaigns Consolidadas -->
-<div class="chart-card crz-ads-container" id="crz-campaigns-container"
+<!-- Ads Consolidados -->
+<div class="chart-card crz-ads-container" id="crz-ads-container"
     style="display:none; margin-bottom: 14px; overflow:hidden; padding:0;">
     <div class="chart-card-title" style="padding:14px 16px 10px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
-        <span>🎯 MQLs e Custos por Campanha</span>
-        <button class="btn-active-filter" id="btn-active-camps" onclick="toggleActiveFilter('camps')">Somente ativos</button>
+        <span>📈 MQLs e Custos por Anúncio</span>
+        <button class="btn-active-filter" id="btn-active-ads" onclick="toggleActiveFilter('ads')">Somente ativos</button>
     </div>
-    <div style="overflow-x:auto; overflow-y:auto; max-height:350px;">
-        <table class="day-table" id="campaigns-table" style="table-layout: fixed; width: 100%;">
+    <div style="overflow-x:auto; overflow-y:auto; max-height:500px;">
+        <table class="day-table" id="ads-table" style="table-layout: fixed; width: 100%;">
             <thead>
                 <tr>
-                    <th class="sortable" onclick="sortCampaigns('campaign_name')" style="width: 28%;">Campanha <span id="sort-ind-camp-campaign_name"></span></th>
-                    <th class="sortable" style="text-align:right; width: 9%;" onclick="sortCampaigns('spend')">Investimento <span id="sort-ind-camp-spend">▼</span></th>
-                    <th class="sortable" style="text-align:right; width: 9%;" onclick="sortCampaigns('receita')">Receita <span id="sort-ind-camp-receita"></span></th>
-                    <th class="sortable" style="text-align:right; width: 8%;" onclick="sortCampaigns('roas')">ROAS <span id="sort-ind-camp-roas"></span></th>
-                    <th class="sortable" style="text-align:right; width: 8%;" onclick="sortCampaigns('mqls')">MQLs <span id="sort-ind-camp-mqls"></span></th>
-                    <th class="sortable" style="text-align:right; width: 9%;" onclick="sortCampaigns('cpl')">Custo / MQL <span id="sort-ind-camp-cpl"></span></th>
-                    <th class="sortable" style="text-align:right; width: 8%;" onclick="sortCampaigns('nc')">NC <span id="sort-ind-camp-nc"></span></th>
-                    <th class="sortable" style="text-align:right; width: 8%;" onclick="sortCampaigns('pct_nc')">%&nbsp;NC <span id="sort-ind-camp-pct_nc"></span></th>
-                    <th class="sortable" style="text-align:right; width: 13%;" onclick="sortCampaigns('custo_nc')">Custo / NC <span id="sort-ind-camp-custo_nc"></span></th>
+                    <th class="sortable" onclick="sortAds('ad_name')" style="width: 28%;">Anúncio <span id="sort-ind-ad_name"></span></th>
+                    <th class="sortable" style="text-align:right; width: 9%;" onclick="sortAds('spend')">Investimento <span id="sort-ind-spend">▼</span></th>
+                    <th class="sortable" style="text-align:right; width: 9%;" onclick="sortAds('receita')">Receita <span id="sort-ind-receita"></span></th>
+                    <th class="sortable" style="text-align:right; width: 8%;" onclick="sortAds('roas')">ROAS <span id="sort-ind-roas"></span></th>
+                    <th class="sortable" style="text-align:right; width: 8%;" onclick="sortAds('mqls')">MQLs <span id="sort-ind-mqls"></span></th>
+                    <th class="sortable" style="text-align:right; width: 9%;" onclick="sortAds('cpl')">Custo / MQL <span id="sort-ind-cpl"></span></th>
+                    <th class="sortable" style="text-align:right; width: 8%;" onclick="sortAds('nc')">NC <span id="sort-ind-nc"></span></th>
+                    <th class="sortable" style="text-align:right; width: 8%;" onclick="sortAds('pct_nc')">%&nbsp;NC <span id="sort-ind-pct_nc"></span></th>
+                    <th class="sortable" style="text-align:right; width: 13%;" onclick="sortAds('custo_nc')">Custo / NC <span id="sort-ind-custo_nc"></span></th>
                 </tr>
             </thead>
-            <tbody id="campaigns-tbody"></tbody>
-            <tfoot id="campaigns-tfoot"></tfoot>
+            <tbody id="ads-tbody"></tbody>
+            <tfoot id="ads-tfoot"></tfoot>
         </table>
     </div>
 </div>
