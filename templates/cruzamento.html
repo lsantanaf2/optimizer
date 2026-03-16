@@ -1353,8 +1353,8 @@
 
     function getVisibleAds() {
         let data = currentAdsData;
-        if (selectedCampaign) data = data.filter(a => a.campaign_name === selectedCampaign);
-        if (selectedAdset) data = data.filter(a => a.adset_name === selectedAdset);
+        if (selectedCampaign) { const lc = selectedCampaign.toLowerCase(); data = data.filter(a => (a.campaign_name||'').toLowerCase() === lc); }
+        if (selectedAdset)    { const lc = selectedAdset.toLowerCase();    data = data.filter(a => (a.adset_name||'').toLowerCase() === lc); }
         if (activeFilters.ads) data = data.filter(a => a.ad_status === 'ACTIVE');
         return data;
     }
@@ -1425,7 +1425,7 @@
 
     function getVisibleAdSets() {
         let data = currentAdSetsData;
-        if (selectedCampaign) data = data.filter(s => s.campaign_name === selectedCampaign);
+        if (selectedCampaign) { const lc = selectedCampaign.toLowerCase(); data = data.filter(s => (s.campaign_name||'').toLowerCase() === lc); }
         if (activeFilters.adsets) data = data.filter(s => s.ad_status === 'ACTIVE');
         return data;
     }
@@ -1444,7 +1444,7 @@
             return currentAdSetSortDesc ? (vb - va) : (va - vb);
         });
         tbody.innerHTML = data.slice(0, 50).map(s => {
-            const isSelected = selectedAdset === s.adset_name;
+            const isSelected = selectedAdset && selectedAdset.toLowerCase() === (s.adset_name||'').toLowerCase();
             return `<tr class="${isSelected ? 'row-selected' : ''}">
             <td style="text-align:left;"><div class="entity-link" style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${s.adset_name}" onclick="setCascadeFilter('adset',${JSON.stringify(s.adset_name).replace(/"/g,'&quot;')})">${s.adset_name}</div></td>
             <td style="font-weight:600;">${fmtR(s.spend)}</td>
@@ -1511,7 +1511,7 @@
             return currentCampSortDesc ? (vb - va) : (va - vb);
         });
         tbody.innerHTML = data.slice(0, 50).map(c => {
-            const isSelected = selectedCampaign === c.campaign_name;
+            const isSelected = selectedCampaign && selectedCampaign.toLowerCase() === (c.campaign_name||'').toLowerCase();
             return `<tr class="${isSelected ? 'row-selected' : ''}">
             <td style="text-align:left;"><div class="entity-link" style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${c.campaign_name}" onclick="setCascadeFilter('campaign',${JSON.stringify(c.campaign_name).replace(/"/g,'&quot;')})">${c.campaign_name}</div></td>
             <td style="font-weight:600;">${fmtR(c.spend)}</td>
