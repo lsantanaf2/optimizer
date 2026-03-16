@@ -277,8 +277,8 @@
         <div style="width:1px;height:20px;background:var(--border);"></div>
         <!-- Apenas Ativos -->
         <label class="ads-only-active">
-            <input type="checkbox" id="only-active" checked onchange="renderTable()">
-            Apenas Ativos
+            <input type="checkbox" id="only-active" onchange="renderTable()">
+            Com ativo atual
         </label>
     </div>
     <div class="ads-right">
@@ -580,16 +580,16 @@
             const name = item.ad_name;
             if (!map[name]) {
                 map[name] = {
-                    ad_name:      name,
-                    ad_ids:       [],
-                    spend:        0,
-                    impressions:  0,
-                    clicks:       0,
-                    purchases:    0,
-                    video_3s:     0,
-                    video_p75:    0,
-                    // effective_status: ACTIVE somente se TODOS os IDs forem ACTIVE
-                    all_active:   true,
+                    ad_name:    name,
+                    ad_ids:     [],
+                    spend:      0,
+                    impressions:0,
+                    clicks:     0,
+                    purchases:  0,
+                    video_3s:   0,
+                    video_p75:  0,
+                    // any_active: true se pelo menos 1 ad do grupo estiver ATIVO agora
+                    any_active: false,
                 };
             }
             const g = map[name];
@@ -600,7 +600,7 @@
             g.purchases   += item.purchases;
             g.video_3s    += item.video_3s;
             g.video_p75   += item.video_p75;
-            if (item.effective_status !== 'ACTIVE') g.all_active = false;
+            if (item.effective_status === 'ACTIVE') g.any_active = true;
         }
 
         // Calcular métricas derivadas
@@ -641,8 +641,8 @@
 
         let data = consolidate(rawData);
 
-        // Filtro "Apenas Ativos"
-        if (onlyActive) data = data.filter(d => d.all_active);
+        // Filtro "Com ativo atual" — mostra apenas grupos com pelo menos 1 ad ativo agora
+        if (onlyActive) data = data.filter(d => d.any_active);
 
         // Ordenação
         data.sort((a, b) => {
@@ -681,8 +681,12 @@
             const idsJson = JSON.stringify(row.ad_ids).replace(/"/g, '&quot;');
             const nameEsc = row.ad_name.replace(/'/g, '\\\'').replace(/"/g, '&quot;');
 
+            const statusDot = row.any_active
+                ? `<span title="Pelo menos 1 ad ativo" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#22c55e;vertical-align:middle;margin-right:6px;"></span>`
+                : `<span title="Nenhum ad ativo" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#6b7280;vertical-align:middle;margin-right:6px;"></span>`;
+
             html += `<tr>
-                <td class="td-name" title="${nameEsc}">${row.ad_name}</td>
+                <td class="td-name" title="${nameEsc}">${statusDot}${row.ad_name}</td>
                 <td>${fmtR(row.spend)}</td>
                 <td>${fmtN(row.impressions)}</td>
                 <td>${row.purchases > 0 ? fmtN(row.purchases) : '—'}</td>
