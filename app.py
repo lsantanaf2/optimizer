@@ -24,6 +24,13 @@ APP_SECRET = os.getenv('APP_SECRET')
 REDIRECT_URI = os.getenv('REDIRECT_URI', 'http://localhost:5000/callback')
 TOKEN_FILE = 'token.json'
 
+# ── Validação de variáveis obrigatórias ────────────────────────────────────────
+_missing = [k for k, v in {'APP_ID': APP_ID, 'APP_SECRET': APP_SECRET}.items() if not v]
+if _missing:
+    print(f"🚨 ATENÇÃO: Variáveis de ambiente AUSENTES: {', '.join(_missing)}")
+    print("   O login via Facebook NÃO funcionará até que estas variáveis sejam definidas.")
+    print("   Use: docker run ... -e APP_ID=<valor> -e APP_SECRET=<valor> ...")
+
 app = Flask(__name__, static_folder='static')
 app.secret_key = 'chave-secreta-optimizer-2024'
 
@@ -36,7 +43,7 @@ app.register_blueprint(cruzamento_bp)
 from modules.anuncios import anuncios_bp
 app.register_blueprint(anuncios_bp)
 
-VERSION = "v2.3.16"
+VERSION = "v2.3.17"
 
 @app.context_processor
 def inject_version():

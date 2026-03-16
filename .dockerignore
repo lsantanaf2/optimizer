@@ -1,0 +1,32 @@
+# Secrets - NUNCA incluir na imagem Docker
+notepad.env
+.env
+token.json
+google_credentials.json
+.env.*
+
+# Git
+.git
+.gitignore
+
+# Python cache
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Desenvolvimento / AIOX
+.aiox-core/
+.aiox/
+.codex/
+.cursor/
+temp_aios_full_clone/
+docs/
+*.md
+AGENTS.md
+
+# Node (não usado pelo app)
+node_modules/
+package.json
+package-lock.json
