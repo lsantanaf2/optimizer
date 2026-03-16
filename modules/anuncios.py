@@ -184,9 +184,10 @@ def api_anuncios_data(account_id):
             ad_id = item.get('ad_id', '')
             vid   = video_map.get(ad_id, {})
 
-            purchases = _action_value(item.get('actions'), 'purchase')
+            # Prioridade: pixel específico > purchase genérico (mesmo padrão do meta_api.py)
+            purchases = _action_value(item.get('actions'), 'offsite_conversion.fb_pixel_purchase')
             if purchases == 0:
-                purchases = _action_value(item.get('actions'), 'omni_purchase')
+                purchases = _action_value(item.get('actions'), 'purchase')
 
             result.append({
                 'ad_id':            ad_id,
