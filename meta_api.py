@@ -112,11 +112,12 @@ class MetaUploader:
 
     # ======================== TURBINADA — MULTI-PERIOD INSIGHTS ========================
 
-    def get_turbinada_data(self, level='campaign', parent_ids=None, status_filter=None, periods=None):
+    def get_turbinada_data(self, level='campaign', parent_ids=None, parent_type=None, status_filter=None, periods=None):
         """
         Busca dados multi-período para a tela Turbinada.
         level: 'campaign', 'adset' ou 'ad'
         parent_ids: lista de IDs pai. None para campaigns.
+        parent_type: 'campaign' ou 'adset' — indica o tipo dos parent_ids (útil quando level='ad' com campaign IDs).
         status_filter: 'ACTIVE' para trazer só ativas, None para ACTIVE+PAUSED.
         periods: dict {key: {'since': 'YYYY-MM-DD', 'until': 'YYYY-MM-DD'}} — períodos dinâmicos.
                  Se None, usa 4 períodos padrão (7d, 3d, ontem, hoje).
@@ -202,7 +203,9 @@ class MetaUploader:
                 filter_list.append({"field": "effective_status", "operator": "IN", "value": status_values})
             struct_params['filtering'] = json.dumps(filter_list)
         elif parent_ids and level == 'ad':
-            filter_list = [{"field": "adset.id", "operator": "IN", "value": parent_ids}]
+            # parent_type indica se parent_ids são campaign IDs ou adset IDs
+            parent_field = "campaign.id" if parent_type == 'campaign' else "adset.id"
+            filter_list = [{"field": parent_field, "operator": "IN", "value": parent_ids}]
             if status_filter:
                 filter_list.append({"field": "effective_status", "operator": "IN", "value": status_values})
             struct_params['filtering'] = json.dumps(filter_list)
@@ -222,6 +225,17 @@ class MetaUploader:
         print(f"📊 [turbinada] {len(struct_map)} {level}s carregados (estrutura)")
 
         # 2. Buscar insights para cada período
+        # PERFORMANCE: filtrar insights por parent_ids para evitar varredura de conta inteira
+        insights_filter = [{"field": "spend", "operator": "GREATER_THAN", "value": "0"}]
+        if parent_ids and level == 'adset':
+            insights_filter.append({"field": "campaign.id", "operator": "IN", "value": parent_ids})
+        elif parent_ids and level == 'ad':
+            parent_field = "campaign.id" if parent_type == 'campaign' else "adset.id"
+            insights_filter.append({"field": parent_field, "operator": "IN", "value": parent_ids})
+        # Filtro de status também no insights (evita trazer arquivadas/deletadas)
+        if level == 'campaign':
+            insights_filter.append({"field": "campaign.effective_status", "operator": "IN", "value": status_values})
+
         insights_by_id = {}  # {entity_id: {p7d: {...}, p3d: {...}, ...}}
 
         for period_key, time_range in periods.items():
@@ -231,7 +245,7 @@ class MetaUploader:
                 'level': level,
                 'fields': f'{cfg["id_field"]},{cfg["name_field"]},spend,actions',
                 'time_range': json.dumps(time_range),
-                'filtering': '[{"field":"spend","operator":"GREATER_THAN","value":"0"}]',
+                'filtering': json.dumps(insights_filter),
                 'limit': 500,
             }
 

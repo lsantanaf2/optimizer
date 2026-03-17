@@ -190,6 +190,7 @@ def api_turbinada(account_id, level):
 
     parent_ids = request.args.get('parent_ids', '')
     parent_list = [pid.strip() for pid in parent_ids.split(',') if pid.strip()] if parent_ids else None
+    parent_type = request.args.get('parent_type', None)  # 'campaign' ou 'adset'
 
     # status_filter=ACTIVE para trazer só ativas (padrão selecionado na UI)
     status_filter = request.args.get('status_filter', None)  # ex: "ACTIVE"
@@ -206,7 +207,7 @@ def api_turbinada(account_id, level):
 
     try:
         uploader = MetaUploader(account_id, token, APP_ID, APP_SECRET)
-        data = uploader.get_turbinada_data(level=level, parent_ids=parent_list, status_filter=status_filter, periods=periods_dict)
+        data = uploader.get_turbinada_data(level=level, parent_ids=parent_list, parent_type=parent_type, status_filter=status_filter, periods=periods_dict)
         return jsonify({"success": True, "data": data})
     except Exception as e:
         import traceback

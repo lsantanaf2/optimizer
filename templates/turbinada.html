@@ -461,12 +461,8 @@
     </div>
     <div class="turb-cac-inputs">
         <div>
-            <label>CAC Ideal (≤)</label>
-            <input type="number" id="cac-x" value="50" step="1" onchange="applyCAC()">
-        </div>
-        <div>
-            <label>Teto CAC (≥)</label>
-            <input type="number" id="cac-y" value="150" step="1" onchange="onTetoCACChange()">
+            <label>CAC Máximo (≥)</label>
+            <input type="number" id="cac-y" value="150" step="1" onchange="applyCAC()">
         </div>
         <button
             style="padding:6px 14px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--bg-card); color:var(--text-primary); cursor:pointer; font-size:12px; font-weight:600;"
@@ -758,13 +754,21 @@
 
         // Filtragem em cascata: usar IDs selecionados do nível anterior
         let parentIds = null;
+        let parentType = null;
         if (level === 'adset' && selectedCampaigns.length > 0) {
             parentIds = [...selectedCampaigns];
-        } else if (level === 'ad' && selectedAdsets.length > 0) {
-            parentIds = [...selectedAdsets];
+            parentType = 'campaign';
+        } else if (level === 'ad') {
+            if (selectedAdsets.length > 0) {
+                parentIds = [...selectedAdsets];
+                parentType = 'adset';
+            } else if (selectedCampaigns.length > 0) {
+                parentIds = [...selectedCampaigns];
+                parentType = 'campaign';
+            }
         }
 
-        loadData(parentIds);
+        loadData(parentIds, parentType);
     }
 
     // Captura IDs dos checkboxes marcados no nível atual
@@ -823,7 +827,7 @@
     }
 
     // ===== Data Loading =====
-    async function loadData(parentIds) {
+    async function loadData(parentIds, parentType) {
         const loading = document.getElementById('turb-loading');
         const table = document.getElementById('turb-table');
         const noPeriods = document.getElementById('turb-no-periods');
@@ -835,6 +839,7 @@
         let url = `/api/account/${ACCOUNT_ID}/turbinada/${currentLevel}`;
         const params = [];
         if (parentIds && parentIds.length) params.push(`parent_ids=${parentIds.join(',')}`);
+        if (parentType) params.push(`parent_type=${parentType}`);
         if (onlyActive) params.push(`status_filter=ACTIVE`);
         if (columnPeriods.length > 0) params.push(`periods=${encodeURIComponent(buildPeriodsParam())}`);
         if (params.length) url += '?' + params.join('&');
@@ -899,7 +904,6 @@
         noPeriods.style.display = 'none';
 
         const showBudget = currentLevel !== 'ad';
-        const cacX = parseFloat(document.getElementById('cac-x').value) || 0;
         const cacY = parseFloat(document.getElementById('cac-y').value) || 999999;
 
         // Ordenar dados
@@ -986,8 +990,7 @@
                 if (pd.spend > 0 && pd.purchases === 0) {
                     colorClass = 'pg-yellow';
                 } else if (pd.cac !== null && pd.cac > 0) {
-                    if (pd.cac <= cacX) colorClass = 'pg-green';
-                    else if (pd.cac >= cacY) colorClass = 'pg-red';
+                    if (pd.cac >= cacY) colorClass = 'pg-red';
                 }
 
                 const spend = pd.spend > 0 ? `R$ ${pd.spend.toFixed(2)}` : '—';
@@ -1009,17 +1012,6 @@
 
     function applyCAC() {
         if (allData.length) renderTable();
-    }
-
-    // Auto-cálculo: ao preencher Teto CAC, calcula CAC Ideal = 80% do teto
-    function onTetoCACChange() {
-        const tetoInput = document.getElementById('cac-y');
-        const idealInput = document.getElementById('cac-x');
-        const teto = parseFloat(tetoInput.value);
-        if (!isNaN(teto) && teto > 0) {
-            idealInput.value = Math.round(teto * 0.8);
-        }
-        applyCAC();
     }
 
     // Toggle filtro de selecionados
