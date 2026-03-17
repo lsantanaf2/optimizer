@@ -1328,19 +1328,13 @@
     }
 
     // ── Ads Table ────────────────────────────────────────────────────────────────
-    let currentAdsData = [];
+    let allAdsRaw = [];   // todos os rows detalhados (1 por campaign+adset+nome)
     let currentSortCol = 'spend';
     let currentSortDesc = true;
 
     function renderAdsTable(ads) {
         if (!ads || ads.length === 0) return;
-        currentAdsData = ads.map(ad => {
-            ad.roas     = ad.spend > 0 && ad.receita > 0 ? ad.receita / ad.spend : 0;
-            ad.cpl      = ad.mqls > 0 ? ad.spend / ad.mqls : 0;
-            ad.pct_nc   = ad.mqls > 0 ? (ad.nc / ad.mqls) * 100 : 0;
-            ad.custo_nc = ad.nc > 0 ? ad.spend / ad.nc : 0;
-            return ad;
-        });
+        allAdsRaw = ads;
         renderAdsTableBody();
         document.getElementById('crz-ads-container').style.display = 'block';
     }
@@ -1351,12 +1345,55 @@
         renderAdsTableBody();
     }
 
+    // Agrega linhas pelo ad_name (soma métricas, mantém status ACTIVE se alguma ativa)
+    function aggregateAdRows(rows) {
+        const map = {};
+        for (const ad of rows) {
+            const key = ad.ad_name;
+            if (!map[key]) {
+                map[key] = { ad_name: ad.ad_name, campaign_name: ad.campaign_name,
+                             adset_name: ad.adset_name, ad_status: ad.ad_status,
+                             spend: 0, receita: 0, mqls: 0, nc: 0 };
+            }
+            map[key].spend   += ad.spend   || 0;
+            map[key].receita += ad.receita || 0;
+            map[key].mqls    += ad.mqls    || 0;
+            map[key].nc      += ad.nc      || 0;
+            if (ad.ad_status === 'ACTIVE') map[key].ad_status = 'ACTIVE';
+        }
+        return Object.values(map);
+    }
+
+    // Calcula métricas derivadas
+    function withDerived(rows) {
+        return rows.map(ad => ({
+            ...ad,
+            roas:     ad.spend > 0 && ad.receita > 0 ? ad.receita / ad.spend : 0,
+            cpl:      ad.mqls > 0 ? ad.spend / ad.mqls : 0,
+            pct_nc:   ad.mqls > 0 ? (ad.nc / ad.mqls) * 100 : 0,
+            custo_nc: ad.nc > 0 ? ad.spend / ad.nc : 0,
+        }));
+    }
+
     function getVisibleAds() {
-        let data = currentAdsData;
-        if (selectedCampaign) { const lc = selectedCampaign.toLowerCase(); data = data.filter(a => (a.campaign_name||'').toLowerCase() === lc); }
-        if (selectedAdset)    { const lc = selectedAdset.toLowerCase();    data = data.filter(a => (a.adset_name||'').toLowerCase() === lc); }
-        if (activeFilters.ads) data = data.filter(a => a.ad_status === 'ACTIVE');
-        return data;
+        let rows = allAdsRaw;
+
+        if (selectedAdset) {
+            // Regra 3: adset selecionado → dados específicos daquele adset, sem consolidar
+            const lc = selectedAdset.toLowerCase();
+            rows = rows.filter(a => (a.adset_name||'').toLowerCase() === lc);
+        } else if (selectedCampaign) {
+            // Regra 2: campanha selecionada → filtra por campanha, consolida por nome
+            const lc = selectedCampaign.toLowerCase();
+            rows = rows.filter(a => (a.campaign_name||'').toLowerCase() === lc);
+            rows = aggregateAdRows(rows);
+        } else {
+            // Regra 1: sem filtro → consolida tudo por nome
+            rows = aggregateAdRows(rows);
+        }
+
+        if (activeFilters.ads) rows = rows.filter(a => a.ad_status === 'ACTIVE');
+        return withDerived(rows);
     }
 
     function renderAdsTableBody() {
