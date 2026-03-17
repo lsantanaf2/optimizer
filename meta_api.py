@@ -186,53 +186,14 @@ class MetaUploader:
 
         cfg = level_config[level]
 
-        # 1. Buscar dados estruturais
-        struct_map = {}
-        struct_url = f"https://graph.facebook.com/v22.0/{cfg['struct_endpoint']}"
-        struct_params = {
-            'access_token': self.access_token,
-            'fields': cfg['struct_fields'],
-            'limit': 500,
-        }
-        if cfg['filtering']:
-            struct_params['filtering'] = cfg['filtering']
-        if parent_ids and level == 'adset':
-            # Filtrar por campaign_ids + status opcional
-            filter_list = [{"field": "campaign.id", "operator": "IN", "value": parent_ids}]
-            if status_filter:
-                filter_list.append({"field": "effective_status", "operator": "IN", "value": status_values})
-            struct_params['filtering'] = json.dumps(filter_list)
-        elif parent_ids and level == 'ad':
-            # parent_type indica se parent_ids são campaign IDs ou adset IDs
-            parent_field = "campaign.id" if parent_type == 'campaign' else "adset.id"
-            filter_list = [{"field": parent_field, "operator": "IN", "value": parent_ids}]
-            if status_filter:
-                filter_list.append({"field": "effective_status", "operator": "IN", "value": status_values})
-            struct_params['filtering'] = json.dumps(filter_list)
-
-        resp = requests.get(struct_url, params=struct_params, timeout=60)
-        for item in resp.json().get('data', []):
-            struct_map[item['id']] = item
-
-        # Paginação de estrutura
-        next_url = resp.json().get('paging', {}).get('next')
-        while next_url:
-            resp = requests.get(next_url, timeout=60)
-            for item in resp.json().get('data', []):
-                struct_map[item['id']] = item
-            next_url = resp.json().get('paging', {}).get('next')
-
-        print(f"📊 [turbinada] {len(struct_map)} {level}s carregados (estrutura)")
-
-        # 2. Buscar insights para cada período
-        # PERFORMANCE: filtrar insights por parent_ids para evitar varredura de conta inteira
+        # ── PASSO 1: Buscar insights PRIMEIRO (já filtra por spend > 0) ──
+        # Isso nos dá apenas os IDs com gasto real, evitando buscar estrutura de tudo
         insights_filter = [{"field": "spend", "operator": "GREATER_THAN", "value": "0"}]
         if parent_ids and level == 'adset':
             insights_filter.append({"field": "campaign.id", "operator": "IN", "value": parent_ids})
         elif parent_ids and level == 'ad':
             parent_field = "campaign.id" if parent_type == 'campaign' else "adset.id"
             insights_filter.append({"field": parent_field, "operator": "IN", "value": parent_ids})
-        # Filtro de status também no insights (evita trazer arquivadas/deletadas)
         if level == 'campaign':
             insights_filter.append({"field": "campaign.effective_status", "operator": "IN", "value": status_values})
 
@@ -281,24 +242,47 @@ class MetaUploader:
             except Exception as e:
                 print(f"   ⚠️ {period_key} falhou: {e}")
 
-        # 3. Merge: struct + insights → retorno consolidado
+        # IDs com gasto real em pelo menos um período
+        ids_with_spend = list(insights_by_id.keys())
+        print(f"📊 [turbinada] {len(ids_with_spend)} {level}s com gasto encontrados")
+
+        # ── PASSO 2: Buscar estrutura APENAS dos IDs com gasto ──
+        struct_map = {}
+        if ids_with_spend:
+            # Buscar em lotes de 50 IDs para não estourar limite de URL
+            batch_size = 50
+            for i in range(0, len(ids_with_spend), batch_size):
+                batch_ids = ids_with_spend[i:i + batch_size]
+                struct_url = f"https://graph.facebook.com/v22.0/{cfg['struct_endpoint']}"
+                struct_params = {
+                    'access_token': self.access_token,
+                    'fields': cfg['struct_fields'],
+                    'limit': 500,
+                    'filtering': json.dumps([{"field": "id", "operator": "IN", "value": batch_ids}]),
+                }
+
+                resp = requests.get(struct_url, params=struct_params, timeout=60)
+                for item in resp.json().get('data', []):
+                    struct_map[item['id']] = item
+
+                # Paginação de estrutura (raro com filtro por ID, mas seguro)
+                next_url = resp.json().get('paging', {}).get('next')
+                while next_url:
+                    resp = requests.get(next_url, timeout=60)
+                    for item in resp.json().get('data', []):
+                        struct_map[item['id']] = item
+                    next_url = resp.json().get('paging', {}).get('next')
+
+        print(f"📊 [turbinada] {len(struct_map)} {level}s carregados (estrutura)")
+
+        # ── PASSO 3: Merge insights + struct ──
         empty_period = {'spend': 0, 'purchases': 0, 'cac': None}
         results = []
 
-        # Quando há filtro (parent_ids), usar apenas entidades da estrutura filtrada
-        # Sem filtro, usar a união de struct + insights para pegar tudo com gasto
-        if parent_ids:
-            all_ids = set(struct_map.keys())
-        else:
-            all_ids = set(struct_map.keys()) | set(insights_by_id.keys())
-
-        for entity_id in all_ids:
+        # Iterar sobre IDs com gasto (insights_by_id), enriquecer com dados estruturais
+        for entity_id in insights_by_id:
             struct = struct_map.get(entity_id, {})
-            periods_data = insights_by_id.get(entity_id, {})
-
-            # Só incluir se teve gasto em algum período
-            if not periods_data:
-                continue
+            periods_data = insights_by_id[entity_id]
 
             daily_raw = struct.get('daily_budget')
             lifetime_raw = struct.get('lifetime_budget')
