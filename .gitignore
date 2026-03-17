@@ -1,5 +1,6 @@
 notepad.env
 token.json
+deploy.sh
 __pycache__/
 *.pyc
 .env
@@ -57,3 +58,6 @@ test-results.json
 # Google Service Account credentials (NUNCA commitar!)
 google_credentials.json
 
+# AIOX Local (AIOX)
+.aiox-core/local/
+.aiox/install-log.txt
