@@ -395,24 +395,28 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows, mqls_all=None):
         adset_id_raw   = ad.get('adset_id', '')
         campaign_id_raw= ad.get('campaign_id', '')
 
-        # Consolidação Ad
+        # Consolidação Ad — chave composta (campaign, adset, nome) para preservar
+        # o mesmo criativo em adsets diferentes como entradas separadas.
+        # O matching de leads continua usando apenas name_norm (utm_term).
         if name_norm:
-            if name_norm not in fb_ads_by_name:
-                fb_ads_by_name[name_norm] = {
+            ad_key = f"{campaign_norm}|||{adset_norm}|||{name_norm}"
+            if ad_key not in fb_ads_by_name:
+                fb_ads_by_name[ad_key] = {
                     'ad_name':       ad.get('ad_name', 'Desconhecido'),
                     'campaign_name': ad.get('campaign_name', ''),
                     'adset_name':    ad.get('adset_name', ''),
                     'ad_status':     ad.get('ad_status', 'UNKNOWN'),
                     'ad_ids':        set(),
+                    '_name_norm':    name_norm,
                     'spend':         0.0,
                     'impressions':   0,
                     'clicks':        0,
                 }
             if ad_id_raw:
-                fb_ads_by_name[name_norm]['ad_ids'].add(ad_id_raw)
-            fb_ads_by_name[name_norm]['spend']       += ad.get('spend', 0.0)
-            fb_ads_by_name[name_norm]['impressions'] += ad.get('impressions', 0)
-            fb_ads_by_name[name_norm]['clicks']      += ad.get('clicks', 0)
+                fb_ads_by_name[ad_key]['ad_ids'].add(ad_id_raw)
+            fb_ads_by_name[ad_key]['spend']       += ad.get('spend', 0.0)
+            fb_ads_by_name[ad_key]['impressions'] += ad.get('impressions', 0)
+            fb_ads_by_name[ad_key]['clicks']      += ad.get('clicks', 0)
 
         # Consolidação AdSet
         if adset_norm:
@@ -474,8 +478,8 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows, mqls_all=None):
     matched_deal_ids_campaigns = set()
 
     # ── 3.1: Cruzar Ads (utm_term ↔ ad_name ou ad_id)
-    for name_norm, ad_data in fb_ads_by_name.items():
-        m_leads = _join_leads(leads_by_term, name_norm, *ad_data['ad_ids'])
+    for _ad_key, ad_data in fb_ads_by_name.items():
+        m_leads = _join_leads(leads_by_term, ad_data['_name_norm'], *ad_data['ad_ids'])
         metrics = _calc_metrics(ad_data, m_leads)
         ads_consolidated.append({
             'ad_name':       ad_data['ad_name'],
@@ -666,15 +670,17 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows, mqls_all=None):
 
     # Por anúncio
     by_date_per_ad = {}
-    for ad_norm, ad_data_item in fb_ads_by_name.items():
+    for _ad_key, ad_data_item in fb_ads_by_name.items():
+        ad_name_norm = ad_data_item['_name_norm']
+        adset_name_item = _norm(ad_data_item.get('adset_name', ''))
         ds, dm = {}, {}
         for ad in fb_ads:
-            if _norm(ad.get('ad_name', '')) == ad_norm:
+            if _norm(ad.get('ad_name', '')) == ad_name_norm and _norm(ad.get('adset_name', '')) == adset_name_item:
                 d = ad.get('date_start', '')
                 if d:
                     ds[d] = ds.get(d, 0.0) + ad['spend']
         for row in mqls_rows:
-            if _norm(row.get('utm_term', '')) == ad_norm:
+            if _norm(row.get('utm_term', '')) == ad_name_norm:
                 d = _parse_date_br(row.get('Data do preenchimento', ''))
                 if d:
                     k = d.strftime('%Y-%m-%d')
