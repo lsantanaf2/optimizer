@@ -985,12 +985,13 @@
             periods.forEach((p, pi) => {
                 const pd = item[p.key] || { spend: 0, purchases: 0, cac: null };
 
-                // Prioridade de cor: amarelo (gasto sem venda) > verde/vermelho CAC
+                // Prioridade de cor: amarelo (gasto sem venda) > vermelho/verde CAC
                 let colorClass = '';
                 if (pd.spend > 0 && pd.purchases === 0) {
                     colorClass = 'pg-yellow';
                 } else if (pd.cac !== null && pd.cac > 0) {
                     if (pd.cac >= cacY) colorClass = 'pg-red';
+                    else if (pd.cac <= cacY * 0.8) colorClass = 'pg-green';
                 }
 
                 const spend = pd.spend > 0 ? `R$ ${pd.spend.toFixed(2)}` : '—';
