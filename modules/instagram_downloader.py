@@ -37,13 +37,15 @@ def instagram_download():
     output_template = os.path.join(tmpdir, 'video_%(id)s.%(ext)s')
 
     ydl_opts = {
-        'format': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
+        'format': 'bestvideo+bestaudio/best',
         'merge_output_format': 'mp4',
         'outtmpl': output_template,
         'quiet': True,
         'no_warnings': True,
-        # Cookies do browser podem ajudar com login-walls
-        # 'cookiesfrombrowser': ('chrome',),
+        'postprocessors': [{
+            'key': 'FFmpegVideoConvertor',
+            'preferedformat': 'mp4',
+        }],
     }
 
     try:

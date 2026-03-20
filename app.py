@@ -46,7 +46,7 @@ app.register_blueprint(anuncios_bp)
 from modules.instagram_downloader import instagram_dl_bp
 app.register_blueprint(instagram_dl_bp)
 
-VERSION = "v2.3.36"
+VERSION = "v2.3.37"
 
 @app.context_processor
 def inject_version():
