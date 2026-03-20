@@ -6,3 +6,4 @@ gunicorn
 gdown>=5.0.0
 tzdata
 cryptography
+yt-dlp

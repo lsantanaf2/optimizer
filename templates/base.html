@@ -52,6 +52,13 @@
                     title="Anúncios">
                     <span class="nav-icon">📣</span>
                 </a>
+
+                <!-- Instagram Downloader -->
+                <a href="{{ url_for('instagram_dl.instagram_downloader_page') }}"
+                    class="nav-item {% if request.endpoint == 'instagram_dl.instagram_downloader_page' %}active{% endif %}"
+                    title="Download Instagram">
+                    <span class="nav-icon">📥</span>
+                </a>
             </nav>
             <div class="sidebar-footer">
                 <a href="{{ url_for('logout') }}" class="nav-item" title="Sair">

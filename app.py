@@ -43,7 +43,10 @@ app.register_blueprint(cruzamento_bp)
 from modules.anuncios import anuncios_bp
 app.register_blueprint(anuncios_bp)
 
-VERSION = "v2.3.35"
+from modules.instagram_downloader import instagram_dl_bp
+app.register_blueprint(instagram_dl_bp)
+
+VERSION = "v2.3.36"
 
 @app.context_processor
 def inject_version():

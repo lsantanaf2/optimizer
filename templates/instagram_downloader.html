@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}Instagram Downloader — OPTIMIZER{% endblock %}
+
+{% block breadcrumb %}
+<span>📥 Instagram Video Downloader</span>
+{% endblock %}
+
+{% block content %}
+<div style="max-width: 640px; margin: 40px auto;">
+
+    <!-- Card principal -->
+    <div class="card" style="padding: 32px;">
+        <h2 style="margin: 0 0 8px; font-size: 22px; color: var(--text-primary);">
+            📥 Download de Vídeos do Instagram
+        </h2>
+        <p style="color: var(--text-muted); margin: 0 0 24px; font-size: 14px;">
+            Cole o link de um Reels ou post com vídeo para baixar em até 1080p.
+        </p>
+
+        <!-- Input + Botão -->
+        <div style="display: flex; gap: 10px;">
+            <input type="text" id="igUrl"
+                placeholder="https://www.instagram.com/reel/..."
+                style="flex: 1; padding: 12px 16px; background: var(--bg-deep); border: 1px solid var(--border);
+                       border-radius: var(--radius-sm); color: var(--text-primary); font-size: 14px; outline: none;"
+                autofocus>
+            <button id="btnDownload" onclick="iniciarDownload()"
+                style="padding: 12px 24px; background: var(--accent); color: var(--bg-deep); border: none;
+                       border-radius: var(--radius-sm); font-weight: 600; font-size: 14px; cursor: pointer;
+                       white-space: nowrap; transition: opacity 0.2s;">
+                Baixar
+            </button>
+        </div>
+
+        <!-- Status -->
+        <div id="status" style="margin-top: 16px; display: none;">
+            <div style="display: flex; align-items: center; gap: 10px; padding: 12px 16px;
+                        background: var(--bg-deep); border-radius: var(--radius-sm); font-size: 13px;">
+                <span id="statusIcon">⏳</span>
+                <span id="statusText" style="color: var(--text-secondary);">Processando...</span>
+            </div>
+        </div>
+
+        <!-- Erro -->
+        <div id="errorBox" style="margin-top: 16px; display: none;">
+            <div style="padding: 12px 16px; background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3);
+                        border-radius: var(--radius-sm); color: #ef4444; font-size: 13px;">
+                <span id="errorText"></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dicas -->
+    <div class="card" style="padding: 20px; margin-top: 16px;">
+        <h3 style="margin: 0 0 12px; font-size: 14px; color: var(--text-muted); font-weight: 500;">
+            Como usar
+        </h3>
+        <ul style="margin: 0; padding: 0 0 0 20px; color: var(--text-secondary); font-size: 13px; line-height: 2;">
+            <li>Abra o Reels ou post com vídeo no Instagram</li>
+            <li>Clique nos <strong>3 pontinhos (⋯)</strong> e copie o link</li>
+            <li>Cole aqui e clique em <strong>Baixar</strong></li>
+            <li>O vídeo será baixado na melhor qualidade disponível (até 1080p)</li>
+            <li>Funciona com Reels, posts com vídeo e IGTV</li>
+        </ul>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const btnDownload = document.getElementById('btnDownload');
+const igUrl = document.getElementById('igUrl');
+const status = document.getElementById('status');
+const statusIcon = document.getElementById('statusIcon');
+const statusText = document.getElementById('statusText');
+const errorBox = document.getElementById('errorBox');
+const errorText = document.getElementById('errorText');
+
+// Enter para baixar
+igUrl.addEventListener('keydown', e => { if (e.key === 'Enter') iniciarDownload(); });
+
+async function iniciarDownload() {
+    const url = igUrl.value.trim();
+    if (!url) { igUrl.focus(); return; }
+
+    // Reset UI
+    errorBox.style.display = 'none';
+    status.style.display = 'block';
+    statusIcon.textContent = '⏳';
+    statusText.textContent = 'Baixando vídeo... pode levar alguns segundos';
+    btnDownload.disabled = true;
+    btnDownload.style.opacity = '0.5';
+
+    try {
+        const resp = await fetch('/api/instagram/download', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url })
+        });
+
+        if (!resp.ok) {
+            const data = await resp.json();
+            throw new Error(data.error || 'Erro desconhecido');
+        }
+
+        // Sucesso — baixar o blob como arquivo
+        const blob = await resp.blob();
+        const disposition = resp.headers.get('Content-Disposition') || '';
+        let filename = 'instagram_video.mp4';
+        const match = disposition.match(/filename\*?=(?:UTF-8'')?["']?([^"';\n]+)/i);
+        if (match) filename = decodeURIComponent(match[1]);
+
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(a.href);
+
+        statusIcon.textContent = '✅';
+        statusText.textContent = 'Download concluído!';
+        setTimeout(() => { status.style.display = 'none'; }, 3000);
+
+    } catch (err) {
+        status.style.display = 'none';
+        errorBox.style.display = 'block';
+        errorText.textContent = err.message;
+    } finally {
+        btnDownload.disabled = false;
+        btnDownload.style.opacity = '1';
+    }
+}
+</script>
+{% endblock %}
