@@ -21,7 +21,10 @@
     </div>
     <div class="field">
         <label for="password">Senha</label>
-        <input type="password" id="password" name="password" placeholder="Sua senha" required>
+        <div class="field-password">
+            <input type="password" id="password" name="password" placeholder="Sua senha" required>
+            <button type="button" class="toggle-password" onclick="togglePassword(this)">👁</button>
+        </div>
     </div>
     <button type="submit" class="auth-btn auth-btn-primary">Entrar</button>
 </form>

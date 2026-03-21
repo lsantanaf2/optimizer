@@ -125,6 +125,33 @@
             box-shadow: 0 0 20px rgba(24, 119, 242, 0.3);
         }
 
+        .field-password {
+            position: relative;
+        }
+
+        .field-password input {
+            padding-right: 44px;
+        }
+
+        .toggle-password {
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: var(--text-muted);
+            font-size: 16px;
+            padding: 4px;
+            line-height: 1;
+            transition: color 0.2s;
+        }
+
+        .toggle-password:hover {
+            color: var(--accent);
+        }
+
         .auth-error {
             background: var(--danger-bg);
             border: 1px solid var(--danger);
@@ -177,6 +204,18 @@
             {% block auth_content %}{% endblock %}
         </div>
     </div>
+    <script>
+        function togglePassword(btn) {
+            const input = btn.previousElementSibling;
+            if (input.type === 'password') {
+                input.type = 'text';
+                btn.textContent = '🙈';
+            } else {
+                input.type = 'password';
+                btn.textContent = '👁';
+            }
+        }
+    </script>
 </body>
 
 </html>
