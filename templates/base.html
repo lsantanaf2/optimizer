@@ -13,9 +13,10 @@
 
 <body>
     <div class="app-layout">
-        <aside class="sidebar" {% if client_mode %}style="display:none;"{% endif %}>
+        <aside class="sidebar" id="sidebar" {% if client_mode %}style="display:none;"{% endif %}>
             <div class="sidebar-logo">
                 <span class="lightning-icon">⚡</span>
+                <span class="nav-label sidebar-brand">OPTIMIZER</span>
             </div>
             <nav class="sidebar-nav">
                 <!-- Upload Flow -->
@@ -23,6 +24,7 @@
                     class="nav-item {% if request.endpoint in ['listar_campanhas', 'setup_campanha'] or (request.endpoint == 'listar_contas' and request.args.get('next') != 'optimize') %}active{% endif %}"
                     title="Subir Criativos">
                     <span class="nav-icon">📤</span>
+                    <span class="nav-label">Criativos</span>
                 </a>
 
                 <!-- Optimize Flow -->
@@ -30,13 +32,15 @@
                     class="nav-item {% if request.endpoint in ['optimization.otimizar_campanhas', 'optimization.api_insights'] or (request.endpoint == 'listar_contas' and request.args.get('next') == 'optimize') %}active{% endif %}"
                     title="Otimizar">
                     <span class="nav-icon">📊</span>
+                    <span class="nav-label">Otimizar</span>
                 </a>
 
                 <!-- Turbinada Flow -->
                 <a href="{{ url_for('optimization.turbinada_page', account_id=session.get('account_id')) if session.get('account_id') else url_for('listar_contas') }}"
                     class="nav-item {% if request.endpoint == 'optimization.turbinada_page' %}active{% endif %}"
-                    title="Otimização Turbinada">
+                    title="Turbinada">
                     <span class="nav-icon">🚀</span>
+                    <span class="nav-label">Turbinada</span>
                 </a>
 
                 <!-- Cruzamento FB × Sheets -->
@@ -44,6 +48,7 @@
                     class="nav-item {% if 'cruzamento' in (request.endpoint or '') %}active{% endif %}"
                     title="FB Ads × Google Sheets">
                     <span class="nav-icon">🔀</span>
+                    <span class="nav-label">Cruzamento</span>
                 </a>
 
                 <!-- Anúncios -->
@@ -51,6 +56,7 @@
                     class="nav-item {% if request.endpoint == 'anuncios.anuncios_page' %}active{% endif %}"
                     title="Anúncios">
                     <span class="nav-icon">📣</span>
+                    <span class="nav-label">Anúncios</span>
                 </a>
 
                 <!-- Instagram Downloader -->
@@ -58,12 +64,17 @@
                     class="nav-item {% if request.endpoint == 'instagram_dl.instagram_downloader_page' %}active{% endif %}"
                     title="Download Instagram">
                     <span class="nav-icon">📥</span>
+                    <span class="nav-label">Instagram</span>
                 </a>
             </nav>
             <div class="sidebar-footer">
                 <a href="{{ url_for('logout') }}" class="nav-item" title="Sair">
                     <span class="nav-icon">🚪</span>
+                    <span class="nav-label">Sair</span>
                 </a>
+                <button class="nav-item sidebar-toggle" id="sidebar-toggle" title="Expandir menu">
+                    <span class="nav-icon" id="toggle-icon">☰</span>
+                </button>
             </div>
         </aside>
 
@@ -107,6 +118,26 @@
                 setTimeout(() => t.classList.remove('show'), 3500);
             }
         }
+
+        // Sidebar toggle
+        (function() {
+            const sidebar = document.getElementById('sidebar');
+            const toggle = document.getElementById('sidebar-toggle');
+            const main = document.querySelector('.main-content');
+            if (!sidebar || !toggle) return;
+
+            const saved = localStorage.getItem('sidebar-expanded');
+            if (saved === 'true') {
+                sidebar.classList.add('expanded');
+                if (main) main.style.marginLeft = '200px';
+            }
+
+            toggle.addEventListener('click', function() {
+                const expanded = sidebar.classList.toggle('expanded');
+                localStorage.setItem('sidebar-expanded', expanded);
+                if (main) main.style.marginLeft = expanded ? '200px' : '64px';
+            });
+        })();
     </script>
     {% block scripts %}{% endblock %}
 </body>
