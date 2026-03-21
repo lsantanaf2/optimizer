@@ -121,6 +121,19 @@ body {
     font-weight: 700;
     color: var(--accent);
     letter-spacing: 0.5px;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+}
+
+.sidebar-version {
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--text-muted);
+    background: var(--bg-deep);
+    padding: 1px 6px;
+    border-radius: 4px;
+    letter-spacing: 0;
 }
 
 .sidebar-nav {
@@ -188,7 +201,23 @@ body {
 }
 
 .sidebar-toggle {
-    font-size: 16px;
+    opacity: 0.5;
+    transition: opacity 0.2s;
+}
+
+.sidebar-toggle:hover {
+    opacity: 1;
+}
+
+.toggle-arrow {
+    transition: transform 0.25s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.sidebar.expanded .toggle-arrow {
+    transform: rotate(180deg);
 }
 
 .main-content {
