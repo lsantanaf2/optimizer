@@ -48,12 +48,16 @@ from modules.auth import auth_bp, login_required, meta_required
 app.register_blueprint(auth_bp)
 
 from modules.database import init_db, close_db
-init_db()
 
 import atexit
 atexit.register(close_db)
 
 VERSION = "v2.4.0"
+
+@app.before_request
+def ensure_db():
+    """Inicializa pool de DB no primeiro request de cada worker."""
+    init_db()
 
 @app.context_processor
 def inject_version():
