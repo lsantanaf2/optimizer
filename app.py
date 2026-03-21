@@ -2,12 +2,10 @@ import os
 import json
 import time
 import tempfile
-import requests
 from flask import (
     Flask, request, redirect, session, render_template,
     jsonify, Response, stream_with_context, url_for
 )
-from urllib.parse import quote
 from dotenv import load_dotenv
 from facebook_business.api import FacebookAdsApi
 from facebook_business.adobjects.user import User
@@ -46,7 +44,16 @@ app.register_blueprint(anuncios_bp)
 from modules.instagram_downloader import instagram_dl_bp
 app.register_blueprint(instagram_dl_bp)
 
-VERSION = "v2.3.37"
+from modules.auth import auth_bp, login_required, meta_required
+app.register_blueprint(auth_bp)
+
+from modules.database import init_db, close_db
+init_db()
+
+import atexit
+atexit.register(close_db)
+
+VERSION = "v2.4.0"
 
 @app.context_processor
 def inject_version():
@@ -90,6 +97,7 @@ def limpar_token():
 ACCOUNTS_CACHE = {} # Memory Cache { token: { 'time': 1234, 'accounts': [...] } }
 
 @app.route('/')
+@meta_required
 def index():
     token = obter_token()
     if token:
@@ -100,62 +108,30 @@ def index():
             return redirect(url_for('listar_campanhas', account_id=session.get('account_id')))
         except Exception:
             limpar_token()
-    return pagina_login()
+            return redirect(url_for('auth.connect_meta_page'))
+    return redirect(url_for('auth.connect_meta_page'))
 
+# Rotas legadas redirecionam para novo auth
 @app.route('/login')
 def pagina_login():
-    # Scopes: Basic Hygiene Package
-    scopes = 'public_profile,email,ads_read,ads_management,pages_show_list,pages_read_engagement,instagram_basic,read_insights,pages_manage_ads'
-    encoded_uri = quote(REDIRECT_URI)
-    auth_url = (
-        f"https://www.facebook.com/v22.0/dialog/oauth?"
-        f"client_id={APP_ID}&redirect_uri={encoded_uri}&scope={scopes}"
-    )
-    print(f"DEBUG: Generating login page. REDIRECT_URI={REDIRECT_URI}")
-    return render_template('login.html', auth_url=auth_url)
+    return redirect(url_for('auth.login_page'))
 
 @app.route('/callback')
 def callback():
-    print(f"DEBUG: Callback received. request.url={request.url}")
-    print(f"DEBUG: Using REDIRECT_URI={REDIRECT_URI}")
-    
-    code = request.args.get('code')
-    if not code:
-        return "Erro: Código de autorização não recebido."
-
-    encoded_uri = quote(REDIRECT_URI)
-    token_url = (
-        f"https://graph.facebook.com/v22.0/oauth/access_token?"
-        f"client_id={APP_ID}&redirect_uri={encoded_uri}&"
-        f"client_secret={APP_SECRET}&code={code}"
-    )
-
-    print(f"DEBUG: Requesting token with URL: {token_url.replace(APP_SECRET or '', 'SECRET_HIDDEN')}")
-    response = requests.get(token_url).json()
-    access_token = response.get('access_token')
-
-    if not access_token:
-        print(f"DEBUG: Token Error: {response}")
-        return f"Erro ao obter token: {response}"
-
-    session['access_token'] = access_token
-    salvar_token(access_token)
-    inicializar_api(access_token)
-    return redirect(url_for('index'))
+    # Delega para o handler do auth, sem redirect (preserva query params do Facebook)
+    from modules.auth import meta_callback
+    return meta_callback()
 
 @app.route('/logout')
 def logout():
-    limpar_token()
-    session.pop('account_id', None)
-    session.pop('account_name', None)
-    return redirect(url_for('index'))
+    return redirect(url_for('auth.logout'))
 
 @app.route('/set_account/<account_id>')
 def set_account(account_id):
     """Define a conta globalmente na sessão e redireciona para a página de campanhas."""
     access_token = obter_token()
     if not access_token:
-        return redirect(url_for('pagina_login'))
+        return redirect(url_for('auth.login_page'))
 
     if not account_id.startswith('act_'):
         account_id = f"act_{account_id}"
@@ -181,7 +157,7 @@ def set_account(account_id):
 def listar_contas():
     token = obter_token()
     if not token:
-        return redirect(url_for('pagina_login'))
+        return redirect(url_for('auth.login_page'))
         
     # Check cache to prevent slow navigation (holds for 1 hour)
     if token in ACCOUNTS_CACHE:
