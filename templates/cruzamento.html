@@ -763,6 +763,19 @@
     </div>
 </div>
 
+<!-- Spend per Day Chart -->
+<div class="chart-card" id="crz-spend-container" style="display:none; overflow:hidden; padding:0; margin-bottom:14px;">
+    <div class="timeline-header">
+        <div style="display:flex; align-items:center; flex-wrap:wrap; gap:6px;">
+            <span style="font-weight:600; font-size:13px;">💰 Valor Gasto por Dia</span>
+            <span id="spend-filter-badge" class="timeline-filter-badge" style="display:none;"></span>
+        </div>
+    </div>
+    <div style="padding:16px 20px;">
+        <canvas id="spend-chart" height="70"></canvas>
+    </div>
+</div>
+
 <!-- Cascade Filter Badge -->
 <div id="cascade-filter-bar" style="display:flex; align-items:center; gap:8px; margin-bottom:10px; flex-wrap:wrap;">
     <span id="cascade-filter-badge" class="timeline-filter-badge" style="display:none;"></span>
@@ -1658,7 +1671,7 @@
     }
 
     async function loadData() {
-        ['kpi-bar','crz-meta','crz-main-grid','crz-timeline-container','crz-ads-container','crz-adsets-container','crz-campaigns-container'].forEach(id => {
+        ['kpi-bar','crz-meta','crz-main-grid','crz-timeline-container','crz-spend-container','crz-ads-container','crz-adsets-container','crz-campaigns-container'].forEach(id => {
             const el = document.getElementById(id); if (el) el.style.display = 'none';
         });
         document.getElementById('crz-loading').style.display = '';
@@ -1714,7 +1727,9 @@
             document.getElementById('timeline-filter-badge').style.display = 'none';
             document.getElementById('timeline-reset-btn').style.display = 'none';
             document.getElementById('crz-timeline-container').style.display = 'block';
+            document.getElementById('crz-spend-container').style.display = 'block';
             renderTimelineChart();
+            renderSpendChart();
 
             document.getElementById('crz-main-grid').style.display = 'grid';
             document.getElementById('crz-loading').style.display = 'none';
@@ -1733,6 +1748,59 @@
 
     // ── Timeline Chart ────────────────────────────────────────────────────────
     let timelineChart = null;
+    let spendChart = null;
+
+    function renderSpendChart() {
+        const raw = getTimelineData();
+        const sorted = [...raw].sort((a, b) => a.date.localeCompare(b.date));
+        const labels = sorted.map(d => {
+            const [y, m, dd] = d.date.split('-');
+            return `${dd}/${m}/${y.slice(2)}`;
+        });
+        const spendData = sorted.map(d => d.spend || 0);
+
+        if (spendChart) { spendChart.destroy(); spendChart = null; }
+        const ctx = document.getElementById('spend-chart').getContext('2d');
+        spendChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [{
+                    label: 'Gasto (R$)',
+                    data: spendData,
+                    backgroundColor: 'rgba(245,158,11,0.55)',
+                    borderColor: '#f59e0b',
+                    borderWidth: 1,
+                    borderRadius: 3,
+                }]
+            },
+            options: {
+                responsive: true,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: {
+                        labels: { color: '#a0a0b0', font: { family: 'Lexend', size: 11 }, usePointStyle: true, boxWidth: 8 }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: ctx => ` Gasto: R$ ${ctx.raw != null ? ctx.raw.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}`
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        ticks: { color: '#5a5a6e', font: { family: 'Lexend', size: 10 }, maxRotation: 45 },
+                        grid:  { color: 'rgba(255,255,255,0.04)' }
+                    },
+                    y: {
+                        ticks: { color: '#f59e0b', font: { family: 'Lexend', size: 10 }, callback: v => 'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 0 }) },
+                        grid:  { color: 'rgba(255,255,255,0.04)' },
+                        title: { display: true, text: 'Gasto (R$)', color: '#f59e0b', font: { family: 'Lexend', size: 10 } }
+                    }
+                }
+            }
+        });
+    }
     let timelineAllData  = [];
     let timelinePerCamp  = {};
     let timelinePerAdset = {};
@@ -1863,10 +1931,14 @@
     function setTimelineFilter(type, name) {
         timelineFilter = { type, name };
         const labels = { campaign: 'Campanha', adset: 'Conjunto', ad: 'Anúncio' };
-        document.getElementById('timeline-filter-badge').textContent = `${labels[type]}: ${name}`;
+        const badgeText = `${labels[type]}: ${name}`;
+        document.getElementById('timeline-filter-badge').textContent = badgeText;
         document.getElementById('timeline-filter-badge').style.display = '';
         document.getElementById('timeline-reset-btn').style.display = '';
+        const spendBadge = document.getElementById('spend-filter-badge');
+        if (spendBadge) { spendBadge.textContent = badgeText; spendBadge.style.display = ''; }
         renderTimelineChart();
+        renderSpendChart();
         document.getElementById('crz-timeline-container').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
@@ -1874,7 +1946,10 @@
         timelineFilter = null;
         document.getElementById('timeline-filter-badge').style.display = 'none';
         document.getElementById('timeline-reset-btn').style.display = 'none';
+        const spendBadge = document.getElementById('spend-filter-badge');
+        if (spendBadge) { spendBadge.style.display = 'none'; }
         renderTimelineChart();
+        renderSpendChart();
     }
 
     // Inicializar DRP e carregar dados
