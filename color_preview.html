@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Preview — 6 Combinações de Cores</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+  body { background: #0f0f1a; font-family: sans-serif; color: #c0c0d0; padding: 24px; margin: 0; }
+  h1   { font-size: 15px; margin-bottom: 20px; color: #fff; }
+  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
+  .card {
+    background: #1a1a2e; border: 1px solid #2a2a40;
+    border-radius: 10px; padding: 14px;
+  }
+  .card-title { font-size: 12px; margin: 0 0 6px; color: #fff; font-weight: bold; }
+  .legend { display: flex; gap: 14px; margin-bottom: 10px; flex-wrap: wrap; }
+  .leg-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #a0a0b8; }
+  .dot      { width: 11px; height: 11px; border-radius: 2px; flex-shrink: 0; }
+  .line-dot { width: 20px; height: 3px; border-radius: 2px; flex-shrink: 0; }
+</style>
+</head>
+<body>
+<h1>📊 6 Combinações — Negócios Creators · Vinci Track · CPL (sem repetir cores)</h1>
+<div class="grid" id="grid"></div>
+
+<script>
+const CIANO = '#00f2ff';
+const ROXO  = '#8b5cf6';
+const ROSA  = '#ef6fa3';
+const LABEL = { [CIANO]: 'Ciano', [ROXO]: 'Roxo', [ROSA]: 'Rosa' };
+
+// Todas as permutações sem repetição
+const colors = [CIANO, ROXO, ROSA];
+const combos = [];
+for (const nc of colors)
+  for (const vt of colors)
+    for (const cpl of colors)
+      if (nc !== vt && nc !== cpl && vt !== cpl)
+        combos.push({ nc, vt, cpl });
+
+// Dados de exemplo
+const labels  = ['01/03','03/03','05/03','07/03','09/03','11/03','13/03'];
+const ncData  = [8, 12, 6, 15, 10, 9, 13];
+const vtData  = [5,  7, 4,  9,  6, 8, 11];
+const cplData = [120, 95, 140, 80, 110, 100, 88];
+
+const grid = document.getElementById('grid');
+
+combos.forEach(({ nc, vt, cpl }, i) => {
+  const num = i + 1;
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.innerHTML = `
+    <div class="card-title">Combo ${num}</div>
+    <div class="legend">
+      <div class="leg-item"><div class="dot" style="background:${nc}"></div> NC = ${LABEL[nc]}</div>
+      <div class="leg-item"><div class="dot" style="background:${vt}"></div> VT = ${LABEL[vt]}</div>
+      <div class="leg-item"><div class="line-dot" style="background:${cpl}"></div> CPL = ${LABEL[cpl]}</div>
+    </div>
+    <canvas id="c${num}" height="130"></canvas>
+  `;
+  grid.appendChild(card);
+
+  const hex2rgb = h => [
+    parseInt(h.slice(1,3),16),
+    parseInt(h.slice(3,5),16),
+    parseInt(h.slice(5,7),16)
+  ].join(',');
+
+  const ctx = document.getElementById('c' + num).getContext('2d');
+  new Chart(ctx, {
+    data: {
+      labels,
+      datasets: [
+        {
+          type: 'bar', label: 'Vinci Track', data: vtData,
+          backgroundColor: `rgba(${hex2rgb(vt)},0.55)`, borderColor: vt,
+          borderWidth: 1, borderRadius: 0, stack: 'mql',
+          yAxisID: 'yMql', order: 2,
+        },
+        {
+          type: 'bar', label: 'Negócios Creators', data: ncData,
+          backgroundColor: `rgba(${hex2rgb(nc)},0.55)`, borderColor: nc,
+          borderWidth: 1, borderRadius: 3, stack: 'mql',
+          yAxisID: 'yMql', order: 2,
+        },
+        {
+          type: 'line', label: 'CPL (R$)', data: cplData,
+          borderColor: cpl, backgroundColor: `rgba(${hex2rgb(cpl)},0.10)`,
+          borderWidth: 2.5, pointRadius: 3, pointBackgroundColor: cpl,
+          fill: true, tension: 0.35, spanGaps: true,
+          yAxisID: 'yCpl', order: 1,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { labels: { color: '#a0a0b0', font: { size: 10 }, usePointStyle: true, boxWidth: 7 } }
+      },
+      scales: {
+        x: {
+          stacked: true,
+          ticks: { color: '#5a5a6e', font: { size: 9 }, maxRotation: 30 },
+          grid: { color: 'rgba(255,255,255,0.04)' }
+        },
+        yMql: {
+          type: 'linear', position: 'right', stacked: true,
+          ticks: { color: '#808090', font: { size: 9 }, stepSize: 5, precision: 0 },
+          grid: { color: 'rgba(255,255,255,0.04)' },
+          title: { display: true, text: 'MQLs', color: '#808090', font: { size: 9 } }
+        },
+        yCpl: {
+          type: 'linear', position: 'left',
+          ticks: { color: cpl, font: { size: 9 }, callback: v => 'R$' + v },
+          grid: { display: false },
+          title: { display: true, text: 'CPL', color: cpl, font: { size: 9 } }
+        }
+      }
+    }
+  });
+});
+</script>
+</body>
+</html>

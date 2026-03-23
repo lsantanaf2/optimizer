@@ -68,6 +68,15 @@
                 </a>
             </nav>
             <div class="sidebar-footer">
+                <a href="{{ url_for('auth.account_profile') }}" class="nav-item {% if request.endpoint == 'auth.account_profile' %}active{% endif %}" title="Minha Conta">
+                    <span class="nav-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                            <circle cx="12" cy="7" r="4"/>
+                        </svg>
+                    </span>
+                    <span class="nav-label">Minha Conta</span>
+                </a>
                 <a href="{{ url_for('logout') }}" class="nav-item" title="Sair">
                     <span class="nav-icon">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -104,7 +113,7 @@
                     <span style="color: var(--text-primary); font-weight: 500; margin-right: 8px;">{{
                         session.get('account_name', 'Conta Selecionada') }}</span>
                     <span style="color: var(--text-muted); font-size: 11px;">({{ session.get('account_id') }})</span>
-                    <a href="{{ url_for('listar_contas') }}"
+                    <a href="javascript:void(0)" onclick="openAccountModal()"
                         style="margin-left: 12px; color: var(--accent); text-decoration: none; font-size: 18px; line-height: 1;">▾</a>
                 </div>
                 {% endif %}
@@ -114,6 +123,23 @@
                 {% block content %}{% endblock %}
             </div>
         </main>
+    </div>
+
+    <!-- Modal Seleção de Conta -->
+    <div class="account-modal-overlay" id="account-modal" style="display:none;" onclick="if(event.target===this)closeAccountModal()">
+        <div class="account-modal">
+            <div class="account-modal-header">
+                <h2>📂 Selecionar Conta</h2>
+                <button class="account-modal-close" onclick="closeAccountModal()">&times;</button>
+            </div>
+            <input type="text" id="modal-account-search" placeholder="Buscar conta por nome ou ID..."
+                class="account-modal-search">
+            <div class="account-modal-list" id="modal-account-list">
+                <div style="text-align:center; padding:30px; color:var(--text-muted); font-size:13px;">
+                    Carregando contas...
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Toast Container -->
@@ -127,6 +153,87 @@
                 setTimeout(() => t.classList.remove('show'), 3500);
             }
         }
+
+        // Account modal
+        let modalAccountsLoaded = false;
+
+        function openAccountModal() {
+            const modal = document.getElementById('account-modal');
+            modal.style.display = 'flex';
+            document.body.style.overflow = 'hidden';
+            if (!modalAccountsLoaded) loadModalAccounts();
+            setTimeout(() => document.getElementById('modal-account-search').focus(), 100);
+        }
+
+        function closeAccountModal() {
+            document.getElementById('account-modal').style.display = 'none';
+            document.body.style.overflow = '';
+        }
+
+        async function loadModalAccounts() {
+            const list = document.getElementById('modal-account-list');
+            try {
+                const resp = await fetch('/api/accounts/json');
+                const data = await resp.json();
+                if (data.error) {
+                    list.innerHTML = `<div style="text-align:center;padding:20px;color:var(--danger);">${data.error}</div>`;
+                    return;
+                }
+                let html = '';
+                (data.accounts || []).forEach(acc => {
+                    html += `
+                    <div class="account-modal-item" onclick="selectAccount('${acc.account_id}', this)"
+                         data-name="${(acc.name||'').toLowerCase()}" data-id="${acc.account_id}">
+                        <div class="account-modal-item-info">
+                            <div class="account-modal-item-name">${acc.name}</div>
+                            <div class="account-modal-item-meta">
+                                <span>act_${acc.account_id}</span>
+                                ${acc.business_name ? `<span>🏢 ${acc.business_name}</span>` : ''}
+                                ${acc.currency ? `<span>💰 ${acc.currency}</span>` : ''}
+                            </div>
+                        </div>
+                        <span class="account-modal-item-arrow">➜</span>
+                    </div>`;
+                });
+                if (!html) html = '<div style="text-align:center;padding:20px;color:var(--text-muted);">Nenhuma conta encontrada.</div>';
+                list.innerHTML = html;
+                modalAccountsLoaded = true;
+            } catch (e) {
+                list.innerHTML = `<div style="text-align:center;padding:20px;color:var(--danger);">Erro: ${e.message}</div>`;
+            }
+        }
+
+        async function selectAccount(accountId, el) {
+            el.style.opacity = '0.5';
+            el.querySelector('.account-modal-item-arrow').textContent = '⏳';
+            try {
+                const resp = await fetch(`/set_account/${accountId}`, {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    closeAccountModal();
+                    window.location.reload();
+                }
+            } catch (e) {
+                el.style.opacity = '1';
+                el.querySelector('.account-modal-item-arrow').textContent = '➜';
+                mostrarToast('❌ Erro ao selecionar conta');
+            }
+        }
+
+        document.getElementById('modal-account-search')?.addEventListener('input', function(e) {
+            const term = e.target.value.toLowerCase();
+            document.querySelectorAll('.account-modal-item').forEach(item => {
+                const name = item.getAttribute('data-name');
+                const id = item.getAttribute('data-id');
+                item.style.display = (name.includes(term) || id.includes(term)) ? 'flex' : 'none';
+            });
+        });
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') closeAccountModal();
+        });
 
         // Sidebar toggle
         (function() {

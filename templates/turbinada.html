@@ -541,6 +541,10 @@
 </div>
 
 <script>
+    function formatBRL(value) {
+        return value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
     const ACCOUNT_ID = "{{ account_id }}";
     let currentLevel = 'campaign';
     let navStack = []; // [{level, parentIds, parentName}]
@@ -994,9 +998,9 @@
                     else if (pd.cac <= cacY * 0.8) colorClass = 'pg-green';
                 }
 
-                const spend = pd.spend > 0 ? `R$ ${pd.spend.toFixed(2)}` : '—';
+                const spend = pd.spend > 0 ? `R$ ${formatBRL(pd.spend)}` : '—';
                 const purch = pd.purchases > 0 ? pd.purchases : '—';
-                const cac = pd.cac !== null ? `R$ ${pd.cac.toFixed(2)}` : '—';
+                const cac = pd.cac !== null ? `R$ ${formatBRL(pd.cac)}` : '—';
 
                 rows += `<td class="metric period-cell${pi === 0 ? ' period-start' : ''} ${colorClass}" data-period="${p.key}">${spend}</td>`;
                 rows += `<td class="metric period-cell ${colorClass}" data-period="${p.key}">${purch}</td>`;
@@ -1131,7 +1135,7 @@
                 // Atualiza allData para que reordenações futuras usem o orçamento correto
                 const item = allData.find(d => String(d.id) === String(entityId));
                 if (item) item.daily_budget = newBudget;
-                mostrarToast(`✅ Verba atualizada: R$ ${newBudget.toFixed(2)}/dia`);
+                mostrarToast(`✅ Verba atualizada: R$ ${formatBRL(newBudget)}/dia`);
             } else {
                 mostrarToast('❌ ' + json.error);
                 btn.textContent = '✓';

@@ -26,7 +26,7 @@
 
         <label
             style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px; color: var(--text-secondary); white-space: nowrap; user-select: none; padding: 8px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-surface); transition: all 0.2s;">
-            <input type="checkbox" id="filter-active-only"
+            <input type="checkbox" id="filter-active-only" checked
                 style="accent-color: var(--success); width: 16px; height: 16px;">
             Só Ativas
         </label>
@@ -110,7 +110,7 @@
             listEl.innerHTML = html;
             loading.style.display = 'none';
             listEl.style.display = 'block';
-            countBadge.textContent = `${campaigns.length} Encontradas`;
+            filtrarCampanhas();
 
         } catch (e) {
             document.getElementById('campaign-loading').style.display = 'none';

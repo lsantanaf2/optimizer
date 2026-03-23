@@ -1,0 +1,252 @@
+{% extends "base.html" %}
+
+{% block title %}Minha Conta — OPTIMIZER{% endblock %}
+
+{% block breadcrumb %}
+<span>Minha Conta</span>
+{% endblock %}
+
+{% block content %}
+<div style="max-width: 640px;">
+
+    <!-- Perfil -->
+    <div class="card border-purple">
+        <div class="card-title">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                <circle cx="12" cy="7" r="4"/>
+            </svg>
+            Minha Conta
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 16px; margin-top: 12px;">
+            <div>
+                <label style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Email</label>
+                <div style="margin-top: 4px; padding: 10px 14px; background: var(--bg-deep); border: 1px solid var(--border); border-radius: 8px; font-size: 14px; color: var(--text-primary);">
+                    {{ user_email }}
+                </div>
+            </div>
+
+            <div>
+                <label style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Plano</label>
+                <div style="margin-top: 4px; padding: 10px 14px; background: var(--bg-deep); border: 1px solid var(--border); border-radius: 8px; font-size: 14px; color: var(--text-primary); display: flex; align-items: center; gap: 8px;">
+                    <span style="background: var(--accent); color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">{{ plan|upper }}</span>
+                    <span style="color: var(--text-secondary);">{{ plan_label }}</span>
+                </div>
+            </div>
+
+            <div>
+                <label style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Membro desde</label>
+                <div style="margin-top: 4px; padding: 10px 14px; background: var(--bg-deep); border: 1px solid var(--border); border-radius: 8px; font-size: 14px; color: var(--text-primary);">
+                    {{ created_at }}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Alterar Senha -->
+    <div class="card" style="margin-top: 16px;">
+        <div class="card-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+            Alterar Senha
+        </div>
+
+        <form id="password-form" style="display: flex; flex-direction: column; gap: 12px; margin-top: 12px;">
+            <div>
+                <label style="font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; display: block;">Senha atual</label>
+                <div style="position: relative;">
+                    <input type="password" name="current_password" id="current_password" required
+                        style="width: 100%; padding: 10px 40px 10px 14px; background: var(--bg-deep); border: 1px solid var(--border); border-radius: 8px; font-size: 14px; color: var(--text-primary); box-sizing: border-box;">
+                    <button type="button" onclick="togglePwd(this)" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: var(--text-muted); padding: 4px;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                            <circle cx="12" cy="12" r="3"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <div>
+                <label style="font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; display: block;">Nova senha</label>
+                <div style="position: relative;">
+                    <input type="password" name="new_password" id="new_password" required minlength="6"
+                        style="width: 100%; padding: 10px 40px 10px 14px; background: var(--bg-deep); border: 1px solid var(--border); border-radius: 8px; font-size: 14px; color: var(--text-primary); box-sizing: border-box;">
+                    <button type="button" onclick="togglePwd(this)" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: var(--text-muted); padding: 4px;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                            <circle cx="12" cy="12" r="3"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <div>
+                <label style="font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; display: block;">Confirmar nova senha</label>
+                <div style="position: relative;">
+                    <input type="password" name="confirm_password" id="confirm_password" required minlength="6"
+                        style="width: 100%; padding: 10px 40px 10px 14px; background: var(--bg-deep); border: 1px solid var(--border); border-radius: 8px; font-size: 14px; color: var(--text-primary); box-sizing: border-box;">
+                    <button type="button" onclick="togglePwd(this)" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: var(--text-muted); padding: 4px;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                            <circle cx="12" cy="12" r="3"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary" id="btn-change-pwd"
+                style="align-self: flex-start; padding: 10px 24px; margin-top: 4px;">
+                Alterar Senha
+            </button>
+            <div id="pwd-msg" style="font-size: 13px; display: none;"></div>
+        </form>
+    </div>
+
+    <!-- Conexão Meta -->
+    <div class="card" style="margin-top: 16px;">
+        <div class="card-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+            </svg>
+            Conexão Facebook / Meta
+        </div>
+
+        <div style="margin-top: 12px; display: flex; flex-direction: column; gap: 12px;">
+            {% if meta_connected %}
+            <div style="display: flex; align-items: center; gap: 10px; padding: 12px 16px; background: rgba(72, 187, 120, 0.1); border: 1px solid rgba(72, 187, 120, 0.3); border-radius: 8px;">
+                <span style="font-size: 18px;">&#x2705;</span>
+                <div>
+                    <div style="font-size: 14px; font-weight: 500; color: var(--success);">Conectado</div>
+                    {% if meta_user_id %}
+                    <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">Meta User ID: {{ meta_user_id }}</div>
+                    {% endif %}
+                    {% if meta_updated_at %}
+                    <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">Conectado em: {{ meta_updated_at }}</div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <a href="{{ reauth_url }}" class="btn btn-primary"
+                    style="padding: 10px 20px; display: inline-flex; align-items: center; gap: 8px; text-decoration: none;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="23 4 23 10 17 10"/>
+                        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                    </svg>
+                    Reconectar Facebook
+                </a>
+
+                <button onclick="disconnectMeta()" class="btn" id="btn-disconnect"
+                    style="padding: 10px 20px; background: transparent; border: 1px solid var(--danger); color: var(--danger); cursor: pointer; display: inline-flex; align-items: center; gap: 8px;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                    Desconectar
+                </button>
+            </div>
+
+            {% else %}
+            <div style="display: flex; align-items: center; gap: 10px; padding: 12px 16px; background: rgba(245, 101, 101, 0.1); border: 1px solid rgba(245, 101, 101, 0.3); border-radius: 8px;">
+                <span style="font-size: 18px;">&#x26A0;&#xFE0F;</span>
+                <div>
+                    <div style="font-size: 14px; font-weight: 500; color: var(--danger);">Nao conectado</div>
+                    <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">Conecte o Facebook para gerenciar anuncios.</div>
+                </div>
+            </div>
+
+            <a href="{{ reauth_url }}" class="btn btn-primary"
+                style="padding: 10px 20px; display: inline-flex; align-items: center; gap: 8px; text-decoration: none; align-self: flex-start;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="white">
+                    <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+                </svg>
+                Conectar com Facebook
+            </a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function togglePwd(btn) {
+        const input = btn.parentElement.querySelector('input');
+        const isPassword = input.type === 'password';
+        input.type = isPassword ? 'text' : 'password';
+        btn.innerHTML = isPassword
+            ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>'
+            : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+    }
+
+    // Alterar senha via AJAX
+    document.getElementById('password-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const msgEl = document.getElementById('pwd-msg');
+        const btn = document.getElementById('btn-change-pwd');
+        const newPwd = document.getElementById('new_password').value;
+        const confirmPwd = document.getElementById('confirm_password').value;
+
+        if (newPwd !== confirmPwd) {
+            msgEl.style.display = 'block';
+            msgEl.style.color = 'var(--danger)';
+            msgEl.textContent = 'As senhas nao coincidem.';
+            return;
+        }
+
+        btn.disabled = true;
+        btn.textContent = 'Alterando...';
+
+        try {
+            const resp = await fetch('/auth/change-password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    current_password: document.getElementById('current_password').value,
+                    new_password: newPwd
+                })
+            });
+            const data = await resp.json();
+            msgEl.style.display = 'block';
+            if (data.success) {
+                msgEl.style.color = 'var(--success)';
+                msgEl.textContent = 'Senha alterada com sucesso!';
+                document.getElementById('password-form').reset();
+            } else {
+                msgEl.style.color = 'var(--danger)';
+                msgEl.textContent = data.error || 'Erro ao alterar senha.';
+            }
+        } catch (err) {
+            msgEl.style.display = 'block';
+            msgEl.style.color = 'var(--danger)';
+            msgEl.textContent = 'Erro de conexao.';
+        }
+        btn.disabled = false;
+        btn.textContent = 'Alterar Senha';
+    });
+
+    // Desconectar Meta
+    async function disconnectMeta() {
+        if (!confirm('Tem certeza que deseja desconectar o Facebook? Voce precisara reconectar para gerenciar anuncios.')) return;
+        const btn = document.getElementById('btn-disconnect');
+        btn.disabled = true;
+        btn.textContent = 'Desconectando...';
+        try {
+            const resp = await fetch('/auth/disconnect-meta', { method: 'POST' });
+            const data = await resp.json();
+            if (data.success) {
+                window.location.reload();
+            } else {
+                mostrarToast('Erro: ' + (data.error || 'Falha ao desconectar'));
+                btn.disabled = false;
+                btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Desconectar';
+            }
+        } catch (err) {
+            mostrarToast('Erro de conexao');
+            btn.disabled = false;
+            btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Desconectar';
+        }
+    }
+</script>
+{% endblock %}

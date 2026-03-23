@@ -222,6 +222,106 @@ def meta_callback():
     return redirect(url_for('index'))
 
 
+# --- Minha Conta ---
+
+@auth_bp.route('/account/profile', methods=['GET'])
+@login_required
+def account_profile():
+    """Página Minha Conta — perfil, senha, conexão Meta."""
+    user_id = session['user_id']
+
+    # Dados do usuário
+    user = fetch_one(
+        "SELECT email, plan, created_at FROM app_users WHERE id = %s",
+        (user_id,)
+    )
+    if not user:
+        return redirect(url_for('auth.login_page'))
+
+    plan_labels = {
+        'free': 'Plano Gratuito',
+        'pro': 'Plano Profissional',
+        'enterprise': 'Plano Enterprise'
+    }
+
+    # Dados Meta
+    meta_row = fetch_one(
+        "SELECT meta_user_id, updated_at FROM user_meta_tokens WHERE user_id = %s",
+        (user_id,)
+    )
+
+    # URL de re-autenticação Meta
+    scopes = 'public_profile,email,ads_read,ads_management,pages_show_list,pages_read_engagement,instagram_basic,read_insights,pages_manage_ads'
+    encoded_uri = quote(REDIRECT_URI)
+    reauth_url = (
+        f"https://www.facebook.com/v22.0/dialog/oauth?"
+        f"client_id={APP_ID}&redirect_uri={encoded_uri}&scope={scopes}"
+        f"&auth_type=reauthorize"
+    )
+
+    created_str = user['created_at'].strftime('%d/%m/%Y') if user.get('created_at') else '—'
+
+    return render_template('account/profile.html',
+        user_email=user['email'],
+        plan=user.get('plan', 'free'),
+        plan_label=plan_labels.get(user.get('plan', 'free'), 'Plano Gratuito'),
+        created_at=created_str,
+        meta_connected=bool(meta_row),
+        meta_user_id=meta_row['meta_user_id'] if meta_row else None,
+        meta_updated_at=meta_row['updated_at'].strftime('%d/%m/%Y %H:%M') if meta_row and meta_row.get('updated_at') else None,
+        reauth_url=reauth_url
+    )
+
+
+@auth_bp.route('/change-password', methods=['POST'])
+@login_required
+def change_password():
+    """Altera senha do usuário logado."""
+    import json as _json
+    data = request.get_json() or {}
+    current_pwd = data.get('current_password', '')
+    new_pwd = data.get('new_password', '')
+
+    if not current_pwd or not new_pwd:
+        return {'error': 'Preencha todos os campos.'}, 400
+
+    if len(new_pwd) < 6:
+        return {'error': 'A nova senha deve ter pelo menos 6 caracteres.'}, 400
+
+    user = fetch_one(
+        "SELECT password_hash FROM app_users WHERE id = %s",
+        (session['user_id'],)
+    )
+    if not user or not verify_password(current_pwd, user['password_hash']):
+        return {'error': 'Senha atual incorreta.'}, 400
+
+    execute(
+        "UPDATE app_users SET password_hash = %s, updated_at = NOW() WHERE id = %s",
+        (hash_password(new_pwd), session['user_id'])
+    )
+    return {'success': True}
+
+
+@auth_bp.route('/disconnect-meta', methods=['POST'])
+@login_required
+def disconnect_meta():
+    """Remove token Meta do banco e da sessão."""
+    user_id = session['user_id']
+    execute("DELETE FROM user_meta_tokens WHERE user_id = %s", (user_id,))
+    session.pop('access_token', None)
+    session.pop('account_id', None)
+    session.pop('account_name', None)
+
+    # Limpar token.json legado
+    if os.path.exists('token.json'):
+        try:
+            os.remove('token.json')
+        except Exception:
+            pass
+
+    return {'success': True}
+
+
 # --- Logout ---
 
 @auth_bp.route('/logout')

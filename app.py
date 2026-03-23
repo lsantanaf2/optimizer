@@ -52,7 +52,7 @@ from modules.database import init_db, close_db
 import atexit
 atexit.register(close_db)
 
-VERSION = "v2.4.0"
+VERSION = "v2.4.1"
 
 @app.before_request
 def ensure_db():
@@ -152,6 +152,10 @@ def set_account(account_id):
         print(f"❌ Erro ao buscar nome da conta {account_id}: {e}")
         session['account_name'] = account_id
 
+    # Se for chamada AJAX, retorna JSON
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return jsonify({'success': True, 'account_id': account_id, 'account_name': session['account_name']})
+
     next_page = request.args.get('next', 'upload')
     if next_page == 'optimize':
         return redirect(url_for('optimization.turbinada_page', account_id=account_id))
@@ -208,6 +212,39 @@ def listar_contas():
         print(f"❌ Error listing accounts: {e}")
         limpar_token()
         return redirect(url_for('index'))
+
+@app.route('/api/accounts/json')
+def api_accounts_json():
+    """Retorna lista de contas como JSON para o modal de seleção."""
+    token = obter_token()
+    if not token:
+        return jsonify({'error': 'Not authenticated'}), 401
+
+    # Usar cache se disponível
+    if token in ACCOUNTS_CACHE:
+        if time.time() - ACCOUNTS_CACHE[token]['time'] < 3600:
+            return jsonify({'accounts': ACCOUNTS_CACHE[token]['accounts']})
+
+    try:
+        inicializar_api(token)
+        me = User(fbid='me')
+        contas_raw = me.get_ad_accounts(
+            fields=['name', 'account_id', 'currency', 'account_status', 'business_name'],
+            params={'limit': 100}
+        )
+        contas = []
+        for conta in contas_raw:
+            if conta.get('account_status') == 1:
+                contas.append({
+                    'name': conta.get('name'),
+                    'account_id': conta.get('account_id'),
+                    'currency': conta.get('currency'),
+                    'business_name': conta.get('business_name') or 'Conta Pessoal'
+                })
+        ACCOUNTS_CACHE[token] = {'time': time.time(), 'accounts': contas}
+        return jsonify({'accounts': contas})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/businesses')
 def api_businesses():
