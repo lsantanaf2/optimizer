@@ -52,7 +52,7 @@ from modules.database import init_db, close_db
 import atexit
 atexit.register(close_db)
 
-VERSION = "v2.4.2"
+VERSION = "v2.4.3"
 
 @app.before_request
 def ensure_db():
@@ -344,6 +344,22 @@ def setup_campanha(campaign_id):
         )
 
     except Exception as e:
+        err_str = str(e)
+        if 'User request limit reached' in err_str or 'error_subcode": 2446079' in err_str or 'code": 17' in err_str:
+            return (
+                "<div style='font-family:sans-serif;padding:40px;max-width:600px;margin:40px auto;"
+                "background:#1a1a2e;color:#e0e0e0;border-radius:12px;border:1px solid #ff6b35;'>"
+                "<h2 style='color:#ff6b35'>⚠️ Limite de Requisições da Meta</h2>"
+                "<p>A conta de anúncios atingiu o limite temporário de chamadas à API do Facebook.</p>"
+                "<p style='color:#aaa;font-size:0.9em'>Isso não é um erro do sistema — é uma proteção automática da Meta.</p>"
+                "<p><strong>O que fazer:</strong> Aguarde <strong>15 a 30 minutos</strong> e tente novamente.</p>"
+                f"<a href='/campanha/{campaign_id}/setup' style='display:inline-block;margin-top:16px;"
+                "padding:10px 20px;background:#ff6b35;color:#fff;border-radius:8px;text-decoration:none;'>"
+                "🔄 Tentar novamente</a>&nbsp;&nbsp;"
+                "<a href='/' style='display:inline-block;margin-top:16px;padding:10px 20px;"
+                "background:#333;color:#fff;border-radius:8px;text-decoration:none;'>← Voltar</a>"
+                "</div>"
+            )
         return f"Erro ao carregar setup: {e}<br><a href='/'>Voltar</a>"
 
 # ======================== API: IDENTITY & TRACKING ========================
