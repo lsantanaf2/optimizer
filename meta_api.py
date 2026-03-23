@@ -1899,14 +1899,15 @@ class MetaUploader:
 
     # ======================== CRIAR AD (PAUSADO) ========================
 
-    def create_ad(self, adset_id, creative_id, ad_name, pixel_id=None):
-        """Cria um Ad via REST API direta. Status PAUSED."""
-        self._log(f"📌 Criando Ad '{ad_name}' (status: PAUSED)...")
+    def create_ad(self, adset_id, creative_id, ad_name, pixel_id=None, ad_status='PAUSED'):
+        """Cria um Ad via REST API direta. Status padrão: PAUSED."""
+        status_label = ad_status.upper() if ad_status in ('ACTIVE', 'PAUSED') else 'PAUSED'
+        self._log(f"📌 Criando Ad '{ad_name}' (status: {status_label})...")
 
         def _do():
             import json
             url = f"https://graph.facebook.com/v22.0/{self.account_id}/ads"
-            
+
             # creative_id DEVE ser número (int), não string
             try:
                 cid = int(creative_id)
@@ -1918,7 +1919,7 @@ class MetaUploader:
                 'name': ad_name,
                 'adset_id': adset_id,
                 'creative': json.dumps({'creative_id': cid}),
-                'status': 'PAUSED',
+                'status': status_label,
             }
 
             if pixel_id:
@@ -1953,20 +1954,21 @@ class MetaUploader:
             return ad_id
 
         ad_id = self._with_retry(f"Criar Ad '{ad_name}'", _do)
-        self._log(f"✅ Ad '{ad_name}' criado com sucesso (ID: {ad_id}) — PAUSADO")
+        self._log(f"✅ Ad '{ad_name}' criado com sucesso (ID: {ad_id}) — {status_label}")
         return ad_id
 
     # ======================== DUPLICAR AD SET ========================
 
-    def duplicate_adset(self, source_adset_id, new_name=None):
+    def duplicate_adset(self, source_adset_id, new_name=None, adset_status='PAUSED'):
         """Duplica um Ad Set existente. Retorna o ID do novo Ad Set."""
-        self._log(f"📋 Duplicando Ad Set {source_adset_id}...")
+        adset_status = adset_status.upper() if adset_status in ('ACTIVE', 'PAUSED') else 'PAUSED'
+        self._log(f"📋 Duplicando Ad Set {source_adset_id} (status destino: {adset_status})...")
 
         def _do():
             source = AdSet(source_adset_id)
             params = {
                 'deep_copy': False,
-                'status_option': 'PAUSED',
+                'status_option': 'PAUSED',  # sempre cria pausado; ajustamos depois
             }
             if not new_name:
                 params['rename_options'] = {
@@ -1986,11 +1988,11 @@ class MetaUploader:
                 else:
                     raise
 
-            # Forçar status PAUSED + renomear
+            # Definir status final + renomear
             if copied_id:
                 try:
                     update_data = {
-                        'status': 'PAUSED',
+                        'status': adset_status,
                         'access_token': self.access_token
                     }
                     if new_name:
@@ -2001,7 +2003,7 @@ class MetaUploader:
                     if 'error' in resp:
                         self._log(f"⚠️ Falha ao atualizar Ad Set: {resp['error'].get('message')}")
                     else:
-                        self._log(f"✅ Ad Set configurado: PAUSED{' / ' + new_name if new_name else ''}")
+                        self._log(f"✅ Ad Set configurado: {adset_status}{' / ' + new_name if new_name else ''}")
                 except Exception as e:
                     self._log(f"⚠️ Erro ao atualizar Ad Set: {e}")
 
@@ -2043,7 +2045,7 @@ class MetaUploader:
         create_params = {
             'campaign_id': resp['campaign_id'],
             'name': new_name or f"{resp.get('name', 'Conjunto')} - Cópia {int(time.time())}",
-            'status': 'PAUSED',
+            'status': adset_status,
             'targeting': _json.dumps(targeting),
             'billing_event': resp.get('billing_event', 'IMPRESSIONS'),
             'optimization_goal': resp.get('optimization_goal', 'OFFSITE_CONVERSIONS'),

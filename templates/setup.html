@@ -129,6 +129,13 @@
                     <label style="margin-top:8px;">Nome do novo conjunto</label>
                     <input type="text" id="adset_new_name" placeholder="Ex: Conjunto Teste Criativos"
                         style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text);">
+                    <div class="toggle-row">
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="adset_ativo_duplicar">
+                            <span class="slider"></span>
+                        </label>
+                        <span class="toggle-label">Subir conjunto como ativo</span>
+                    </div>
                     <div class="card-desc" style="margin-top:6px;">O sistema copiará público, posicionamento e
                         orçamento.</div>
                 </div>
@@ -144,6 +151,13 @@
                 <label style="margin-top:8px;">Nome do novo conjunto</label>
                 <input type="text" id="adset_new_name_novo" placeholder="Ex: Lote Criativos"
                     style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text);">
+                <div class="toggle-row">
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="adset_ativo_novo">
+                        <span class="slider"></span>
+                    </label>
+                    <span class="toggle-label">Subir conjunto como ativo</span>
+                </div>
                 <div class="card-desc" style="margin-top:6px;">📋 Uma cópia será criada e todos os criativos serão
                     subidos dentro dela.</div>
             </div>
@@ -155,6 +169,13 @@
                     <option value="">— Selecione o molde —</option>
                     {% for adset in adsets %}<option value="{{ adset.id }}">{{ adset.name }}</option>{% endfor %}
                 </select>
+                <div class="toggle-row">
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="adset_ativo_garimpo">
+                        <span class="slider"></span>
+                    </label>
+                    <span class="toggle-label">Subir conjunto como ativo</span>
+                </div>
                 <div class="card-desc" style="margin-top:6px;">⛏️ Cada criativo ganhará seu próprio conjunto, copiado
                     deste modelo. O nome do conjunto será o <strong>nome do anúncio</strong>.</div>
             </div>
@@ -174,7 +195,15 @@
             <div class="card-desc">URL, UTMs, Textos e Título serão herdados automaticamente por todos os criativos ao
                 subir.</div>
 
-            <label>URL de Destino</label>
+            <div class="toggle-row">
+                <label class="toggle-switch">
+                    <input type="checkbox" id="ad_ativo">
+                    <span class="slider"></span>
+                </label>
+                <span class="toggle-label">Subir anúncio como ativo</span>
+            </div>
+
+            <label style="margin-top:16px;">URL de Destino</label>
             <div class="field-with-history">
                 <input type="url" id="url_destino" list="dl-urls" placeholder="https://seusite.com/pagina-destino">
                 <button type="button" class="btn-history" onclick="puxarHistorico()"
@@ -1121,6 +1150,12 @@
             const adsetNewName = document.getElementById('adset_new_name')?.value || '';
             const adsetNewNameNovo = document.getElementById('adset_new_name_novo')?.value || '';
 
+            // Status toggles
+            const adAtivo = document.getElementById('ad_ativo')?.checked ? 'ACTIVE' : 'PAUSED';
+            const adsetAtivoDuplicar = document.getElementById('adset_ativo_duplicar')?.checked ? 'ACTIVE' : 'PAUSED';
+            const adsetAtivoNovo = document.getElementById('adset_ativo_novo')?.checked ? 'ACTIVE' : 'PAUSED';
+            const adsetAtivoGarimpo = document.getElementById('adset_ativo_garimpo')?.checked ? 'ACTIVE' : 'PAUSED';
+
             // Start log console
             logConsole(`🚀 Lote iniciado — ${filaAnuncios.length} anúncio(s) na fila`, 'log-info');
 
@@ -1137,6 +1172,8 @@
                     const dupFd = new FormData();
                     dupFd.append('adset_modelo', modelo);
                     dupFd.append('adset_name', nome);
+                    const adsetStatusPreLoop = estrategia.value === 'novo' ? adsetAtivoNovo : adsetAtivoDuplicar;
+                    dupFd.append('adset_status', adsetStatusPreLoop);
                     const dupResp = await fetch(`/campanha/${CAMPAIGN_ID}/duplicate-adset`, { method: 'POST', body: dupFd });
                     const dupResult = await dupResp.json();
 
@@ -1189,6 +1226,7 @@
                         const dupFd = new FormData();
                         dupFd.append('adset_modelo', modelo);
                         dupFd.append('adset_name', nomeConjunto);
+                        dupFd.append('adset_status', adsetAtivoGarimpo);
                         const dupResp = await fetch(`/campanha/${CAMPAIGN_ID}/duplicate-adset`, { method: 'POST', body: dupFd });
                         const dupResult = await dupResp.json();
 
@@ -1228,6 +1266,7 @@
                 }
 
                 fd.append('ad_name', item.adName);
+                fd.append('ad_status', adAtivo);
                 fd.append('url_destino', cfg.url);
                 fd.append('utm_pattern', cfg.utms);
                 fd.append('cta', cfg.cta);

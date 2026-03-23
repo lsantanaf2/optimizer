@@ -52,7 +52,7 @@ from modules.database import init_db, close_db
 import atexit
 atexit.register(close_db)
 
-VERSION = "v2.4.1"
+VERSION = "v2.4.2"
 
 @app.before_request
 def ensure_db():
@@ -545,6 +545,9 @@ def upload_single(campaign_id):
         adset_existente = request.form.get('adset_existente', '')
         adset_modelo = request.form.get('adset_modelo', '')
         ad_name = request.form.get('ad_name', 'Anúncio sem nome')
+        ad_status = request.form.get('ad_status', 'PAUSED').upper()
+        if ad_status not in ('ACTIVE', 'PAUSED'):
+            ad_status = 'PAUSED'
         url_destino = request.form.get('url_destino', '')
         utm_pattern = request.form.get('utm_pattern', '')
         cta = request.form.get('cta', 'LEARN_MORE')
@@ -650,8 +653,8 @@ def upload_single(campaign_id):
 
         uploader.smart_delay()
 
-        # Create ad — always PAUSED
-        ad_id = uploader.create_ad(actual_adset_id, creative_id, ad_name, pixel_id=pixel_id)
+        # Create ad com status configurado pelo usuário
+        ad_id = uploader.create_ad(actual_adset_id, creative_id, ad_name, pixel_id=pixel_id, ad_status=ad_status)
 
         # Cleanup temp files
         try:
@@ -666,7 +669,7 @@ def upload_single(campaign_id):
         return jsonify({
             'success': True,
             'ad_id': ad_id,
-            'message': f'Ad "{ad_name}" criado com sucesso (PAUSADO)',
+            'message': f'Ad "{ad_name}" criado com sucesso ({ad_status})',
             'logs': uploader.logs,
         })
 
@@ -691,12 +694,15 @@ def duplicate_adset_route(campaign_id):
         account_id = session.get('account_id', '')
         adset_modelo = request.form.get('adset_modelo', '')
         adset_name = request.form.get('adset_name', '')
+        adset_status = request.form.get('adset_status', 'PAUSED').upper()
+        if adset_status not in ('ACTIVE', 'PAUSED'):
+            adset_status = 'PAUSED'
 
         if not adset_modelo:
             return jsonify({'success': False, 'error': 'Nenhum Ad Set modelo informado'}), 400
 
         uploader = MetaUploader(account_id, access_token, APP_ID, APP_SECRET)
-        new_adset_id = uploader.duplicate_adset(adset_modelo, new_name=adset_name or None)
+        new_adset_id = uploader.duplicate_adset(adset_modelo, new_name=adset_name or None, adset_status=adset_status)
 
         return jsonify({
             'success': True,
