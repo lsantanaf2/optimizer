@@ -1797,6 +1797,12 @@
                         ticks: { color: '#f59e0b', font: { family: 'Lexend', size: 10 }, callback: v => 'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 0 }) },
                         grid:  { color: 'rgba(255,255,255,0.04)' },
                         title: { display: true, text: 'Gasto (R$)', color: '#f59e0b', font: { family: 'Lexend', size: 10 } }
+                    },
+                    y2: {
+                        position: 'left',
+                        ticks: { color: '#f59e0b', font: { family: 'Lexend', size: 10 }, callback: v => 'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 0 }) },
+                        grid:  { display: false },
+                        title: { display: true, text: 'Gasto (R$)', color: '#f59e0b', font: { family: 'Lexend', size: 10 } }
                     }
                 }
             }
