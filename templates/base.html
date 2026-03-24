@@ -106,15 +106,13 @@
                 </div>
 
                 {% if session.get('account_id') and not client_mode %}
-                <div class="topbar-account-selector"
-                    style="display: flex; align-items: center; background: var(--bg-deep); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 4px 12px; font-size: 13px;">
+                <div class="topbar-account-selector" onclick="openAccountModal()" style="cursor:pointer; display: flex; align-items: center; background: var(--bg-deep); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 4px 12px; font-size: 13px; transition: border-color 0.2s;">
                     <span
                         style="background: #e27d75; color: white; padding: 2px 6px; border-radius: 4px; font-weight: bold; margin-right: 8px; font-size: 11px;">B</span>
                     <span style="color: var(--text-primary); font-weight: 500; margin-right: 8px;">{{
                         session.get('account_name', 'Conta Selecionada') }}</span>
                     <span style="color: var(--text-muted); font-size: 11px;">({{ session.get('account_id') }})</span>
-                    <a href="javascript:void(0)" onclick="openAccountModal()"
-                        style="margin-left: 12px; color: var(--accent); text-decoration: none; font-size: 18px; line-height: 1;">▾</a>
+                    <span style="margin-left: 12px; color: var(--accent); font-size: 18px; line-height: 1;">▾</span>
                 </div>
                 {% endif %}
             </div>
@@ -213,7 +211,21 @@
                 const data = await resp.json();
                 if (data.success) {
                     closeAccountModal();
-                    window.location.reload();
+                    // Redireciona para a mesma seção mas com a nova conta
+                    const fullId = accountId.startsWith('act_') ? accountId : 'act_' + accountId;
+                    const path = window.location.pathname;
+                    if (path.includes('/account/') && path.includes('/turbinada')) {
+                        window.location.href = `/account/${fullId}/turbinada`;
+                    } else if (path.includes('/account/') && path.includes('/otimizar')) {
+                        window.location.href = `/account/${fullId}/otimizar`;
+                    } else if (path.includes('/account/') && path.includes('/anuncios')) {
+                        window.location.href = `/account/${fullId}/anuncios`;
+                    } else if (path.includes('/conta/')) {
+                        window.location.href = `/conta/${fullId}`;
+                    } else {
+                        // Página sem account_id na URL — reload basta
+                        window.location.reload();
+                    }
                 }
             } catch (e) {
                 el.style.opacity = '1';
