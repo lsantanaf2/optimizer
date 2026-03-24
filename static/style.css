@@ -386,6 +386,8 @@ body {
 }
 
 .account-modal-search {
+    display: block;
+    width: calc(100% - 40px);
     margin: 16px 20px 8px;
     padding: 10px 14px;
     background: var(--bg-deep);
