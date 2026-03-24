@@ -322,6 +322,18 @@ def disconnect_meta():
     return {'success': True}
 
 
+# --- Histórico de Uploads ---
+
+@auth_bp.route('/account/history', methods=['GET'])
+@login_required
+def account_history():
+    """Página de histórico de uploads do usuário."""
+    from modules.account_settings import get_upload_history
+    user_id = session['user_id']
+    history = get_upload_history(user_id, limit=100)
+    return render_template('account/history.html', history=history)
+
+
 # --- Logout ---
 
 @auth_bp.route('/logout')

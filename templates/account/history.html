@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+
+{% block title %}Histórico de Uploads — OPTIMIZER{% endblock %}
+
+{% block breadcrumb %}
+<a href="{{ url_for('auth.account_profile') }}">Minha Conta</a> / <span>Histórico</span>
+{% endblock %}
+
+{% block content %}
+<div style="max-width: 900px;">
+
+    <!-- Sub-navegação -->
+    <div style="display: flex; gap: 4px; margin-bottom: 20px;">
+        <a href="{{ url_for('auth.account_profile') }}"
+            style="padding: 7px 18px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 500; text-decoration: none; color: var(--text-muted); border: 1px solid transparent; transition: all 0.2s;"
+            onmouseover="this.style.borderColor='var(--border)'; this.style.color='var(--text-primary)'"
+            onmouseout="this.style.borderColor='transparent'; this.style.color='var(--text-muted)'">
+            Perfil
+        </a>
+        <a href="{{ url_for('auth.account_history') }}"
+            style="padding: 7px 18px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; text-decoration: none; background: var(--accent-glow); color: var(--accent); border: 1px solid var(--accent);">
+            Histórico
+        </a>
+    </div>
+
+    <div class="card">
+        <div class="card-title">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
+                <circle cx="12" cy="12" r="10"/>
+                <polyline points="12 6 12 12 16 14"/>
+            </svg>
+            Histórico de Uploads
+            <span style="font-size: 12px; color: var(--text-muted); font-weight: 400; margin-left: 4px;">(últimos 100)</span>
+        </div>
+
+        {% if not history %}
+        <div style="text-align: center; padding: 48px 20px; color: var(--text-muted);">
+            <div style="font-size: 32px; margin-bottom: 12px;">📭</div>
+            <div style="font-size: 14px;">Nenhum upload registrado ainda.</div>
+            <div style="font-size: 12px; margin-top: 6px; font-weight: 300;">Os ads criados pelo sistema aparecerão aqui.</div>
+        </div>
+        {% else %}
+
+        <!-- Filtros -->
+        <div style="display: flex; gap: 10px; margin: 16px 0 12px; flex-wrap: wrap;">
+            <input type="text" id="hist-search" placeholder="Buscar por nome, campanha ou conta..."
+                oninput="filterHistory()"
+                style="flex: 1; min-width: 200px; padding: 8px 12px; background: var(--bg-deep); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-primary); font-size: 13px;">
+            <select id="hist-status" onchange="filterHistory()"
+                style="padding: 8px 12px; background: var(--bg-deep); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-primary); font-size: 13px;">
+                <option value="">Todos</option>
+                <option value="success">Sucesso</option>
+                <option value="error">Com erro</option>
+            </select>
+        </div>
+
+        <div style="overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px;" id="hist-table">
+                <thead>
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <th style="text-align:left; padding: 8px 12px; color: var(--text-muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap;">Status</th>
+                        <th style="text-align:left; padding: 8px 12px; color: var(--text-muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Nome do Anúncio</th>
+                        <th style="text-align:left; padding: 8px 12px; color: var(--text-muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Conta</th>
+                        <th style="text-align:left; padding: 8px 12px; color: var(--text-muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Estratégia</th>
+                        <th style="text-align:left; padding: 8px 12px; color: var(--text-muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap;">Data</th>
+                    </tr>
+                </thead>
+                <tbody id="hist-tbody">
+                    {% for item in history %}
+                    <tr class="hist-row" data-success="{{ 'success' if item.success else 'error' }}"
+                        data-search="{{ (item.ad_name or '') | lower }} {{ (item.campaign_name or '') | lower }} {{ (item.account_name or '') | lower }}"
+                        style="border-bottom: 1px solid var(--border-subtle); transition: background 0.15s;"
+                        onmouseover="this.style.background='var(--bg-surface)'" onmouseout="this.style.background=''">
+
+                        <td style="padding: 10px 12px; white-space: nowrap;">
+                            {% if item.success %}
+                            <span style="display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; color: var(--success); background: var(--success-bg); padding: 2px 8px; border-radius: 10px;">✓ OK</span>
+                            {% else %}
+                            <span style="display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; color: var(--danger); background: var(--danger-bg); padding: 2px 8px; border-radius: 10px;"
+                                  {% if item.error_message %}title="{{ item.error_message }}" style="cursor:help;"{% endif %}>
+                                ✕ Erro
+                            </span>
+                            {% endif %}
+                        </td>
+
+                        <td style="padding: 10px 12px;">
+                            <div style="font-weight: 500; color: var(--text-primary);">{{ item.ad_name or '—' }}</div>
+                            {% if item.campaign_name %}
+                            <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">📋 {{ item.campaign_name }}</div>
+                            {% endif %}
+                            {% if not item.success and item.error_message %}
+                            <div style="font-size: 11px; color: var(--danger); margin-top: 3px; opacity: 0.8; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{ item.error_message }}">
+                                {{ item.error_message[:80] }}{% if item.error_message|length > 80 %}...{% endif %}
+                            </div>
+                            {% endif %}
+                        </td>
+
+                        <td style="padding: 10px 12px;">
+                            <div style="color: var(--text-secondary); font-size: 12px;">{{ item.account_name or '—' }}</div>
+                            {% if item.meta_account_id %}
+                            <div style="font-size: 11px; color: var(--text-muted); margin-top: 1px;">act_{{ item.meta_account_id }}</div>
+                            {% endif %}
+                        </td>
+
+                        <td style="padding: 10px 12px;">
+                            {% if item.strategy %}
+                            <span style="font-size: 12px; color: var(--text-secondary); background: var(--bg-surface); border: 1px solid var(--border); padding: 2px 8px; border-radius: 4px;">
+                                {{ item.strategy | capitalize }}
+                            </span>
+                            {% else %}
+                            <span style="color: var(--text-muted);">—</span>
+                            {% endif %}
+                        </td>
+
+                        <td style="padding: 10px 12px; white-space: nowrap; color: var(--text-muted); font-size: 12px;">
+                            {% if item.created_at %}
+                                {{ item.created_at.strftime('%d/%m/%Y') }}<br>
+                                <span style="font-size: 11px;">{{ item.created_at.strftime('%H:%M') }}</span>
+                            {% else %}—{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div id="hist-empty" style="display:none; text-align:center; padding:32px; color:var(--text-muted); font-size:13px;">
+            Nenhum resultado para essa busca.
+        </div>
+
+        <div style="margin-top: 12px; font-size: 12px; color: var(--text-muted);">
+            {{ history | length }} registro(s) encontrado(s)
+        </div>
+
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function filterHistory() {
+        const search = document.getElementById('hist-search').value.toLowerCase();
+        const status = document.getElementById('hist-status').value;
+        const rows = document.querySelectorAll('.hist-row');
+        let visible = 0;
+
+        rows.forEach(row => {
+            const matchSearch = !search || row.dataset.search.includes(search);
+            const matchStatus = !status || row.dataset.success === status;
+            const show = matchSearch && matchStatus;
+            row.style.display = show ? '' : 'none';
+            if (show) visible++;
+        });
+
+        document.getElementById('hist-empty').style.display = visible === 0 ? 'block' : 'none';
+    }
+</script>
+{% endblock %}

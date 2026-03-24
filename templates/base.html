@@ -159,7 +159,9 @@
             const modal = document.getElementById('account-modal');
             modal.style.display = 'flex';
             document.body.style.overflow = 'hidden';
-            if (!modalAccountsLoaded) loadModalAccounts();
+            // Sempre recarrega para mostrar contas do banco + Meta atualizadas
+            modalAccountsLoaded = false;
+            loadModalAccounts();
             setTimeout(() => document.getElementById('modal-account-search').focus(), 100);
         }
 
@@ -168,36 +170,76 @@
             document.body.style.overflow = '';
         }
 
+        // Map de contas já renderizadas: account_id → elemento DOM
+        let _renderedIds = new Set();
+
+        function _accountItemHtml(acc) {
+            return `
+            <div class="account-modal-item" onclick="selectAccount('${acc.account_id}', this)"
+                 data-name="${(acc.name||'').toLowerCase()}" data-id="${acc.account_id}">
+                <div class="account-modal-item-info">
+                    <div class="account-modal-item-name">${acc.name}</div>
+                    <div class="account-modal-item-meta">
+                        <span>act_${acc.account_id}</span>
+                        ${acc.business_name ? `<span>🏢 ${acc.business_name}</span>` : ''}
+                        ${acc.currency ? `<span>💰 ${acc.currency}</span>` : ''}
+                    </div>
+                </div>
+                <span class="account-modal-item-arrow">➜</span>
+            </div>`;
+        }
+
         async function loadModalAccounts() {
             const list = document.getElementById('modal-account-list');
+            _renderedIds = new Set();
+
+            // Fase 1: contas do banco — resposta imediata
             try {
-                const resp = await fetch('/api/accounts/json');
-                const data = await resp.json();
-                if (data.error) {
-                    list.innerHTML = `<div style="text-align:center;padding:20px;color:var(--danger);">${data.error}</div>`;
-                    return;
+                const savedResp = await fetch('/api/accounts/saved');
+                const savedData = await savedResp.json();
+                const savedAccounts = savedData.accounts || [];
+
+                if (savedAccounts.length > 0) {
+                    list.innerHTML = savedAccounts.map(acc => {
+                        _renderedIds.add(acc.account_id);
+                        return _accountItemHtml(acc);
+                    }).join('');
+                } else {
+                    list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:12px;">Buscando contas...</div>';
                 }
-                let html = '';
-                (data.accounts || []).forEach(acc => {
-                    html += `
-                    <div class="account-modal-item" onclick="selectAccount('${acc.account_id}', this)"
-                         data-name="${(acc.name||'').toLowerCase()}" data-id="${acc.account_id}">
-                        <div class="account-modal-item-info">
-                            <div class="account-modal-item-name">${acc.name}</div>
-                            <div class="account-modal-item-meta">
-                                <span>act_${acc.account_id}</span>
-                                ${acc.business_name ? `<span>🏢 ${acc.business_name}</span>` : ''}
-                                ${acc.currency ? `<span>💰 ${acc.currency}</span>` : ''}
-                            </div>
-                        </div>
-                        <span class="account-modal-item-arrow">➜</span>
-                    </div>`;
-                });
-                if (!html) html = '<div style="text-align:center;padding:20px;color:var(--text-muted);">Nenhuma conta encontrada.</div>';
-                list.innerHTML = html;
+            } catch (e) {
+                list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:12px;">Buscando contas...</div>';
+            }
+
+            // Fase 2: contas da Meta API — em background, sem bloquear
+            try {
+                const metaResp = await fetch('/api/accounts/json');
+                const metaData = await metaResp.json();
+                const metaAccounts = metaData.accounts || [];
+
+                // Adicionar apenas contas novas (não duplicar as do banco)
+                const novas = metaAccounts.filter(acc => !_renderedIds.has(acc.account_id));
+
+                if (novas.length > 0) {
+                    // Se a lista ainda está mostrando "Buscando...", limpar
+                    if (list.querySelector('.account-modal-item') === null) {
+                        list.innerHTML = '';
+                    }
+                    novas.forEach(acc => {
+                        _renderedIds.add(acc.account_id);
+                        list.insertAdjacentHTML('beforeend', _accountItemHtml(acc));
+                    });
+                }
+
+                if (list.querySelector('.account-modal-item') === null) {
+                    list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted);">Nenhuma conta encontrada.</div>';
+                }
+
                 modalAccountsLoaded = true;
             } catch (e) {
-                list.innerHTML = `<div style="text-align:center;padding:20px;color:var(--danger);">Erro: ${e.message}</div>`;
+                if (list.querySelector('.account-modal-item') === null) {
+                    list.innerHTML = `<div style="text-align:center;padding:20px;color:var(--danger);">Erro ao carregar contas da Meta.</div>`;
+                }
             }
         }
 
