@@ -610,15 +610,34 @@
         }
 
         function _populateSelect(selectEl, items, keyField, labelFn, assetType, placeholder) {
+            // Preservar itens salvos (★) já presentes no select
+            const existingSavedVals = new Set();
+            selectEl.querySelectorAll('option[data-saved="1"]').forEach(o => existingSavedVals.add(String(o.value)));
+
             selectEl.innerHTML = `<option value="">${placeholder}</option>`;
-            items.forEach(item => {
-                const val = item[keyField] || item.id;
-                const label = labelFn(item);
-                const saved = _isAssetSaved(assetType, keyField === 'id' ? 'id' : keyField, val);
+
+            // Primeiro: itens salvos do banco (sempre no topo)
+            const savedItems = _savedAssets[assetType] || [];
+            savedItems.forEach(item => {
+                const val = String(item[keyField] || item.id);
+                const label = item.name || item.username || val;
                 const opt = document.createElement('option');
                 opt.value = val;
-                opt.textContent = (saved ? '★ ' : '') + label;
-                opt.dataset.saved = saved ? '1' : '0';
+                opt.textContent = '★ ' + label;
+                opt.dataset.saved = '1';
+                selectEl.appendChild(opt);
+            });
+
+            // Depois: itens da Meta API (sem duplicar os salvos)
+            const savedVals = new Set(savedItems.map(i => String(i[keyField] || i.id)));
+            items.forEach(item => {
+                const val = String(item[keyField] || item.id);
+                if (savedVals.has(val)) return; // Já está nos salvos
+                const label = labelFn(item);
+                const opt = document.createElement('option');
+                opt.value = val;
+                opt.textContent = label;
+                opt.dataset.saved = '0';
                 selectEl.appendChild(opt);
             });
         }
@@ -820,11 +839,31 @@
             const selIg = document.getElementById('select-instagram');
             const selPixel = document.getElementById('select-pixel');
 
-            // Fase 1: carregar dados salvos do banco (rápido)
+            // Fase 1: carregar dados salvos do banco (rápido → pré-popula selects imediatamente)
             try {
                 const savedResp = await fetch(`/api/conta/${ACCOUNT_ID}/saved-assets`);
                 const savedData = await savedResp.json();
                 _savedAssets = (savedData.saved_assets || {});
+
+                // Popular selects com itens salvos ANTES da Meta API
+                const savedPages = _savedAssets.facebook_pages || [];
+                if (savedPages.length > 0) {
+                    _populateSelect(selPage, [], 'id', p => p.name, 'facebook_pages', '— Carregando mais opções... —');
+                    _autoSelectMostUsed(selPage, 'facebook_pages', 'id');
+                    if (selPage.value) carregarLeadForms(selPage.value);
+                }
+
+                const savedIg = _savedAssets.instagram_profiles || [];
+                if (savedIg.length > 0) {
+                    _populateSelect(selIg, [], 'id', ig => ig.name || ig.username || ig.id, 'instagram_profiles', '— Carregando mais opções... —');
+                    _autoSelectMostUsed(selIg, 'instagram_profiles', 'id');
+                }
+
+                const savedPx = _savedAssets.pixels || [];
+                if (savedPx.length > 0) {
+                    _populateSelect(selPixel, [], 'id', p => p.name || p.id, 'pixels', '— Carregando mais opções... —');
+                    _autoSelectMostUsed(selPixel, 'pixels', 'id');
+                }
 
                 // Pré-preencher URL e UTM do mais usado
                 const urlBest = _getMostUsed('urls', 'url');
@@ -838,59 +877,83 @@
                     document.getElementById('cta').value = _savedAssets.default_cta;
                 }
 
+                _updateStarBtns();
                 atualizarStatusConfig();
+                console.log('⚡ Fase 1 OK: itens salvos carregados do banco');
             } catch (e) {
                 console.warn('Saved assets unavailable:', e);
             }
 
-            // Fase 2: carregar dados da Meta API (pode demorar)
+            // Fase 2: carregar dados da Meta API (background, faz merge com salvos)
             try {
                 const resp = await fetch(`/api/conta/${ACCOUNT_ID}/identity`);
                 const data = await resp.json();
 
                 if (data.error) {
                     console.error('❌ Identity error:', data.error);
-                    mostrarToast('⚠️ Erro: ' + data.error);
+                    // Se já tem salvos, não mostra erro — mantém os salvos
+                    if ((_savedAssets.facebook_pages || []).length === 0) {
+                        mostrarToast('⚠️ Erro: ' + data.error);
+                    }
                     return;
                 }
 
                 const { pages, instagrams, pixels } = data;
 
-                // Páginas — com estrela
+                // Guardar valores atuais para re-selecionar após merge
+                const prevPage = selPage.value;
+                const prevIg = selIg.value;
+                const prevPixel = selPixel.value;
+
+                // Páginas — merge salvos + Meta
                 if (Array.isArray(pages) && pages.length > 0) {
                     _populateSelect(selPage, pages, 'id', p => p.name, 'facebook_pages', '— Selecione a Página —');
-                    _autoSelectMostUsed(selPage, 'facebook_pages', 'id');
+                } else if ((_savedAssets.facebook_pages || []).length > 0) {
+                    // Atualizar placeholder mas manter salvos
+                    _populateSelect(selPage, [], 'id', p => p.name, 'facebook_pages', '— Selecione a Página —');
                 } else {
                     selPage.innerHTML = '<option value="">⚠️ Nenhuma página encontrada</option>';
                 }
 
-                // Instagrams — com estrela
+                // Instagrams — merge
                 if (Array.isArray(instagrams) && instagrams.length > 0) {
                     _populateSelect(selIg, instagrams, 'id', ig => `@${ig.username}`, 'instagram_profiles', '— Selecione o Instagram —');
-                    _autoSelectMostUsed(selIg, 'instagram_profiles', 'id');
+                } else if ((_savedAssets.instagram_profiles || []).length > 0) {
+                    _populateSelect(selIg, [], 'id', ig => ig.name || ig.id, 'instagram_profiles', '— Selecione o Instagram —');
                 } else {
                     selIg.innerHTML = '<option value="">⚠️ Nenhum Instagram vinculado</option>';
                 }
 
-                // Pixels — com estrela
+                // Pixels — merge
                 if (Array.isArray(pixels) && pixels.length > 0) {
                     _populateSelect(selPixel, pixels, 'id', p => p.name, 'pixels', '— Selecione o Pixel (Recomendado) —');
-                    _autoSelectMostUsed(selPixel, 'pixels', 'id');
+                } else if ((_savedAssets.pixels || []).length > 0) {
+                    _populateSelect(selPixel, [], 'id', p => p.name || p.id, 'pixels', '— Selecione o Pixel (Recomendado) —');
                 } else {
                     selPixel.innerHTML = '<option value="">— Sem pixel disponível —</option>';
                 }
 
-                console.log(`⚡ Identidade carregada: ${pages?.length || 0} páginas, ${instagrams?.length || 0} IGs, ${pixels?.length || 0} pixels`);
+                // Re-selecionar valores anteriores (ou auto-select mais usado)
+                if (prevPage) { selPage.value = prevPage; } else { _autoSelectMostUsed(selPage, 'facebook_pages', 'id'); }
+                if (prevIg) { selIg.value = prevIg; } else { _autoSelectMostUsed(selIg, 'instagram_profiles', 'id'); }
+                if (prevPixel) { selPixel.value = prevPixel; } else { _autoSelectMostUsed(selPixel, 'pixels', 'id'); }
+
+                _updateStarBtns();
+
+                console.log(`⚡ Fase 2 OK: ${pages?.length || 0} páginas, ${instagrams?.length || 0} IGs, ${pixels?.length || 0} pixels`);
 
                 // Listener para carregar Lead Forms quando página muda
                 selPage.addEventListener('change', () => carregarLeadForms(selPage.value));
 
-                // Se página já selecionada (auto-select), disparar lead forms
+                // Se página selecionada, disparar lead forms
                 if (selPage.value) carregarLeadForms(selPage.value);
 
             } catch (e) {
                 console.error('❌ Erro em carregarIdentidade:', e);
-                mostrarToast('⚠️ Erro ao carregar dados de identidade');
+                // Se já tem salvos, silenciar o erro visual
+                if ((_savedAssets.facebook_pages || []).length === 0) {
+                    mostrarToast('⚠️ Erro ao carregar dados de identidade');
+                }
             }
         }
 
