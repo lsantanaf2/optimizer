@@ -215,3 +215,51 @@ def api_turbinada(account_id, level):
         print(f"❌ [turbinada] Erro: {tb}")
         return jsonify({"success": False, "error": str(e), "traceback": tb}), 500
 
+
+# ======================== VISUALIZATION MODES (Squad 5) ========================
+
+@optimization_bp.route('/api/viz-modes', methods=['GET'])
+def api_get_viz_modes():
+    """Retorna os modos de visualização salvos pelo usuário."""
+    from modules.account_settings import get_viz_modes
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'Não autenticado'}), 401
+    modes = get_viz_modes(user_id)
+    return jsonify({'modes': modes})
+
+
+@optimization_bp.route('/api/viz-modes', methods=['POST'])
+def api_save_viz_mode():
+    """Salva ou atualiza um modo de visualização."""
+    from modules.account_settings import save_viz_mode
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'Não autenticado'}), 401
+
+    data = request.get_json() or {}
+    mode_name = data.get('mode_name', '').strip()
+    periods = data.get('periods', {})
+    is_default = data.get('is_default', False)
+    mode_id = data.get('mode_id')
+
+    if not mode_name:
+        return jsonify({'error': 'Nome do modo é obrigatório'}), 400
+    if not periods.get('columns'):
+        return jsonify({'error': 'Períodos inválidos'}), 400
+
+    saved_id = save_viz_mode(user_id, mode_name, periods, is_default, mode_id)
+    if saved_id:
+        return jsonify({'success': True, 'mode_id': saved_id})
+    return jsonify({'error': 'Banco de dados indisponível'}), 503
+
+
+@optimization_bp.route('/api/viz-modes/<mode_id>', methods=['DELETE'])
+def api_delete_viz_mode(mode_id):
+    """Remove um modo de visualização."""
+    from modules.account_settings import delete_viz_mode
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'Não autenticado'}), 401
+    delete_viz_mode(user_id, mode_id)
+    return jsonify({'success': True})

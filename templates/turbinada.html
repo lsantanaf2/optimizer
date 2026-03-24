@@ -523,6 +523,25 @@
         <button class="btn-period-action" onclick="resetPeriods()" title="Restaurar padrão">↺ Reset</button>
         <button class="btn-period-action danger" onclick="clearPeriods()" title="Remover todos">✕ Limpar</button>
     </div>
+    <!-- Salvar/Carregar Modos -->
+    <div style="position:relative; display:inline-block; margin-left:4px;">
+        <button class="btn-period-action" onclick="toggleVizMenu()" id="btn-viz-modes" title="Modos salvos">
+            🔖 Modos
+        </button>
+        <div id="viz-modes-menu" style="display:none; position:absolute; top:100%; right:0; z-index:100; background:var(--card-bg); border:1px solid var(--border); border-radius:8px; padding:8px; min-width:220px; box-shadow:0 4px 16px rgba(0,0,0,0.3); margin-top:4px;">
+            <div style="font-size:10px; color:var(--text-muted); padding:2px 6px 6px; text-transform:uppercase; font-weight:700;">Salvar configuração atual</div>
+            <div style="display:flex; gap:6px; padding:0 2px 8px;">
+                <input type="text" id="viz-mode-name" placeholder="Nome do modo..." style="flex:1; font-size:12px; padding:5px 8px; background:var(--bg-deep); border:1px solid var(--border); border-radius:4px; color:var(--text-primary);">
+                <button class="btn-period-action" onclick="saveVizMode()" style="white-space:nowrap;">💾 Salvar</button>
+            </div>
+            <div style="border-top:1px solid var(--border); margin:4px 0; padding-top:8px;">
+                <div style="font-size:10px; color:var(--text-muted); padding:0 6px 6px; text-transform:uppercase; font-weight:700;">Modos salvos</div>
+                <div id="viz-modes-list" style="max-height:200px; overflow-y:auto;">
+                    <div style="font-size:12px; color:var(--text-muted); padding:6px; text-align:center;">Carregando...</div>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- Breadcrumb -->
@@ -741,7 +760,121 @@
         if (menu && !menu.contains(e.target) && e.target !== btn) {
             menu.style.display = 'none';
         }
+        const vizMenu = document.getElementById('viz-modes-menu');
+        const vizBtn = document.getElementById('btn-viz-modes');
+        if (vizMenu && !vizMenu.contains(e.target) && e.target !== vizBtn) {
+            vizMenu.style.display = 'none';
+        }
     });
+
+    // ===== Modos de Visualização Salvos =====
+    let vizModesLoaded = false;
+
+    function toggleVizMenu() {
+        const menu = document.getElementById('viz-modes-menu');
+        const isOpen = menu.style.display !== 'none';
+        menu.style.display = isOpen ? 'none' : 'block';
+        if (!isOpen && !vizModesLoaded) loadVizModes();
+    }
+
+    async function loadVizModes() {
+        const list = document.getElementById('viz-modes-list');
+        try {
+            const resp = await fetch('/api/viz-modes');
+            const data = await resp.json();
+            vizModesLoaded = true;
+            renderVizModesList(data.modes || []);
+        } catch (e) {
+            list.innerHTML = '<div style="font-size:12px; color:var(--danger); padding:6px;">Erro ao carregar</div>';
+        }
+    }
+
+    function renderVizModesList(modes) {
+        const list = document.getElementById('viz-modes-list');
+        if (!modes.length) {
+            list.innerHTML = '<div style="font-size:12px; color:var(--text-muted); padding:6px; text-align:center;">Nenhum modo salvo ainda.</div>';
+            return;
+        }
+        list.innerHTML = modes.map(m => `
+            <div style="display:flex; align-items:center; justify-content:space-between; padding:5px 6px; border-radius:4px; cursor:pointer; transition:background 0.1s;" onmouseover="this.style.background='var(--bg-deep)'" onmouseout="this.style.background=''">
+                <span onclick="applyVizMode('${m.id}')" style="flex:1; font-size:13px; color:var(--text-primary);">
+                    ${m.is_default ? '★ ' : ''}${m.mode_name}
+                </span>
+                <span onclick="deleteVizMode('${m.id}', this)" style="color:var(--danger); font-size:12px; cursor:pointer; padding:2px 6px;" title="Remover">✕</span>
+            </div>
+        `).join('');
+    }
+
+    async function saveVizMode() {
+        const nameInput = document.getElementById('viz-mode-name');
+        const name = nameInput.value.trim();
+        if (!name) { mostrarToast('⚠️ Digite um nome para o modo'); return; }
+        if (!columnPeriods.length) { mostrarToast('⚠️ Adicione pelo menos um período'); return; }
+
+        const periods = {
+            columns: columnPeriods.map(p => ({
+                key: p.key, label: p.label, since: p.since, until: p.until
+            }))
+        };
+
+        try {
+            const resp = await fetch('/api/viz-modes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mode_name: name, periods })
+            });
+            const data = await resp.json();
+            if (data.success) {
+                mostrarToast('✅ Modo salvo: ' + name);
+                nameInput.value = '';
+                vizModesLoaded = false;
+                loadVizModes();
+            } else {
+                mostrarToast('❌ ' + (data.error || 'Erro ao salvar'));
+            }
+        } catch (e) {
+            mostrarToast('❌ Erro de conexão');
+        }
+    }
+
+    async function applyVizMode(modeId) {
+        try {
+            const resp = await fetch('/api/viz-modes');
+            const data = await resp.json();
+            const mode = (data.modes || []).find(m => m.id === modeId);
+            if (!mode) { mostrarToast('❌ Modo não encontrado'); return; }
+
+            columnPeriods = [];
+            nextPeriodId = 1;
+            (mode.periods.columns || []).forEach(col => {
+                columnPeriods.push({
+                    id: nextPeriodId++,
+                    type: col.since === col.until ? 'preset' : 'custom',
+                    key: col.key,
+                    label: col.label,
+                    since: col.since,
+                    until: col.until,
+                });
+            });
+
+            renderPills();
+            document.getElementById('viz-modes-menu').style.display = 'none';
+            mostrarToast('📊 Modo aplicado: ' + mode.mode_name);
+            loadData();
+        } catch (e) {
+            mostrarToast('❌ Erro ao aplicar modo');
+        }
+    }
+
+    async function deleteVizMode(modeId, el) {
+        try {
+            await fetch(`/api/viz-modes/${modeId}`, { method: 'DELETE' });
+            el.closest('div').remove();
+            mostrarToast('🗑️ Modo removido');
+        } catch (e) {
+            mostrarToast('❌ Erro ao remover');
+        }
+    }
 
     // ===== Tabs / Navigation =====
     function switchTab(level, btn) {

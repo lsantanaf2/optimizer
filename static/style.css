@@ -387,7 +387,6 @@ body {
 
 .account-modal-search {
     display: block;
-    width: calc(100% - 40px);
     margin: 16px 20px 8px;
     padding: 10px 14px;
     background: var(--bg-deep);
@@ -714,7 +713,6 @@ label:first-child {
 input[type="text"],
 input[type="url"],
 select {
-    width: 100%;
     padding: 11px 14px;
     background: var(--bg-deep);
     border: 1px solid var(--border);

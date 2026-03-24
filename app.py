@@ -48,11 +48,16 @@ from modules.auth import auth_bp, login_required, meta_required
 app.register_blueprint(auth_bp)
 
 from modules.database import init_db, close_db
+from modules.account_settings import (
+    get_or_create_imported_account,
+    save_upload_assets,
+    save_upload_history,
+)
 
 import atexit
 atexit.register(close_db)
 
-VERSION = "v2.4.3"
+VERSION = "v2.5.0"
 
 @app.before_request
 def ensure_db():
@@ -152,6 +157,11 @@ def set_account(account_id):
         print(f"❌ Erro ao buscar nome da conta {account_id}: {e}")
         session['account_name'] = account_id
 
+    # Squad 1.3 — persistir conta no banco
+    user_id = session.get('user_id')
+    if user_id:
+        get_or_create_imported_account(user_id, account_id, session['account_name'])
+
     # Se for chamada AJAX, retorna JSON
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         return jsonify({'success': True, 'account_id': account_id, 'account_name': session['account_name']})
@@ -213,9 +223,27 @@ def listar_contas():
         limpar_token()
         return redirect(url_for('index'))
 
+@app.route('/api/accounts/saved')
+def api_accounts_saved():
+    """Retorna contas salvas no banco para o usuário logado (resposta imediata)."""
+    from modules.database import fetch_all
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'accounts': []})
+    try:
+        rows = fetch_all(
+            "SELECT meta_account_id, account_name FROM imported_ad_accounts WHERE user_id = %s ORDER BY pinned_order, created_at DESC",
+            (user_id,)
+        )
+        contas = [{'account_id': r['meta_account_id'], 'name': r['account_name'] or r['meta_account_id'], 'source': 'saved'} for r in (rows or [])]
+        return jsonify({'accounts': contas})
+    except Exception as e:
+        return jsonify({'accounts': []})
+
+
 @app.route('/api/accounts/json')
 def api_accounts_json():
-    """Retorna lista de contas como JSON para o modal de seleção."""
+    """Retorna lista de contas da API Meta como JSON (pode ser lento)."""
     token = obter_token()
     if not token:
         return jsonify({'error': 'Not authenticated'}), 401
@@ -239,7 +267,8 @@ def api_accounts_json():
                     'name': conta.get('name'),
                     'account_id': conta.get('account_id'),
                     'currency': conta.get('currency'),
-                    'business_name': conta.get('business_name') or 'Conta Pessoal'
+                    'business_name': conta.get('business_name') or 'Conta Pessoal',
+                    'source': 'meta'
                 })
         ACCOUNTS_CACHE[token] = {'time': time.time(), 'accounts': contas}
         return jsonify({'accounts': contas})
@@ -682,6 +711,28 @@ def upload_single(campaign_id):
         except OSError:
             pass
 
+        # Squad 2 — salvar assets usados para pré-preencher próximos uploads
+        user_id = session.get('user_id')
+        if user_id:
+            save_upload_assets(user_id, account_id, {
+                'page_id': page_id,
+                'instagram_id': instagram_actor_id,
+                'pixel_id': pixel_id,
+                'primary_texts': textos,
+                'headlines': titulos,
+                'url': url_destino,
+                'utm': utm_pattern,
+                'cta': cta,
+            })
+            # Squad 3 — histórico de uploads
+            save_upload_history(
+                user_id, account_id,
+                campaign_name=campaign_id,
+                ad_name=ad_name,
+                strategy=estrategia,
+                success=True
+            )
+
         return jsonify({
             'success': True,
             'ad_id': ad_id,
@@ -692,6 +743,22 @@ def upload_single(campaign_id):
     except Exception as e:
         import traceback
         traceback.print_exc()
+        # Squad 3 — registrar falha no histórico
+        try:
+            user_id = session.get('user_id')
+            account_id = session.get('account_id', '')
+            ad_name_err = request.form.get('ad_name', 'Desconhecido')
+            if user_id and account_id:
+                save_upload_history(
+                    user_id, account_id,
+                    campaign_name=campaign_id,
+                    ad_name=ad_name_err,
+                    strategy=request.form.get('estrategia'),
+                    success=False,
+                    error_message=str(e)[:500]
+                )
+        except Exception:
+            pass
         return jsonify({
             'success': False,
             'error': str(e),
