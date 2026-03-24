@@ -322,6 +322,18 @@ def disconnect_meta():
     return {'success': True}
 
 
+# --- Presets da Conta de Anúncios ---
+
+@auth_bp.route('/account/presets', methods=['GET'])
+@login_required
+def account_presets():
+    """Página de gestão de presets por conta de anúncios."""
+    from modules.account_settings import list_imported_accounts
+    user_id = session['user_id']
+    accounts = list_imported_accounts(user_id)
+    return render_template('account/presets.html', accounts=accounts)
+
+
 # --- Histórico de Uploads ---
 
 @auth_bp.route('/account/history', methods=['GET'])

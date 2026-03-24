@@ -23,6 +23,21 @@ def _db_ok():
 # Squad 1.3 — imported_ad_accounts
 # ─────────────────────────────────────────────────────────────
 
+def list_imported_accounts(user_id):
+    """Retorna lista de contas importadas do usuário."""
+    if not _db_ok():
+        return []
+    try:
+        rows = fetch_all(
+            "SELECT id, meta_account_id, account_name FROM imported_ad_accounts WHERE user_id = %s ORDER BY account_name",
+            (user_id,)
+        )
+        return [dict(r) for r in rows] if rows else []
+    except Exception as e:
+        logger.error(f"[account_settings] Erro ao list_imported_accounts: {e}")
+        return []
+
+
 def get_or_create_imported_account(user_id, meta_account_id, account_name=None):
     """
     Retorna o UUID interno de uma conta importada, criando se necessário.
@@ -220,6 +235,93 @@ def save_upload_assets(user_id, meta_account_id, upload_data):
         )
     except Exception as e:
         logger.error(f"[account_settings] Erro ao save_upload_assets: {e}")
+
+
+def save_single_asset(user_id, meta_account_id, asset_type, key_field, value, extra=None):
+    """
+    Salva/favorita um único item nos saved_assets.
+    asset_type: 'facebook_pages', 'instagram_profiles', 'pixels', 'primary_texts', 'headlines', 'urls', 'utms'
+    key_field: 'id', 'text', 'url', 'pattern' — depende do tipo
+    value: valor do campo chave
+    extra: dict com campos extras (ex: {'name': 'Minha Página'})
+    """
+    if not _db_ok() or not value:
+        return False
+    try:
+        imported_id = get_or_create_imported_account(user_id, meta_account_id)
+        if not imported_id:
+            return False
+        execute(
+            "INSERT INTO ad_account_settings (ad_account_id) VALUES (%s) ON CONFLICT DO NOTHING",
+            (imported_id,)
+        )
+        row = fetch_one("SELECT saved_assets FROM ad_account_settings WHERE ad_account_id = %s", (imported_id,))
+        assets = (row['saved_assets'] or {}) if row else {}
+        if isinstance(assets, str):
+            assets = json.loads(assets)
+
+        assets[asset_type] = _upsert_in_list(assets.get(asset_type, []), key_field, value, extra)
+
+        execute(
+            "UPDATE ad_account_settings SET saved_assets = %s WHERE ad_account_id = %s",
+            (json.dumps(assets, ensure_ascii=False), imported_id)
+        )
+        return True
+    except Exception as e:
+        logger.error(f"[account_settings] Erro ao save_single_asset: {e}")
+        return False
+
+
+def remove_single_asset(user_id, meta_account_id, asset_type, key_field, value):
+    """
+    Remove um item dos saved_assets.
+    """
+    if not _db_ok() or not value:
+        return False
+    try:
+        imported_id = get_or_create_imported_account(user_id, meta_account_id)
+        if not imported_id:
+            return False
+        row = fetch_one("SELECT saved_assets FROM ad_account_settings WHERE ad_account_id = %s", (imported_id,))
+        if not row:
+            return False
+        assets = row['saved_assets'] or {}
+        if isinstance(assets, str):
+            assets = json.loads(assets)
+
+        lst = assets.get(asset_type, [])
+        assets[asset_type] = [item for item in lst if str(item.get(key_field)) != str(value)]
+
+        execute(
+            "UPDATE ad_account_settings SET saved_assets = %s WHERE ad_account_id = %s",
+            (json.dumps(assets, ensure_ascii=False), imported_id)
+        )
+        return True
+    except Exception as e:
+        logger.error(f"[account_settings] Erro ao remove_single_asset: {e}")
+        return False
+
+
+def save_cac_target(user_id, meta_account_id, cac_value):
+    """Salva o CAC ideal de uma conta."""
+    if not _db_ok():
+        return False
+    try:
+        imported_id = get_or_create_imported_account(user_id, meta_account_id)
+        if not imported_id:
+            return False
+        execute(
+            "INSERT INTO ad_account_settings (ad_account_id) VALUES (%s) ON CONFLICT DO NOTHING",
+            (imported_id,)
+        )
+        execute(
+            "UPDATE ad_account_settings SET cac_target_value = %s WHERE ad_account_id = %s",
+            (cac_value, imported_id)
+        )
+        return True
+    except Exception as e:
+        logger.error(f"[account_settings] Erro ao save_cac_target: {e}")
+        return False
 
 
 # ─────────────────────────────────────────────────────────────

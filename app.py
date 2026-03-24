@@ -57,7 +57,7 @@ from modules.account_settings import (
 import atexit
 atexit.register(close_db)
 
-VERSION = "v2.5.1"
+VERSION = "v2.5.2"
 
 @app.before_request
 def ensure_db():
@@ -408,6 +408,66 @@ def api_identity(account_id):
     except Exception as e:
         print(f"❌ Error fetching identity: {e}")
         return jsonify({'error': str(e)}), 500
+
+# ======================== API: SAVED ASSETS / PRESETS ========================
+
+@app.route('/api/conta/<account_id>/saved-assets')
+def api_saved_assets(account_id):
+    """Retorna saved_assets para o setup pré-preencher."""
+    from modules.account_settings import get_settings_for_setup
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({}), 401
+    return jsonify(get_settings_for_setup(user_id, account_id))
+
+
+@app.route('/api/conta/<account_id>/save-asset', methods=['POST'])
+def api_save_asset(account_id):
+    """Salva/favorita um asset individual."""
+    from modules.account_settings import save_single_asset
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'Não autenticado'}), 401
+    data = request.get_json() or {}
+    ok = save_single_asset(
+        user_id, account_id,
+        asset_type=data.get('asset_type'),
+        key_field=data.get('key_field'),
+        value=data.get('value'),
+        extra=data.get('extra')
+    )
+    return jsonify({'success': ok})
+
+
+@app.route('/api/conta/<account_id>/remove-asset', methods=['POST'])
+def api_remove_asset(account_id):
+    """Remove um asset dos salvos."""
+    from modules.account_settings import remove_single_asset
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'Não autenticado'}), 401
+    data = request.get_json() or {}
+    ok = remove_single_asset(
+        user_id, account_id,
+        asset_type=data.get('asset_type'),
+        key_field=data.get('key_field'),
+        value=data.get('value')
+    )
+    return jsonify({'success': ok})
+
+
+@app.route('/api/conta/<account_id>/save-cac', methods=['POST'])
+def api_save_cac(account_id):
+    """Salva o CAC ideal da conta."""
+    from modules.account_settings import save_cac_target
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'Não autenticado'}), 401
+    data = request.get_json() or {}
+    cac = data.get('cac_target_value')
+    ok = save_cac_target(user_id, account_id, float(cac) if cac else None)
+    return jsonify({'success': ok})
+
 
 @app.route('/api/drive/list_folder', methods=['POST'])
 def api_drive_list_folder():

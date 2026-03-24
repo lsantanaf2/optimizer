@@ -15,6 +15,12 @@
             style="padding: 7px 18px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; text-decoration: none; background: var(--accent-glow); color: var(--accent); border: 1px solid var(--accent);">
             Perfil
         </a>
+        <a href="{{ url_for('auth.account_presets') }}"
+            style="padding: 7px 18px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 500; text-decoration: none; color: var(--text-muted); border: 1px solid transparent; transition: all 0.2s;"
+            onmouseover="this.style.borderColor='var(--border)'; this.style.color='var(--text-primary)'"
+            onmouseout="this.style.borderColor='transparent'; this.style.color='var(--text-muted)'">
+            Presets
+        </a>
         <a href="{{ url_for('auth.account_history') }}"
             style="padding: 7px 18px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 500; text-decoration: none; color: var(--text-muted); border: 1px solid transparent; transition: all 0.2s;"
             onmouseover="this.style.borderColor='var(--border)'; this.style.color='var(--text-primary)'"

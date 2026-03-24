@@ -1,0 +1,255 @@
+{% extends "base.html" %}
+
+{% block title %}Presets de Conta — OPTIMIZER{% endblock %}
+
+{% block breadcrumb %}
+<a href="{{ url_for('auth.account_profile') }}">Minha Conta</a> / <span>Presets</span>
+{% endblock %}
+
+{% block content %}
+<div style="max-width: 900px;">
+
+    <!-- Sub-navegação -->
+    <div style="display: flex; gap: 4px; margin-bottom: 20px;">
+        <a href="{{ url_for('auth.account_profile') }}"
+            style="padding: 7px 18px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 500; text-decoration: none; color: var(--text-muted); border: 1px solid transparent; transition: all 0.2s;"
+            onmouseover="this.style.borderColor='var(--border)'; this.style.color='var(--text-primary)'"
+            onmouseout="this.style.borderColor='transparent'; this.style.color='var(--text-muted)'">
+            Perfil
+        </a>
+        <a href="{{ url_for('auth.account_presets') }}"
+            style="padding: 7px 18px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; text-decoration: none; background: var(--accent-glow); color: var(--accent); border: 1px solid var(--accent);">
+            Presets
+        </a>
+        <a href="{{ url_for('auth.account_history') }}"
+            style="padding: 7px 18px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 500; text-decoration: none; color: var(--text-muted); border: 1px solid transparent; transition: all 0.2s;"
+            onmouseover="this.style.borderColor='var(--border)'; this.style.color='var(--text-primary)'"
+            onmouseout="this.style.borderColor='transparent'; this.style.color='var(--text-muted)'">
+            Histórico
+        </a>
+    </div>
+
+    <!-- Seletor de conta -->
+    <div class="card">
+        <div class="card-title">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
+                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+            </svg>
+            Presets de Conta de Anúncios
+        </div>
+
+        {% if not accounts %}
+        <div style="text-align: center; padding: 48px 20px; color: var(--text-muted);">
+            <div style="font-size: 32px; margin-bottom: 12px;">📭</div>
+            <div style="font-size: 14px;">Nenhuma conta importada ainda.</div>
+            <div style="font-size: 12px; margin-top: 6px; font-weight: 300;">Selecione uma conta de anúncios na tela principal para começar.</div>
+        </div>
+        {% else %}
+
+        <div style="margin-bottom: 16px;">
+            <label style="font-size: 13px; color: var(--text-muted); margin-bottom: 6px; display: block;">Conta de Anúncios</label>
+            <select id="preset-account" onchange="loadPresets()" style="padding: 8px 12px; background: var(--bg-deep); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-primary); font-size: 13px; min-width: 320px;">
+                <option value="">— Selecione uma conta —</option>
+                {% for acc in accounts %}
+                <option value="{{ acc.meta_account_id }}">{{ acc.account_name or acc.meta_account_id }} (act_{{ acc.meta_account_id }})</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <!-- Conteúdo dos presets (carregado via AJAX) -->
+        <div id="presets-content" style="display: none;">
+
+            <!-- CAC Target -->
+            <div style="margin-bottom: 24px; padding: 16px; background: var(--bg-surface); border-radius: var(--radius-sm); border: 1px solid var(--border);">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                    <span style="font-size: 16px;">🎯</span>
+                    <span style="font-weight: 600; font-size: 14px; color: var(--text-primary);">CAC Ideal</span>
+                </div>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <span style="color: var(--text-muted); font-size: 13px;">R$</span>
+                    <input type="number" id="cac-target" step="0.01" min="0" placeholder="Ex: 45.00"
+                        style="padding: 8px 12px; background: var(--bg-deep); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-primary); font-size: 13px; width: 140px;">
+                    <button onclick="saveCac()" style="padding: 8px 16px; background: var(--accent); color: var(--bg-deep); border: none; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; cursor: pointer;">Salvar</button>
+                </div>
+                <div style="font-size: 11px; color: var(--text-muted); margin-top: 6px;">Usado como referência na Turbinada para destacar ads acima do custo ideal.</div>
+            </div>
+
+            <!-- Categorias de assets -->
+            <div id="preset-sections"></div>
+
+        </div>
+
+        <div id="presets-empty" style="display:none; text-align:center; padding:32px; color:var(--text-muted); font-size:13px;">
+            Nenhum preset salvo para esta conta.
+        </div>
+
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const ASSET_CATEGORIES = [
+        { key: 'facebook_pages', label: 'Páginas do Facebook', keyField: 'id', displayFn: i => i.name || i.id, icon: '📘' },
+        { key: 'instagram_profiles', label: 'Perfis do Instagram', keyField: 'id', displayFn: i => i.name || `@${i.username || i.id}`, icon: '📷' },
+        { key: 'pixels', label: 'Pixels de Rastreamento', keyField: 'id', displayFn: i => i.name || i.id, icon: '📊' },
+        { key: 'primary_texts', label: 'Textos Principais', keyField: 'text', displayFn: i => i.text, icon: '📝' },
+        { key: 'headlines', label: 'Títulos (Headlines)', keyField: 'text', displayFn: i => i.text, icon: '🏷️' },
+        { key: 'urls', label: 'URLs de Destino', keyField: 'url', displayFn: i => i.url, icon: '🔗' },
+        { key: 'utms', label: 'Padrões de UTM', keyField: 'pattern', displayFn: i => i.pattern, icon: '📐' },
+    ];
+
+    let _currentAccount = null;
+    let _currentAssets = {};
+
+    async function loadPresets() {
+        const accountId = document.getElementById('preset-account').value;
+        const content = document.getElementById('presets-content');
+        const empty = document.getElementById('presets-empty');
+        if (!accountId) { content.style.display = 'none'; empty.style.display = 'none'; return; }
+
+        _currentAccount = accountId;
+        try {
+            const resp = await fetch(`/api/conta/${accountId}/saved-assets`);
+            const data = await resp.json();
+            _currentAssets = data.saved_assets || {};
+            const cacValue = data.cac_target_value;
+
+            document.getElementById('cac-target').value = cacValue || '';
+            renderSections();
+            content.style.display = 'block';
+            empty.style.display = 'none';
+        } catch (e) {
+            console.error('Erro ao carregar presets:', e);
+            content.style.display = 'none';
+            empty.style.display = 'block';
+        }
+    }
+
+    function renderSections() {
+        const container = document.getElementById('preset-sections');
+        container.innerHTML = '';
+
+        ASSET_CATEGORIES.forEach(cat => {
+            const items = _currentAssets[cat.key] || [];
+            const section = document.createElement('div');
+            section.style.cssText = 'margin-bottom: 20px; padding: 16px; background: var(--bg-surface); border-radius: var(--radius-sm); border: 1px solid var(--border);';
+            section.innerHTML = `
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 16px;">${cat.icon}</span>
+                        <span style="font-weight: 600; font-size: 14px; color: var(--text-primary);">${cat.label}</span>
+                        <span style="font-size: 11px; color: var(--text-muted); background: var(--bg-deep); padding: 2px 8px; border-radius: 10px;">${items.length}</span>
+                    </div>
+                    <button onclick="showAddForm('${cat.key}', '${cat.keyField}')" style="padding: 4px 12px; background: none; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-muted); font-size: 12px; cursor: pointer; transition: all 0.2s;"
+                        onmouseover="this.style.borderColor='var(--accent)'; this.style.color='var(--accent)'"
+                        onmouseout="this.style.borderColor='var(--border)'; this.style.color='var(--text-muted)'">+ Adicionar</button>
+                </div>
+                <div id="add-form-${cat.key}" style="display:none; margin-bottom: 10px;">
+                    <div style="display: flex; gap: 6px;">
+                        <input type="text" id="add-input-${cat.key}" placeholder="Novo valor..."
+                            style="flex:1; padding: 7px 10px; background: var(--bg-deep); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-primary); font-size: 13px;"
+                            onkeydown="if(event.key==='Enter') addPresetItem('${cat.key}', '${cat.keyField}')">
+                        <button onclick="addPresetItem('${cat.key}', '${cat.keyField}')"
+                            style="padding: 7px 14px; background: var(--accent); color: var(--bg-deep); border: none; border-radius: var(--radius-sm); font-size: 12px; font-weight: 600; cursor: pointer;">Salvar</button>
+                        <button onclick="document.getElementById('add-form-${cat.key}').style.display='none'"
+                            style="padding: 7px 10px; background: none; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-muted); font-size: 12px; cursor: pointer;">✕</button>
+                    </div>
+                </div>
+                <div id="items-${cat.key}"></div>
+            `;
+            container.appendChild(section);
+            renderItems(cat.key, cat.keyField, cat.displayFn, items);
+        });
+    }
+
+    function renderItems(catKey, keyField, displayFn, items) {
+        const el = document.getElementById(`items-${catKey}`);
+        if (items.length === 0) {
+            el.innerHTML = '<div style="font-size: 12px; color: var(--text-muted); padding: 8px 0;">Nenhum item salvo.</div>';
+            return;
+        }
+        // Ordenar por use_count desc
+        items.sort((a, b) => (b.use_count || 0) - (a.use_count || 0));
+        el.innerHTML = items.map(item => {
+            const val = item[keyField] || '';
+            const label = displayFn(item);
+            const count = item.use_count || 0;
+            return `
+                <div style="display: flex; align-items: center; gap: 8px; padding: 7px 0; border-bottom: 1px solid var(--border-subtle); font-size: 13px;">
+                    <span style="color: #f59e0b; font-size: 12px;">★</span>
+                    <span style="flex: 1; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(label)}">${escapeHtml(label.length > 70 ? label.substring(0,70) + '...' : label)}</span>
+                    <span style="font-size: 11px; color: var(--text-muted); white-space: nowrap;">${count}x usado</span>
+                    <button onclick="removePresetItem('${catKey}', '${keyField}', '${escapeHtml(val)}', this)"
+                        style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 14px; padding: 2px 6px; opacity: 0.5; transition: all 0.15s;"
+                        onmouseover="this.style.opacity='1'; this.style.color='var(--danger)'"
+                        onmouseout="this.style.opacity='0.5'; this.style.color='var(--text-muted)'"
+                        title="Remover">✕</button>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g, '&#39;');
+    }
+
+    function showAddForm(catKey) {
+        const form = document.getElementById(`add-form-${catKey}`);
+        form.style.display = 'block';
+        document.getElementById(`add-input-${catKey}`).focus();
+    }
+
+    async function addPresetItem(catKey, keyField) {
+        const input = document.getElementById(`add-input-${catKey}`);
+        const value = input.value.trim();
+        if (!value) return;
+
+        await fetch(`/api/conta/${_currentAccount}/save-asset`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({asset_type: catKey, key_field: keyField, value})
+        });
+
+        if (!_currentAssets[catKey]) _currentAssets[catKey] = [];
+        _currentAssets[catKey].push({[keyField]: value, use_count: 0});
+        input.value = '';
+        document.getElementById(`add-form-${catKey}`).style.display = 'none';
+
+        const cat = ASSET_CATEGORIES.find(c => c.key === catKey);
+        renderItems(catKey, keyField, cat.displayFn, _currentAssets[catKey]);
+        // Atualizar badge de contagem
+        renderSections();
+    }
+
+    async function removePresetItem(catKey, keyField, value, btn) {
+        await fetch(`/api/conta/${_currentAccount}/remove-asset`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({asset_type: catKey, key_field: keyField, value})
+        });
+
+        if (_currentAssets[catKey]) {
+            _currentAssets[catKey] = _currentAssets[catKey].filter(i => String(i[keyField]) !== String(value));
+        }
+
+        const cat = ASSET_CATEGORIES.find(c => c.key === catKey);
+        renderItems(catKey, keyField, cat.displayFn, _currentAssets[catKey] || []);
+        renderSections();
+    }
+
+    async function saveCac() {
+        const value = document.getElementById('cac-target').value;
+        await fetch(`/api/conta/${_currentAccount}/save-cac`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({cac_target_value: value || null})
+        });
+        // Visual feedback
+        const btn = event.target;
+        const orig = btn.textContent;
+        btn.textContent = '✓ Salvo';
+        btn.style.background = 'var(--success)';
+        setTimeout(() => { btn.textContent = orig; btn.style.background = 'var(--accent)'; }, 1500);
+    }
+</script>
+{% endblock %}
