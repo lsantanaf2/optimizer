@@ -1,14 +1,12 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
+{% extends "base.html" %}
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Setup de Anúncios — {{ campaign_name }}</title>
-    <link rel="stylesheet" href="/static/style.css">
-</head>
+{% block title %}Setup de Anúncios — {{ campaign_name }}{% endblock %}
 
-<body>
+{% block breadcrumb %}
+<a href="/">Contas</a> → <a href="/conta/{{ account_id }}">Campanhas</a> → Setup
+{% endblock %}
+
+{% block content %}
     <style>
         .btn-star-asset {
             background: none; border: 1px solid var(--border); border-radius: var(--radius-sm);
@@ -43,13 +41,6 @@
             text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--border);
         }
     </style>
-
-    <div class="topbar">
-        <h1>⚡ OPTIMIZER <span class="version-tag">{{ version }}</span></h1>
-        <div class="breadcrumb">
-            <a href="/">Contas</a> → <a href="/conta/{{ account_id }}">Campanhas</a> → Setup
-        </div>
-    </div>
 
     <!-- Datalists -->
     <datalist id="dl-urls"></datalist>
@@ -472,8 +463,6 @@
 
     </div>
 
-    <div class="toast" id="toast"></div>
-
     <style>
         .upload-options {
             display: flex;
@@ -532,7 +521,9 @@
             color: white;
         }
     </style>
+{% endblock %}
 
+{% block scripts %}
     <script>
         const CAMPAIGN_ID = "{{ campaign_id }}";
         const ACCOUNT_ID = "{{ account_id }}";
@@ -1732,12 +1723,6 @@
         }
 
         // ======================== UTILS ========================
-        function mostrarToast(msg) {
-            const t = document.getElementById('toast');
-            t.textContent = msg; t.classList.add('show');
-            setTimeout(() => t.classList.remove('show'), 3500);
-        }
-
         // ======================== CROSS CHECK / WARNINGS ========================
         function verificarAvisoCorte() {
             const feedInput = document.getElementById('arquivo_feed');
@@ -1790,8 +1775,4 @@
         }
 
     </script>
-
-
-</body>
-
-</html>
+{% endblock %}

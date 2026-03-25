@@ -171,7 +171,20 @@ def turbinada_page(account_id):
     if not token:
         return redirect(url_for('pagina_login'))
     session['account_id'] = account_id
-    return render_template('turbinada.html', account_id=account_id)
+
+    # Buscar CAC máximo salvo no banco
+    cac_max = 150  # fallback padrão
+    user_id = session.get('user_id')
+    if user_id:
+        try:
+            from modules.account_settings import get_settings_for_setup
+            settings = get_settings_for_setup(user_id, account_id)
+            if settings.get('cac_target_value'):
+                cac_max = settings['cac_target_value']
+        except Exception:
+            pass
+
+    return render_template('turbinada.html', account_id=account_id, cac_max=cac_max)
 
 @optimization_bp.route('/api/account/<account_id>/turbinada/<level>')
 def api_turbinada(account_id, level):

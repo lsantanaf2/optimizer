@@ -462,7 +462,7 @@
     <div class="turb-cac-inputs">
         <div>
             <label>CAC Máximo (≥)</label>
-            <input type="number" id="cac-y" value="150" step="1" onchange="applyCAC()">
+            <input type="number" id="cac-y" value="{{ cac_max or 150 }}" step="1" onchange="applyCAC()">
         </div>
         <button
             style="padding:6px 14px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--bg-card); color:var(--text-primary); cursor:pointer; font-size:12px; font-weight:600;"

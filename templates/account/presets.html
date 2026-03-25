@@ -51,7 +51,13 @@
             <select id="preset-account" onchange="loadPresets()" style="padding: 8px 12px; background: var(--bg-deep); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-primary); font-size: 13px; min-width: 320px;">
                 <option value="">— Selecione uma conta —</option>
                 {% for acc in accounts %}
-                <option value="{{ acc.meta_account_id }}">{{ acc.account_name or acc.meta_account_id }} (act_{{ acc.meta_account_id }})</option>
+                <option value="{{ acc.meta_account_id }}">
+                    {%- if acc.account_name and acc.account_name != acc.meta_account_id -%}
+                        {{ acc.account_name }} (act_{{ acc.meta_account_id }})
+                    {%- else -%}
+                        act_{{ acc.meta_account_id }}
+                    {%- endif -%}
+                </option>
                 {% endfor %}
             </select>
         </div>
@@ -63,15 +69,15 @@
             <div style="margin-bottom: 24px; padding: 16px; background: var(--bg-surface); border-radius: var(--radius-sm); border: 1px solid var(--border);">
                 <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
                     <span style="font-size: 16px;">🎯</span>
-                    <span style="font-weight: 600; font-size: 14px; color: var(--text-primary);">CAC Ideal</span>
+                    <span style="font-weight: 600; font-size: 14px; color: var(--text-primary);">CAC Máximo</span>
                 </div>
                 <div style="display: flex; gap: 8px; align-items: center;">
                     <span style="color: var(--text-muted); font-size: 13px;">R$</span>
                     <input type="number" id="cac-target" step="0.01" min="0" placeholder="Ex: 45.00"
                         style="padding: 8px 12px; background: var(--bg-deep); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-primary); font-size: 13px; width: 140px;">
-                    <button onclick="saveCac()" style="padding: 8px 16px; background: var(--accent); color: var(--bg-deep); border: none; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; cursor: pointer;">Salvar</button>
+                    <button id="btn-save-cac" onclick="saveCac(this)" style="padding: 8px 16px; background: var(--accent); color: var(--bg-deep); border: none; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; cursor: pointer;">Salvar</button>
                 </div>
-                <div style="font-size: 11px; color: var(--text-muted); margin-top: 6px;">Usado como referência na Turbinada para destacar ads acima do custo ideal.</div>
+                <div style="font-size: 11px; color: var(--text-muted); margin-top: 6px;">Usado como referência na Turbinada para destacar ads acima deste custo.</div>
             </div>
 
             <!-- Categorias de assets -->
@@ -238,18 +244,20 @@
         renderSections();
     }
 
-    async function saveCac() {
+    async function saveCac(btn) {
         const value = document.getElementById('cac-target').value;
         await fetch(`/api/conta/${_currentAccount}/save-cac`, {
             method: 'POST', headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({cac_target_value: value || null})
         });
-        // Visual feedback
-        const btn = event.target;
-        const orig = btn.textContent;
-        btn.textContent = '✓ Salvo';
-        btn.style.background = 'var(--success)';
-        setTimeout(() => { btn.textContent = orig; btn.style.background = 'var(--accent)'; }, 1500);
+        // Visual feedback: toast + botão
+        mostrarToast('✅ CAC Máximo salvo com sucesso!');
+        if (btn) {
+            const orig = btn.textContent;
+            btn.textContent = '✓ Salvo';
+            btn.style.background = 'var(--success)';
+            setTimeout(() => { btn.textContent = orig; btn.style.background = 'var(--accent)'; }, 1500);
+        }
     }
 </script>
 {% endblock %}

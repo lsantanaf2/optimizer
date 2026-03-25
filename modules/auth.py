@@ -328,9 +328,31 @@ def disconnect_meta():
 @login_required
 def account_presets():
     """Página de gestão de presets por conta de anúncios."""
-    from modules.account_settings import list_imported_accounts
+    from modules.account_settings import list_imported_accounts, get_or_create_imported_account
     user_id = session['user_id']
     accounts = list_imported_accounts(user_id)
+
+    # Tentar preencher nomes faltantes via Meta API
+    access_token = session.get('access_token')
+    if access_token:
+        from facebook_business.api import FacebookAdsApi
+        from facebook_business.adobjects.adaccount import AdAccount
+        try:
+            FacebookAdsApi.init(APP_ID, APP_SECRET, access_token)
+            for acc in accounts:
+                if not acc.get('account_name') or acc['account_name'] == acc['meta_account_id']:
+                    try:
+                        meta_acc = AdAccount(f"act_{acc['meta_account_id']}")
+                        info = meta_acc.api_get(fields=['name'])
+                        real_name = info.get('name')
+                        if real_name:
+                            acc['account_name'] = real_name
+                            get_or_create_imported_account(user_id, acc['meta_account_id'], real_name)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
     return render_template('account/presets.html', accounts=accounts)
 
 
