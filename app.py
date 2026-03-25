@@ -30,7 +30,7 @@ if _missing:
     print("   Use: docker run ... -e APP_ID=<valor> -e APP_SECRET=<valor> ...")
 
 app = Flask(__name__, static_folder='static')
-app.secret_key = 'chave-secreta-optimizer-2024'
+app.secret_key = os.getenv('FLASK_SECRET_KEY') or os.urandom(32)
 
 from modules.optimization import optimization_bp
 app.register_blueprint(optimization_bp)

@@ -606,7 +606,11 @@ class MetaUploader:
     # ======================== IDENTITY & TRACKING FETCHERS ========================
 
     def get_pages(self):
-        """Busca páginas: Ad Account primeiro (topo), depois diretas e via BM."""
+        """Busca páginas vinculadas à conta de anúncios e ao perfil do usuário.
+        Usa apenas permissões declaradas no escopo OAuth (ads_read + pages_show_list).
+        Fonte 3 (Business Manager via /me/businesses) removida — requereria
+        business_management que não está no escopo aprovado.
+        """
         seen_ids = set()
         result = []
 
@@ -636,7 +640,7 @@ class MetaUploader:
         except Exception as e:
             print(f"⚠️ [get_pages] Fonte 1 (promote_pages) falhou: {e}")
 
-        # ── Fonte 2: /me/accounts (páginas diretas — complemento) ──
+        # ── Fonte 2: /me/accounts (páginas diretas — requer pages_show_list) ──
         try:
             me = User(fbid='me')
             pages = me.get_accounts(fields=['name', 'access_token', 'instagram_business_account'])
@@ -649,32 +653,6 @@ class MetaUploader:
             print(f"📄 [get_pages] Fonte 2 (/me/accounts): +{len(result) - before} páginas novas")
         except Exception as e:
             print(f"⚠️ [get_pages] Fonte 2 falhou: {e}")
-
-        # ── Fonte 3: Business Manager owned_pages + client_pages (complemento) ──
-        try:
-            bm_resp = requests.get(
-                f"https://graph.facebook.com/v22.0/me/businesses",
-                params={'fields': 'id,name', 'access_token': self.access_token}
-            ).json()
-            businesses = bm_resp.get('data', [])
-            fields = 'id,name,instagram_business_account'
-            for bm in businesses:
-                bm_id = bm.get('id')
-                for endpoint in ['owned_pages', 'client_pages']:
-                    try:
-                        resp = requests.get(
-                            f"https://graph.facebook.com/v22.0/{bm_id}/{endpoint}",
-                            params={'fields': fields, 'access_token': self.access_token}
-                        ).json()
-                        for p in resp.get('data', []):
-                            pid = p.get('id')
-                            if pid and pid not in seen_ids:
-                                seen_ids.add(pid)
-                                result.append(_parse_page(p))
-                    except Exception as e:
-                        print(f"⚠️ [get_pages] BM {bm_id}/{endpoint} falhou: {e}")
-        except Exception as e:
-            print(f"⚠️ [get_pages] Fonte 3 (Business Manager) falhou: {e}")
 
         print(f"📄 [get_pages] Total: {len(result)} páginas únicas")
         return result

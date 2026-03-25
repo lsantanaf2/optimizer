@@ -12,6 +12,7 @@ from flask import Blueprint, request, redirect, session, url_for, render_templat
 from urllib.parse import quote
 
 from modules.database import fetch_one, execute_returning, execute
+from modules.token_crypto import encrypt_token, decrypt_token, is_encrypted
 
 logger = logging.getLogger(__name__)
 
@@ -87,13 +88,20 @@ def login_submit():
     session['user_id'] = str(user['id'])
     session['user_email'] = user['email']
 
-    # Verificar se tem Meta token no banco
+    # Verificar se tem Meta token no banco (decifra se necessário)
     token_row = fetch_one(
         "SELECT access_token FROM user_meta_tokens WHERE user_id = %s",
         (user['id'],)
     )
     if token_row:
-        session['access_token'] = token_row['access_token']
+        stored = token_row['access_token']
+        # Re-criptografa tokens legados em plaintext encontrados no banco
+        if not is_encrypted(stored):
+            execute(
+                "UPDATE user_meta_tokens SET access_token = %s WHERE user_id = %s",
+                (encrypt_token(stored), user['id'])
+            )
+        session['access_token'] = decrypt_token(stored)
         return redirect(url_for('index'))
 
     # Sem Meta conectado — redirecionar para conectar
@@ -146,7 +154,7 @@ def register_submit():
 @auth_bp.route('/connect-meta', methods=['GET'])
 @login_required
 def connect_meta_page():
-    scopes = 'public_profile,email,ads_read,ads_management,pages_show_list,pages_read_engagement,instagram_basic,read_insights,pages_manage_ads'
+    scopes = 'public_profile,email,ads_read,ads_management,pages_show_list,instagram_basic,read_insights,pages_manage_ads,leads_retrieval'
     encoded_uri = quote(REDIRECT_URI)
     auth_url = (
         f"https://www.facebook.com/v22.0/dialog/oauth?"
@@ -188,23 +196,24 @@ def meta_callback():
     me = req.get(f"https://graph.facebook.com/v22.0/me?access_token={access_token}").json()
     meta_user_id = me.get('id', 'unknown')
 
-    # Upsert token no banco
+    # Upsert token no banco (criptografado em repouso)
+    encrypted = encrypt_token(access_token)
     existing = fetch_one("SELECT id FROM user_meta_tokens WHERE user_id = %s", (user_id,))
     if existing:
         execute(
             """UPDATE user_meta_tokens
                SET access_token = %s, meta_user_id = %s, updated_at = NOW()
                WHERE user_id = %s""",
-            (access_token, meta_user_id, user_id)
+            (encrypted, meta_user_id, user_id)
         )
     else:
         execute(
             """INSERT INTO user_meta_tokens (user_id, meta_user_id, access_token)
                VALUES (%s, %s, %s)""",
-            (user_id, meta_user_id, access_token)
+            (user_id, meta_user_id, encrypted)
         )
 
-    # Setar na sessão
+    # Setar na sessão (plaintext — nunca armazenamos o token cifrado na sessão)
     session['access_token'] = access_token
 
     # Compatibilidade: salvar token.json para funções legadas
@@ -251,7 +260,7 @@ def account_profile():
     )
 
     # URL de re-autenticação Meta
-    scopes = 'public_profile,email,ads_read,ads_management,pages_show_list,pages_read_engagement,instagram_basic,read_insights,pages_manage_ads'
+    scopes = 'public_profile,email,ads_read,ads_management,pages_show_list,instagram_basic,read_insights,pages_manage_ads,leads_retrieval'
     encoded_uri = quote(REDIRECT_URI)
     reauth_url = (
         f"https://www.facebook.com/v22.0/dialog/oauth?"
