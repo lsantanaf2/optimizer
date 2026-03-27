@@ -177,6 +177,72 @@
         padding: 12px 16px;
     }
 
+    /* ── Funil de Conversão ── */
+    .funnel-card {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        padding: 16px 20px;
+    }
+    .funnel-card-title {
+        font-size: 12px; font-weight: 700;
+        color: var(--text-muted); text-transform: uppercase;
+        letter-spacing: 0.6px; margin-bottom: 16px;
+    }
+    .funnel-stages {
+        display: flex;
+        align-items: stretch;
+        gap: 0;
+        overflow-x: auto;
+    }
+    .funnel-step {
+        flex: 1;
+        min-width: 110px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        padding: 0 6px;
+    }
+    .funnel-step-final .funnel-step-name { color: #2cb67d; }
+    .funnel-step-name {
+        font-size: 11px; font-weight: 600;
+        color: var(--text-secondary);
+        text-align: center; white-space: nowrap;
+    }
+    .funnel-step-value {
+        font-size: 20px; font-weight: 700;
+        color: var(--text-primary); text-align: center;
+    }
+    .funnel-step-bar-wrap {
+        width: 100%; height: 8px;
+        background: rgba(255,255,255,0.04);
+        border-radius: 4px; overflow: hidden;
+    }
+    .funnel-step-bar {
+        height: 100%; border-radius: 4px;
+        transition: width 0.6s ease;
+    }
+    .funnel-connector {
+        display: flex; flex-direction: column;
+        align-items: center; justify-content: center;
+        padding: 0 6px; gap: 2px;
+        min-width: 64px; flex-shrink: 0;
+    }
+    .funnel-rate {
+        font-size: 13px; font-weight: 700;
+        color: var(--text-primary);
+    }
+    .funnel-rate-label {
+        font-size: 9px; color: var(--text-muted);
+        text-transform: uppercase; letter-spacing: 0.4px;
+        white-space: nowrap;
+    }
+    .funnel-arrow {
+        font-size: 10px; color: var(--text-muted);
+        margin-top: 2px;
+    }
+
     .kpi-label {
         font-size: 10px;
         color: var(--text-muted);
@@ -710,6 +776,63 @@
     <div class="kpi-card">
         <div class="kpi-label">🧮 CPL Total</div>
         <div class="kpi-value" id="kpi-cpl">—</div>
+    </div>
+</div>
+
+<!-- Funil de Conversão -->
+<div class="funnel-card" id="funnel-card" style="display:none; margin-bottom:14px;">
+    <div class="funnel-card-title">🔽 Funil de Conversão</div>
+    <div class="funnel-stages" id="funnel-stages">
+        <!-- Estágio 1: Impressões -->
+        <div class="funnel-step">
+            <div class="funnel-step-name">👁 Impressões</div>
+            <div class="funnel-step-value" id="f-impressions">—</div>
+            <div class="funnel-step-bar-wrap"><div class="funnel-step-bar" id="fb-impressions" style="width:100%;background:#4f9cf9;"></div></div>
+        </div>
+        <div class="funnel-connector">
+            <div class="funnel-rate" id="f-ctr">—%</div>
+            <div class="funnel-rate-label">CTR</div>
+            <div class="funnel-arrow">▼</div>
+        </div>
+        <!-- Estágio 2: Cliques no Link -->
+        <div class="funnel-step">
+            <div class="funnel-step-name">🖱 Cliques no Link</div>
+            <div class="funnel-step-value" id="f-link-clicks">—</div>
+            <div class="funnel-step-bar-wrap"><div class="funnel-step-bar" id="fb-link-clicks" style="background:#7f5af0;"></div></div>
+        </div>
+        <div class="funnel-connector">
+            <div class="funnel-rate" id="f-connect-rate">—%</div>
+            <div class="funnel-rate-label">Connect Rate</div>
+            <div class="funnel-arrow">▼</div>
+        </div>
+        <!-- Estágio 3: Visualizações da Página -->
+        <div class="funnel-step">
+            <div class="funnel-step-name">📄 Vis. Pág. Destino</div>
+            <div class="funnel-step-value" id="f-landing-views">—</div>
+            <div class="funnel-step-bar-wrap"><div class="funnel-step-bar" id="fb-landing-views" style="background:#f9a84f;"></div></div>
+        </div>
+        <div class="funnel-connector">
+            <div class="funnel-rate" id="f-typeform-rate">—%</div>
+            <div class="funnel-rate-label">→ TypeForm</div>
+            <div class="funnel-arrow">▼</div>
+        </div>
+        <!-- Estágio 4: TypeForm Submit -->
+        <div class="funnel-step">
+            <div class="funnel-step-name">📝 TypeForm Submit</div>
+            <div class="funnel-step-value" id="f-typeform">—</div>
+            <div class="funnel-step-bar-wrap"><div class="funnel-step-bar" id="fb-typeform" style="background:#f05af0;"></div></div>
+        </div>
+        <div class="funnel-connector">
+            <div class="funnel-rate" id="f-mql-rate">—%</div>
+            <div class="funnel-rate-label">→ MQL</div>
+            <div class="funnel-arrow">▼</div>
+        </div>
+        <!-- Estágio 5: MQL -->
+        <div class="funnel-step funnel-step-final">
+            <div class="funnel-step-name">🎯 MQL</div>
+            <div class="funnel-step-value" id="f-mqls">—</div>
+            <div class="funnel-step-bar-wrap"><div class="funnel-step-bar" id="fb-mqls" style="background:#2cb67d;"></div></div>
+        </div>
     </div>
 </div>
 
@@ -1653,6 +1776,37 @@
         }
     }
 
+    // ── Funil de Conversão ───────────────────────────────────────────────────────
+    function renderFunnel(f) {
+        if (!f) return;
+        const imp = f.impressions || 0;
+        const lc  = f.link_clicks || 0;
+        const lpv = f.landing_page_views || 0;
+        const tf  = f.typeform_submits || 0;
+        const mql = f.mqls || 0;
+
+        const pct = (v) => imp > 0 ? Math.max(4, Math.round(v / imp * 100)) : 0;
+
+        document.getElementById('f-impressions').textContent  = fmtN(imp);
+        document.getElementById('f-link-clicks').textContent  = fmtN(lc);
+        document.getElementById('f-landing-views').textContent = fmtN(lpv);
+        document.getElementById('f-typeform').textContent     = fmtN(tf);
+        document.getElementById('f-mqls').textContent         = fmtN(mql);
+
+        document.getElementById('f-ctr').textContent          = f.ctr + '%';
+        document.getElementById('f-connect-rate').textContent = f.connect_rate + '%';
+        document.getElementById('f-typeform-rate').textContent = f.typeform_rate + '%';
+        document.getElementById('f-mql-rate').textContent     = f.mql_rate + '%';
+
+        document.getElementById('fb-impressions').style.width  = '100%';
+        document.getElementById('fb-link-clicks').style.width  = pct(lc)  + '%';
+        document.getElementById('fb-landing-views').style.width = pct(lpv) + '%';
+        document.getElementById('fb-typeform').style.width     = pct(tf)  + '%';
+        document.getElementById('fb-mqls').style.width         = pct(mql) + '%';
+
+        document.getElementById('funnel-card').style.display = '';
+    }
+
     // ── KPIs ─────────────────────────────────────────────────────────────────────
     function updateKPIs(data) {
         let totSpend = 0;
@@ -1671,7 +1825,7 @@
     }
 
     async function loadData() {
-        ['kpi-bar','crz-meta','crz-main-grid','crz-timeline-container','crz-spend-container','crz-ads-container','crz-adsets-container','crz-campaigns-container'].forEach(id => {
+        ['kpi-bar','funnel-card','crz-meta','crz-main-grid','crz-timeline-container','crz-spend-container','crz-ads-container','crz-adsets-container','crz-campaigns-container'].forEach(id => {
             const el = document.getElementById(id); if (el) el.style.display = 'none';
         });
         document.getElementById('crz-loading').style.display = '';
@@ -1683,6 +1837,7 @@
             if (!json.success) throw new Error(json.error || 'Erro desconhecido');
 
             updateKPIs(json.data);
+            renderFunnel(json.data.funnel);
             renderDonut(json.data.by_produto || {});
             renderDayTable(json.data.by_date || []);
 

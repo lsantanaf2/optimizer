@@ -2,9 +2,11 @@ import os
 import json
 import time
 import tempfile
+import queue
+import threading
 from flask import (
     Flask, request, redirect, session, render_template,
-    jsonify, Response, stream_with_context, url_for
+    jsonify, Response, stream_with_context, url_for, copy_current_request_context
 )
 from dotenv import load_dotenv
 from facebook_business.api import FacebookAdsApi
@@ -57,7 +59,7 @@ from modules.account_settings import (
 import atexit
 atexit.register(close_db)
 
-VERSION = "v2.5.4"
+VERSION = "v2.5.6"
 
 @app.before_request
 def ensure_db():
@@ -632,120 +634,126 @@ def historico_textos(campaign_id):
 
 @app.route('/campanha/<campaign_id>/upload', methods=['POST'])
 def upload_single(campaign_id):
-    """Upload de um único anúncio. Chamado pelo frontend para cada item da fila."""
+    """Upload de um único anúncio via SSE stream. Cada etapa emite um evento de progresso."""
     access_token = obter_token()
     if not access_token:
         return jsonify({'success': False, 'error': 'Não autenticado'}), 401
 
-    uploader = None
-    try:
-        account_id = session.get('account_id', '')
-        # Identity & Tracking from form
-        page_id = request.form.get('page_id')
-        instagram_actor_id = request.form.get('instagram_actor_id') or None
-        pixel_id = request.form.get('pixel_id') or None
+    # Extrair todos os dados do request ANTES da thread (contexto de request não é thread-safe)
+    account_id = session.get('account_id', '')
+    user_id = session.get('user_id')
+    page_id = request.form.get('page_id')
+    instagram_actor_id = request.form.get('instagram_actor_id') or None
+    pixel_id = request.form.get('pixel_id') or None
+    estrategia = request.form.get('estrategia')
+    destino = request.form.get('destino_conjunto', '')
+    adset_existente = request.form.get('adset_existente', '')
+    adset_modelo = request.form.get('adset_modelo', '')
+    ad_name = request.form.get('ad_name', 'Anúncio sem nome')
+    ad_status = request.form.get('ad_status', 'PAUSED').upper()
+    if ad_status not in ('ACTIVE', 'PAUSED'):
+        ad_status = 'PAUSED'
+    url_destino = request.form.get('url_destino', '')
+    utm_pattern = request.form.get('utm_pattern', '')
+    cta = request.form.get('cta', 'LEARN_MORE')
+    textos = request.form.getlist('primary_text[]')
+    titulos = request.form.getlist('headline[]')
+    lead_gen_form_id = request.form.get('lead_gen_form_id') or None
+    url_feed_remote = request.form.get('url_feed_remote') or None
+    url_stories_remote = request.form.get('url_stories_remote') or None
 
-        estrategia = request.form.get('estrategia')
-        destino = request.form.get('destino_conjunto', '')
-        adset_existente = request.form.get('adset_existente', '')
-        adset_modelo = request.form.get('adset_modelo', '')
-        ad_name = request.form.get('ad_name', 'Anúncio sem nome')
-        ad_status = request.form.get('ad_status', 'PAUSED').upper()
-        if ad_status not in ('ACTIVE', 'PAUSED'):
-            ad_status = 'PAUSED'
-        url_destino = request.form.get('url_destino', '')
-        utm_pattern = request.form.get('utm_pattern', '')
-        cta = request.form.get('cta', 'LEARN_MORE')
-        textos = request.form.getlist('primary_text[]')
-        titulos = request.form.getlist('headline[]')
-        lead_gen_form_id = request.form.get('lead_gen_form_id') or None
+    # Salvar arquivos locais em temp dir antes da thread
+    temp_dir = tempfile.mkdtemp(prefix='optimizer_')
+    feed_path = None
+    stories_path = None
 
-        # New: Links from Drive/Remote
-        url_feed_remote = request.form.get('url_feed_remote') or None
-        url_stories_remote = request.form.get('url_stories_remote') or None
+    if 'arquivo_feed' in request.files:
+        f = request.files['arquivo_feed']
+        if f.filename:
+            safe_name = os.path.basename(f.filename)
+            feed_path = os.path.join(temp_dir, safe_name)
+            f.save(feed_path)
+            print(f"📁 [UPLOAD LOCAL] Feed salvo: {feed_path} ({os.path.getsize(feed_path) / 1024:.0f} KB)")
 
-        # Save uploaded files to temp dir
-        temp_dir = tempfile.mkdtemp(prefix='optimizer_')
-        feed_path = None
-        stories_path = None
+    if 'arquivo_stories' in request.files:
+        f = request.files['arquivo_stories']
+        if f.filename:
+            safe_name = os.path.basename(f.filename)
+            stories_path = os.path.join(temp_dir, safe_name)
+            f.save(stories_path)
+            print(f"📁 [UPLOAD LOCAL] Stories salvo: {stories_path} ({os.path.getsize(stories_path) / 1024:.0f} KB)")
 
-        if 'arquivo_feed' in request.files:
-            f = request.files['arquivo_feed']
-            if f.filename:
-                safe_name = os.path.basename(f.filename)  # webkitdirectory pode enviar path relativo
-                feed_path = os.path.join(temp_dir, safe_name)
-                f.save(feed_path)
-                saved_size = os.path.getsize(feed_path)
-                print(f"📁 [UPLOAD LOCAL] Feed salvo: {feed_path} ({saved_size / 1024:.0f} KB)")
+    if not feed_path and not stories_path and not url_feed_remote and not url_stories_remote:
+        return jsonify({'success': False, 'error': 'Nenhuma mídia (arquivo ou link) enviada'}), 400
 
-        if 'arquivo_stories' in request.files:
-            f = request.files['arquivo_stories']
-            if f.filename:
-                safe_name = os.path.basename(f.filename)  # webkitdirectory pode enviar path relativo
-                stories_path = os.path.join(temp_dir, safe_name)
-                f.save(stories_path)
-                saved_size = os.path.getsize(stories_path)
-                print(f"📁 [UPLOAD LOCAL] Stories salvo: {stories_path} ({saved_size / 1024:.0f} KB)")
+    msg_queue = queue.Queue()
 
-        if not feed_path and not stories_path and not url_feed_remote and not url_stories_remote:
-            return jsonify({'success': False, 'error': 'Nenhuma mídia (arquivo ou link) enviada'}), 400
-
-        print(f"📦 [UPLOAD LOCAL] Resumo: feed_path={feed_path}, stories_path={stories_path}, url_feed={url_feed_remote}, url_stories={url_stories_remote}")
-
-        # Initialize uploader
-        uploader = MetaUploader(account_id, access_token, APP_ID, APP_SECRET)
-
-        # Upload media files
-        feed_media = None
-        stories_media = None
-
-        # Case 1: Prioritize Remote URLs (Drive)
-        if url_feed_remote:
-            feed_media = uploader.upload_media(url=url_feed_remote)
-            uploader.smart_delay()
-        elif feed_path:
-            feed_media = uploader.upload_media(file_path=feed_path)
-            uploader.smart_delay()
-
-        if url_stories_remote:
-            stories_media = uploader.upload_media(url=url_stories_remote)
-            uploader.smart_delay()
-        elif stories_path:
-            stories_media = uploader.upload_media(file_path=stories_path)
-            uploader.smart_delay()
-
-        # Determine target adset
-        target_adset_id = adset_existente or adset_modelo
-        if not target_adset_id:
-            return jsonify({'success': False, 'error': 'Nenhum Ad Set selecionado'}), 400
-
-        # Validation for Identity
-        if not page_id:
-             return jsonify({'success': False, 'error': 'Página do Facebook Obrigatória'}), 400
-
-        # Handle strategy: duplicate adset if needed
-        # NOTA: Garimpo e Novo duplicam no FRONTEND (subirTodos), não aqui.
-        actual_adset_id = target_adset_id
-        if destino == 'duplicar' and estrategia == 'agrupado':
-            actual_adset_id = uploader.duplicate_adset(target_adset_id)
-            uploader.smart_delay()
-
-        # Build full URL (UTMs vão apenas no url_tags, não na URL do link)
-        full_url = url_destino
-
-        # Aguardar processamento dos vídeos ANTES de criar o creative
-        if feed_media and feed_media.get('type') == 'video' and feed_media.get('id'):
-            uploader.wait_for_video_ready(feed_media['id'])
-        if stories_media and stories_media.get('type') == 'video' and stories_media.get('id'):
-            uploader.wait_for_video_ready(stories_media['id'])
-
-        # Create creative with placement rules
+    def _run_upload():
+        uploader = None
         try:
+            def _evt(type, **kw):
+                msg_queue.put({'type': type, **kw})
+
+            uploader = MetaUploader(account_id, access_token, APP_ID, APP_SECRET)
+            uploader.set_callback(lambda msg: _evt('log', message=msg))
+
+            _evt('progress', percent=10, stage='upload_feed',
+                 message='📤 Enviando mídia feed para Meta...')
+
+            feed_media = None
+            stories_media = None
+
+            if url_feed_remote:
+                feed_media = uploader.upload_media(url=url_feed_remote)
+                uploader.smart_delay()
+            elif feed_path:
+                feed_media = uploader.upload_media(file_path=feed_path)
+                uploader.smart_delay()
+
+            has_stories = url_stories_remote or stories_path
+            if has_stories:
+                _evt('progress', percent=30, stage='upload_stories',
+                     message='📤 Enviando mídia stories para Meta...')
+                if url_stories_remote:
+                    stories_media = uploader.upload_media(url=url_stories_remote)
+                    uploader.smart_delay()
+                elif stories_path:
+                    stories_media = uploader.upload_media(file_path=stories_path)
+                    uploader.smart_delay()
+
+            target_adset_id = adset_existente or adset_modelo
+            if not target_adset_id:
+                raise ValueError('Nenhum Ad Set selecionado')
+            if not page_id:
+                raise ValueError('Página do Facebook Obrigatória')
+
+            actual_adset_id = target_adset_id
+            if destino == 'duplicar' and estrategia == 'agrupado':
+                actual_adset_id = uploader.duplicate_adset(target_adset_id)
+                uploader.smart_delay()
+
+            # Aguardar processamento de vídeos
+            if feed_media and feed_media.get('type') == 'video' and feed_media.get('id'):
+                _evt('progress', percent=45, stage='meta_processing',
+                     message='⏳ Meta processando vídeo do feed...', polling=True)
+                uploader.wait_for_video_ready(feed_media['id'])
+                _evt('progress', percent=60, stage='meta_processing_done',
+                     message='✅ Vídeo feed pronto.')
+
+            if stories_media and stories_media.get('type') == 'video' and stories_media.get('id'):
+                _evt('progress', percent=65, stage='meta_processing_stories',
+                     message='⏳ Meta processando vídeo stories...', polling=True)
+                uploader.wait_for_video_ready(stories_media['id'])
+                _evt('progress', percent=75, stage='meta_processing_stories_done',
+                     message='✅ Vídeo stories pronto.')
+
+            _evt('progress', percent=82, stage='create_creative',
+                 message='🎨 Criando criativo...')
             creative_id = uploader.create_creative_with_placements(
                 page_id=page_id,
                 feed_media=feed_media,
                 stories_media=stories_media,
-                link_url=full_url,
+                link_url=url_destino,
                 primary_texts=textos,
                 headlines=titulos,
                 cta_type=cta,
@@ -753,77 +761,93 @@ def upload_single(campaign_id):
                 url_tags=utm_pattern,
                 lead_gen_form_id=lead_gen_form_id,
             )
-        except ValueError as e:
-             return jsonify({'success': False, 'error': str(e)}), 400
+            uploader.smart_delay()
 
-        uploader.smart_delay()
+            _evt('progress', percent=92, stage='create_ad',
+                 message='📢 Criando anúncio...')
+            ad_id = uploader.create_ad(actual_adset_id, creative_id, ad_name,
+                                       pixel_id=pixel_id, ad_status=ad_status)
 
-        # Create ad com status configurado pelo usuário
-        ad_id = uploader.create_ad(actual_adset_id, creative_id, ad_name, pixel_id=pixel_id, ad_status=ad_status)
+            # Cleanup temp
+            try:
+                if feed_path and os.path.exists(feed_path):
+                    os.remove(feed_path)
+                if stories_path and os.path.exists(stories_path):
+                    os.remove(stories_path)
+                os.rmdir(temp_dir)
+            except OSError:
+                pass
 
-        # Cleanup temp files
-        try:
-            if feed_path and os.path.exists(feed_path):
-                os.remove(feed_path)
-            if stories_path and os.path.exists(stories_path):
-                os.remove(stories_path)
-            os.rmdir(temp_dir)
-        except OSError:
-            pass
-
-        # Squad 2 — salvar assets usados para pré-preencher próximos uploads
-        user_id = session.get('user_id')
-        if user_id:
-            save_upload_assets(user_id, account_id, {
-                'page_id': page_id,
-                'instagram_id': instagram_actor_id,
-                'pixel_id': pixel_id,
-                'primary_texts': textos,
-                'headlines': titulos,
-                'url': url_destino,
-                'utm': utm_pattern,
-                'cta': cta,
-            })
-            # Squad 3 — histórico de uploads
-            save_upload_history(
-                user_id, account_id,
-                campaign_name=campaign_id,
-                ad_name=ad_name,
-                strategy=estrategia,
-                success=True
-            )
-
-        return jsonify({
-            'success': True,
-            'ad_id': ad_id,
-            'message': f'Ad "{ad_name}" criado com sucesso ({ad_status})',
-            'logs': uploader.logs,
-        })
-
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        # Squad 3 — registrar falha no histórico
-        try:
-            user_id = session.get('user_id')
-            account_id = session.get('account_id', '')
-            ad_name_err = request.form.get('ad_name', 'Desconhecido')
-            if user_id and account_id:
+            # Squad 2 — salvar assets
+            if user_id:
+                save_upload_assets(user_id, account_id, {
+                    'page_id': page_id,
+                    'instagram_id': instagram_actor_id,
+                    'pixel_id': pixel_id,
+                    'primary_texts': textos,
+                    'headlines': titulos,
+                    'url': url_destino,
+                    'utm': utm_pattern,
+                    'cta': cta,
+                })
                 save_upload_history(
                     user_id, account_id,
                     campaign_name=campaign_id,
-                    ad_name=ad_name_err,
-                    strategy=request.form.get('estrategia'),
-                    success=False,
-                    error_message=str(e)[:500]
+                    ad_name=ad_name,
+                    strategy=estrategia,
+                    success=True
                 )
-        except Exception:
-            pass
-        return jsonify({
-            'success': False,
-            'error': str(e),
-            'logs': uploader.logs if uploader else [],
-        }), 500
+
+            _evt('done', percent=100, success=True, ad_id=ad_id,
+                 message=f'✅ Anúncio "{ad_name}" criado com sucesso.',
+                 logs=uploader.logs)
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            try:
+                if user_id and account_id:
+                    save_upload_history(
+                        user_id, account_id,
+                        campaign_name=campaign_id,
+                        ad_name=ad_name,
+                        strategy=estrategia,
+                        success=False,
+                        error_message=str(e)[:500]
+                    )
+            except Exception:
+                pass
+            msg_queue.put({'type': 'error', 'message': str(e),
+                           'logs': uploader.logs if uploader else []})
+        finally:
+            msg_queue.put(None)  # sentinel
+
+    thread = threading.Thread(target=_run_upload, daemon=True)
+
+    def _generate():
+        thread.start()
+        yield f"data: {json.dumps({'type': 'progress', 'percent': 5, 'stage': 'start', 'message': '🚀 Iniciando...'})}\n\n"
+        while True:
+            try:
+                item = msg_queue.get(timeout=180)
+            except queue.Empty:
+                yield ": keepalive\n\n"
+                continue
+            if item is None:
+                break
+            yield f"data: {json.dumps(item)}\n\n"
+            if item.get('type') in ('done', 'error'):
+                break
+
+    return Response(
+        stream_with_context(_generate()),
+        mimetype='text/event-stream',
+        headers={
+            'X-Accel-Buffering': 'no',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+        }
+    )
 
 
 @app.route('/campanha/<campaign_id>/duplicate-adset', methods=['POST'])

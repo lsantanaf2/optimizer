@@ -416,6 +416,20 @@
                 <div class="footer-note">Todos os anúncios serão criados com status <strong>PAUSED</strong>.</div>
             </div>
 
+            <!-- Barra de Progresso do Upload -->
+            <div id="upload-progress-container" style="display:none; margin-bottom:12px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                    <span id="upload-progress-label" style="font-size:13px; font-weight:600; color:#e0e0e0;">Iniciando...</span>
+                    <span id="upload-progress-pct" style="font-size:12px; color:#aaa;">0%</span>
+                </div>
+                <div style="background:#2a2a2a; border-radius:8px; height:10px; overflow:hidden; position:relative;">
+                    <div id="upload-progress-bar" style="height:100%; width:0%; background:linear-gradient(90deg,#4f9cf9,#7f5af0); border-radius:8px; transition:width 0.4s ease; position:relative;">
+                        <div id="upload-progress-pulse" style="display:none; position:absolute; right:0; top:0; height:100%; width:40px; background:linear-gradient(90deg,transparent,rgba(255,255,255,0.3),transparent); animation:pulse-sweep 1.2s infinite;"></div>
+                    </div>
+                </div>
+                <div id="upload-progress-item" style="font-size:11px; color:#888; margin-top:4px; text-align:center;"></div>
+            </div>
+
             <!-- Log Console — fora do queue-actions para persistir após sucesso -->
             <div class="log-console" id="log-console" style="display:none;">
                 <div class="log-console-header">
@@ -435,6 +449,11 @@
     </div>
 
     <style>
+        @keyframes pulse-sweep {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(300%); }
+        }
+
         .upload-options {
             display: flex;
             flex-direction: column;
@@ -1436,6 +1455,35 @@
             });
         }
 
+        // ======================== BARRA DE PROGRESSO ========================
+        function progressShow() {
+            document.getElementById('upload-progress-container').style.display = 'block';
+        }
+        function progressHide() {
+            document.getElementById('upload-progress-container').style.display = 'none';
+        }
+        function progressUpdate(percent, label, itemLabel, polling) {
+            const bar = document.getElementById('upload-progress-bar');
+            const pct = document.getElementById('upload-progress-pct');
+            const lbl = document.getElementById('upload-progress-label');
+            const item = document.getElementById('upload-progress-item');
+            const pulse = document.getElementById('upload-progress-pulse');
+            bar.style.width = percent + '%';
+            pct.textContent = percent + '%';
+            if (label) lbl.textContent = label;
+            if (itemLabel !== undefined) item.textContent = itemLabel;
+            if (polling) {
+                pulse.style.display = 'block';
+                bar.style.background = 'linear-gradient(90deg,#f9a84f,#f05af0)';
+            } else {
+                pulse.style.display = 'none';
+                bar.style.background = 'linear-gradient(90deg,#4f9cf9,#7f5af0)';
+            }
+        }
+        function progressReset() {
+            progressUpdate(0, 'Iniciando...', '', false);
+        }
+
         // ======================== LOG CONSOLE ========================
         function logConsole(msg, type = '') {
             const console = document.getElementById('log-console');
@@ -1506,7 +1554,9 @@
             const adsetAtivoNovo = 'PAUSED';
             const adsetAtivoGarimpo = 'PAUSED';
 
-            // Start log console
+            // Start log console e barra de progresso
+            progressShow();
+            progressReset();
             logConsole(`🚀 Lote iniciado — ${filaAnuncios.length} anúncio(s) na fila`, 'log-info');
 
             // ===== DUPLICAÇÃO PRÉ-LOOP: para Agrupado+Duplicar OU Novo Conjunto =====
@@ -1640,34 +1690,59 @@
                 if (leadFormVal) fd.append('lead_gen_form_id', leadFormVal);
 
                 try {
-                    logConsole(`📤 Fazendo upload de "${item.adName}"...`, 'log-info');
+                    logConsole(`📤 Iniciando upload de "${item.adName}"...`, 'log-info');
+                    progressReset();
+                    progressUpdate(5, `Enviando "${item.adName}"...`, `${i + 1} de ${filaAnuncios.length}`, false);
 
                     const r = await fetch(`/campanha/${CAMPAIGN_ID}/upload`, { method: 'POST', body: fd });
-                    const text = await r.text();
-                    let res;
-                    try {
-                        res = JSON.parse(text);
-                    } catch (e) {
-                        erros++;
-                        logConsole(`❌ Erro do Servidor (500/Timeout): Resposta inválida.`, 'log-error');
-                        console.error('Resposta não-JSON:', text);
-                        continue;
+                    if (!r.ok || !r.body) {
+                        throw new Error(`Resposta inválida do servidor (${r.status})`);
                     }
 
-                    if (res.success) {
+                    // Ler SSE stream
+                    const reader = r.body.getReader();
+                    const decoder = new TextDecoder();
+                    let buffer = '';
+                    let uploadResult = null;
+
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        buffer += decoder.decode(value, { stream: true });
+                        const blocks = buffer.split('\n\n');
+                        buffer = blocks.pop();
+                        for (const block of blocks) {
+                            const line = block.split('\n').find(l => l.startsWith('data: '));
+                            if (!line) continue;
+                            let evt;
+                            try { evt = JSON.parse(line.slice(6)); } catch { continue; }
+
+                            if (evt.type === 'progress') {
+                                progressUpdate(evt.percent, evt.message, `${i + 1} de ${filaAnuncios.length}`, evt.polling);
+                            } else if (evt.type === 'log') {
+                                logConsole(evt.message, classifyLog(evt.message));
+                            } else if (evt.type === 'done') {
+                                progressUpdate(100, '✅ Concluído!', `${i + 1} de ${filaAnuncios.length}`, false);
+                                uploadResult = evt;
+                                if (evt.logs) evt.logs.forEach(l => logConsole(l, classifyLog(l)));
+                            } else if (evt.type === 'error') {
+                                uploadResult = { success: false, error: evt.message };
+                                if (evt.logs) evt.logs.forEach(l => logConsole(l, classifyLog(l)));
+                            }
+                        }
+                    }
+
+                    if (uploadResult && uploadResult.success) {
                         enviados++;
-                        logConsole(`✅ "${item.adName}" criado com sucesso — ID: ${res.ad_id}`, 'log-success');
-                    } else {
+                        logConsole(`✅ "${item.adName}" criado — ID: ${uploadResult.ad_id}`, 'log-success');
+                    } else if (uploadResult) {
                         erros++;
-                        logConsole(`❌ "${item.adName}" falhou: ${res.error}`, 'log-error');
-                    }
-
-                    if (res.logs) {
-                        res.logs.forEach(l => logConsole(l, classifyLog(l)));
+                        logConsole(`❌ "${item.adName}" falhou: ${uploadResult.error}`, 'log-error');
                     }
 
                     if (i < filaAnuncios.length - 1) {
                         logConsole(`⏳ Aguardando delay de segurança (2s)...`);
+                        progressUpdate(100, '⏳ Aguardando próximo...', `${i + 1} de ${filaAnuncios.length}`, false);
                         await new Promise(r => setTimeout(r, 2000));
                     }
 
@@ -1683,6 +1758,11 @@
 
             logConsole(`🏁 Lote concluído: ${enviados} ✅ sucesso, ${erros} ❌ erro(s)`, enviados > 0 ? 'log-success' : 'log-error');
             logStop();
+            if (erros === 0) {
+                progressUpdate(100, `🎉 ${enviados} anúncio(s) enviados!`, '', false);
+            } else {
+                progressUpdate(100, `⚠️ ${enviados} OK, ${erros} erro(s)`, '', false);
+            }
 
             if (erros === 0) {
                 mostrarToast(`🎉 ${enviados} anúncio(s) enviados com sucesso!`);

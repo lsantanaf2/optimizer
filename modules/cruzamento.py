@@ -29,6 +29,9 @@ APP_SECRET          = os.getenv('APP_SECRET')
 AD_ACCOUNT_ID       = os.getenv('CRUZAMENTO_AD_ACCOUNT_ID', 'act_2023939324650844')
 SPREADSHEET_ID      = os.getenv('CRUZAMENTO_SPREADSHEET_ID', '1m6syDzMDZqB44ZTKaRj5t79HUDuyEqaN2RgAo0kpECc')
 GOOGLE_CREDS_FILE   = os.getenv('GOOGLE_CREDENTIALS_FILE', 'google_credentials.json')
+# Action type do evento TypeForm na conta de anúncios (ex: 'offsite_conversion.custom.12345')
+# Se vazio, detecta automaticamente qualquer action_type contendo 'typeform'
+TYPEFORM_ACTION_TYPE = os.getenv('TYPEFORM_ACTION_TYPE', '')
 
 # Nomes das abas na planilha
 ABA_MQLS  = 'MQLs'
@@ -213,7 +216,7 @@ def fetch_fb_insights(account_id, access_token, date_preset='last_30d', since=No
     params = {
         'access_token': access_token,
         'level': 'ad',
-        'fields': 'campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions,clicks,date_start',
+        'fields': 'campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions,clicks,inline_link_clicks,actions,date_start',
         'limit': 500,
         'time_increment': 1,  # dados diarios
     }
@@ -231,17 +234,30 @@ def fetch_fb_insights(account_id, access_token, date_preset='last_30d', since=No
         body = resp.json()
 
         for item in body.get('data', []):
+            actions = item.get('actions', [])
+
+            def _act(atype, _a=actions):
+                return sum(int(float(a.get('value', 0) or 0)) for a in _a if a.get('action_type') == atype)
+
+            def _act_typeform(_a=actions):
+                if TYPEFORM_ACTION_TYPE:
+                    return _act(TYPEFORM_ACTION_TYPE, _a)
+                return sum(int(float(a.get('value', 0) or 0)) for a in _a if 'typeform' in a.get('action_type', '').lower())
+
             ads.append({
-                'campaign_id':   item.get('campaign_id', ''),
-                'campaign_name': item.get('campaign_name', ''),
-                'adset_id':      item.get('adset_id', ''),
-                'adset_name':    item.get('adset_name', ''),
-                'ad_id':         item.get('ad_id', ''),
-                'ad_name':       item.get('ad_name', ''),
-                'spend':         float(item.get('spend', 0) or 0),
-                'impressions':   int(item.get('impressions', 0) or 0),
-                'clicks':        int(item.get('clicks', 0) or 0),
-                'date_start':    item.get('date_start', ''),
+                'campaign_id':        item.get('campaign_id', ''),
+                'campaign_name':      item.get('campaign_name', ''),
+                'adset_id':           item.get('adset_id', ''),
+                'adset_name':         item.get('adset_name', ''),
+                'ad_id':              item.get('ad_id', ''),
+                'ad_name':            item.get('ad_name', ''),
+                'spend':              float(item.get('spend', 0) or 0),
+                'impressions':        int(item.get('impressions', 0) or 0),
+                'clicks':             int(item.get('clicks', 0) or 0),
+                'link_clicks':        int(item.get('inline_link_clicks', 0) or 0),
+                'landing_page_views': _act('landing_page_view'),
+                'typeform_submits':   _act_typeform(),
+                'date_start':         item.get('date_start', ''),
             })
 
         # Paginação cursor
@@ -402,56 +418,74 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows, mqls_all=None):
             ad_key = f"{campaign_norm}|||{adset_norm}|||{name_norm}"
             if ad_key not in fb_ads_by_name:
                 fb_ads_by_name[ad_key] = {
-                    'ad_name':       ad.get('ad_name', 'Desconhecido'),
-                    'campaign_name': ad.get('campaign_name', ''),
-                    'adset_name':    ad.get('adset_name', ''),
-                    'ad_status':     ad.get('ad_status', 'UNKNOWN'),
-                    'ad_ids':        set(),
-                    '_name_norm':    name_norm,
-                    'spend':         0.0,
-                    'impressions':   0,
-                    'clicks':        0,
+                    'ad_name':            ad.get('ad_name', 'Desconhecido'),
+                    'campaign_name':      ad.get('campaign_name', ''),
+                    'adset_name':         ad.get('adset_name', ''),
+                    'ad_status':          ad.get('ad_status', 'UNKNOWN'),
+                    'ad_ids':             set(),
+                    '_name_norm':         name_norm,
+                    'spend':              0.0,
+                    'impressions':        0,
+                    'clicks':             0,
+                    'link_clicks':        0,
+                    'landing_page_views': 0,
+                    'typeform_submits':   0,
                 }
             if ad_id_raw:
                 fb_ads_by_name[ad_key]['ad_ids'].add(ad_id_raw)
-            fb_ads_by_name[ad_key]['spend']       += ad.get('spend', 0.0)
-            fb_ads_by_name[ad_key]['impressions'] += ad.get('impressions', 0)
-            fb_ads_by_name[ad_key]['clicks']      += ad.get('clicks', 0)
+            fb_ads_by_name[ad_key]['spend']               += ad.get('spend', 0.0)
+            fb_ads_by_name[ad_key]['impressions']         += ad.get('impressions', 0)
+            fb_ads_by_name[ad_key]['clicks']              += ad.get('clicks', 0)
+            fb_ads_by_name[ad_key]['link_clicks']         += ad.get('link_clicks', 0)
+            fb_ads_by_name[ad_key]['landing_page_views']  += ad.get('landing_page_views', 0)
+            fb_ads_by_name[ad_key]['typeform_submits']    += ad.get('typeform_submits', 0)
 
         # Consolidação AdSet
         if adset_norm:
             if adset_norm not in fb_adsets_by_name:
                 fb_adsets_by_name[adset_norm] = {
-                    'adset_name':    ad.get('adset_name', 'Desconhecido'),
-                    'campaign_name': ad.get('campaign_name', ''),
-                    'adset_id':      adset_id_raw,
-                    'ad_status':     ad.get('ad_status', 'PAUSED'),
-                    'spend':         0.0,
-                    'impressions':   0,
-                    'clicks':        0,
+                    'adset_name':         ad.get('adset_name', 'Desconhecido'),
+                    'campaign_name':      ad.get('campaign_name', ''),
+                    'adset_id':           adset_id_raw,
+                    'ad_status':          ad.get('ad_status', 'PAUSED'),
+                    'spend':              0.0,
+                    'impressions':        0,
+                    'clicks':             0,
+                    'link_clicks':        0,
+                    'landing_page_views': 0,
+                    'typeform_submits':   0,
                 }
             if ad.get('ad_status') == 'ACTIVE':
                 fb_adsets_by_name[adset_norm]['ad_status'] = 'ACTIVE'
-            fb_adsets_by_name[adset_norm]['spend']       += ad.get('spend', 0.0)
-            fb_adsets_by_name[adset_norm]['impressions'] += ad.get('impressions', 0)
-            fb_adsets_by_name[adset_norm]['clicks']      += ad.get('clicks', 0)
+            fb_adsets_by_name[adset_norm]['spend']               += ad.get('spend', 0.0)
+            fb_adsets_by_name[adset_norm]['impressions']         += ad.get('impressions', 0)
+            fb_adsets_by_name[adset_norm]['clicks']              += ad.get('clicks', 0)
+            fb_adsets_by_name[adset_norm]['link_clicks']         += ad.get('link_clicks', 0)
+            fb_adsets_by_name[adset_norm]['landing_page_views']  += ad.get('landing_page_views', 0)
+            fb_adsets_by_name[adset_norm]['typeform_submits']    += ad.get('typeform_submits', 0)
 
         # Consolidação Campaign
         if campaign_norm:
             if campaign_norm not in fb_campaigns_by_name:
                 fb_campaigns_by_name[campaign_norm] = {
-                    'campaign_name': ad.get('campaign_name', 'Desconhecida'),
-                    'campaign_id':   campaign_id_raw,
-                    'ad_status':     ad.get('ad_status', 'PAUSED'),
-                    'spend':         0.0,
-                    'impressions':   0,
-                    'clicks':        0,
+                    'campaign_name':      ad.get('campaign_name', 'Desconhecida'),
+                    'campaign_id':        campaign_id_raw,
+                    'ad_status':          ad.get('ad_status', 'PAUSED'),
+                    'spend':              0.0,
+                    'impressions':        0,
+                    'clicks':             0,
+                    'link_clicks':        0,
+                    'landing_page_views': 0,
+                    'typeform_submits':   0,
                 }
             if ad.get('ad_status') == 'ACTIVE':
                 fb_campaigns_by_name[campaign_norm]['ad_status'] = 'ACTIVE'
-            fb_campaigns_by_name[campaign_norm]['spend']       += ad.get('spend', 0.0)
-            fb_campaigns_by_name[campaign_norm]['impressions'] += ad.get('impressions', 0)
-            fb_campaigns_by_name[campaign_norm]['clicks']      += ad.get('clicks', 0)
+            fb_campaigns_by_name[campaign_norm]['spend']               += ad.get('spend', 0.0)
+            fb_campaigns_by_name[campaign_norm]['impressions']         += ad.get('impressions', 0)
+            fb_campaigns_by_name[campaign_norm]['clicks']              += ad.get('clicks', 0)
+            fb_campaigns_by_name[campaign_norm]['link_clicks']         += ad.get('link_clicks', 0)
+            fb_campaigns_by_name[campaign_norm]['landing_page_views']  += ad.get('landing_page_views', 0)
+            fb_campaigns_by_name[campaign_norm]['typeform_submits']    += ad.get('typeform_submits', 0)
 
     def _join_leads(index, name_key, *id_keys):
         """
@@ -718,6 +752,25 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows, mqls_all=None):
                     dm[k] = dm.get(k, 0) + 1
         by_date_per_ad[ad_data_item['ad_name']] = _build_entity_series(ds, dm)
 
+    # ── Funil de Conversão (agregado de todos os fb_ads do período) ──────────────
+    _f_imp  = sum(ad.get('impressions', 0)        for ad in fb_ads)
+    _f_lc   = sum(ad.get('link_clicks', 0)         for ad in fb_ads)
+    _f_lpv  = sum(ad.get('landing_page_views', 0)  for ad in fb_ads)
+    _f_tf   = sum(ad.get('typeform_submits', 0)    for ad in fb_ads)
+    _f_mql  = mqls_in_period_count
+
+    funnel = {
+        'impressions':       _f_imp,
+        'link_clicks':       _f_lc,
+        'ctr':               round(_f_lc  / _f_imp * 100, 2) if _f_imp > 0 else 0,
+        'landing_page_views': _f_lpv,
+        'connect_rate':      round(_f_lpv / _f_lc  * 100, 2) if _f_lc  > 0 else 0,
+        'typeform_submits':  _f_tf,
+        'typeform_rate':     round(_f_tf  / _f_lpv * 100, 2) if _f_lpv > 0 else 0,
+        'mqls':              _f_mql,
+        'mql_rate':          round(_f_mql / _f_tf  * 100, 2) if _f_tf  > 0 else 0,
+    }
+
     return {
         'ads_consolidated': ads_consolidated,
         'adsets_consolidated': adsets_consolidated,
@@ -732,6 +785,7 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows, mqls_all=None):
         'by_date_per_campaign':  by_date_per_campaign,
         'by_date_per_adset':     by_date_per_adset,
         'by_date_per_ad':        by_date_per_ad,
+        'funnel':                funnel,
     }
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -756,6 +810,7 @@ def _parse_valor(v):
 def _empty_metrics():
     return {
         'spend': 0.0, 'impressions': 0, 'clicks': 0,
+        'link_clicks': 0, 'landing_page_views': 0, 'typeform_submits': 0,
         'leads_total': 0, 'leads_a': 0, 'leads_b': 0,
         'vendas_a': 0, 'vendas_b': 0,
         'fat_a': 0.0, 'fat_b': 0.0, 'fat_total': 0.0,
@@ -764,9 +819,12 @@ def _empty_metrics():
 def _calc_metrics(ad, leads):
     """Calcula métricas para um ad + lista de leads associados."""
     m = _empty_metrics()
-    m['spend']       = ad['spend']
-    m['impressions'] = ad['impressions']
-    m['clicks']      = ad['clicks']
+    m['spend']               = ad['spend']
+    m['impressions']         = ad['impressions']
+    m['clicks']              = ad['clicks']
+    m['link_clicks']         = ad.get('link_clicks', 0)
+    m['landing_page_views']  = ad.get('landing_page_views', 0)
+    m['typeform_submits']    = ad.get('typeform_submits', 0)
 
     for lead in leads:
         m['leads_total'] += 1
@@ -786,7 +844,8 @@ def _calc_metrics(ad, leads):
 
 def _accumulate(target, metrics):
     """Soma métricas em um container (adset ou campaign)."""
-    for key in ('spend', 'impressions', 'clicks', 'leads_total', 'leads_a', 'leads_b',
+    for key in ('spend', 'impressions', 'clicks', 'link_clicks', 'landing_page_views',
+                'typeform_submits', 'leads_total', 'leads_a', 'leads_b',
                 'vendas_a', 'vendas_b', 'fat_a', 'fat_b', 'fat_total'):
         target[key] = target.get(key, 0) + metrics.get(key, 0)
 
