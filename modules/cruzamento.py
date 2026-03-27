@@ -982,12 +982,14 @@ def api_action_types():
     until = request.args.get('until')
 
     try:
+        # Usa os mesmos parâmetros do fetch principal (que já funciona), só reduz fields
         base_url = f"https://graph.facebook.com/v22.0/{AD_ACCOUNT_ID}/insights"
         params = {
             'access_token': token,
-            'level': 'campaign',
-            'fields': 'campaign_name,actions',
-            'limit': 50,
+            'level': 'ad',
+            'fields': 'ad_id,actions',
+            'limit': 500,
+            'time_increment': 1,
         }
         if since and until:
             params['time_range'] = json.dumps({'since': since, 'until': until})
