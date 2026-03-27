@@ -29,9 +29,10 @@ APP_SECRET          = os.getenv('APP_SECRET')
 AD_ACCOUNT_ID       = os.getenv('CRUZAMENTO_AD_ACCOUNT_ID', 'act_2023939324650844')
 SPREADSHEET_ID      = os.getenv('CRUZAMENTO_SPREADSHEET_ID', '1m6syDzMDZqB44ZTKaRj5t79HUDuyEqaN2RgAo0kpECc')
 GOOGLE_CREDS_FILE   = os.getenv('GOOGLE_CREDENTIALS_FILE', 'google_credentials.json')
-# Action type do evento TypeForm na conta de anúncios (ex: 'offsite_conversion.custom.12345')
-# Se vazio, detecta automaticamente qualquer action_type contendo 'typeform'
-TYPEFORM_ACTION_TYPE = os.getenv('TYPEFORM_ACTION_TYPE', '')
+# Action type do evento TypeForm na Meta API.
+# Custom pixel events (fbq trackCustom) aparecem como 'offsite_conversion.fb_pixel_custom'.
+# Se for uma Custom Conversion criada no Ads Manager, usar 'offsite_conversion.custom.{ID}'.
+TYPEFORM_ACTION_TYPE = os.getenv('TYPEFORM_ACTION_TYPE', 'offsite_conversion.fb_pixel_custom')
 
 # Nomes das abas na planilha
 ABA_MQLS  = 'MQLs'
