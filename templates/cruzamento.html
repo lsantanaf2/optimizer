@@ -655,6 +655,42 @@
         color: var(--text-muted);
         font-size: 11px;
     }
+    /* ── Tabs ── */
+    .crz-tabs {
+        display: flex;
+        gap: 0;
+        margin-bottom: 14px;
+        border-bottom: 2px solid var(--border);
+    }
+    .crz-tab {
+        padding: 10px 24px;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text-muted);
+        cursor: pointer;
+        border: none;
+        background: none;
+        font-family: var(--font-sans, inherit);
+        position: relative;
+        transition: color 0.15s;
+    }
+    .crz-tab:hover { color: var(--text-primary); }
+    .crz-tab.active {
+        color: var(--accent);
+    }
+    .crz-tab.active::after {
+        content: '';
+        position: absolute;
+        bottom: -2px;
+        left: 0;
+        right: 0;
+        height: 2px;
+        background: var(--accent);
+        border-radius: 2px 2px 0 0;
+    }
+    .crz-tab-content { display: none; }
+    .crz-tab-content.active { display: block; }
+
     /* ── Painel de Acompanhamento ── */
     .panel-section {
         margin-bottom: 14px;
@@ -801,6 +837,15 @@
     </div>
 </div>
 
+<!-- Tabs -->
+<div class="crz-tabs" id="crz-tabs">
+    <button class="crz-tab active" data-tab="tab-principal" onclick="switchTab('tab-principal')">Principal</button>
+    <button class="crz-tab" data-tab="tab-painel-diario" onclick="switchTab('tab-painel-diario')">Painel diário</button>
+</div>
+
+<!-- Tab 1: Principal -->
+<div id="tab-principal" class="crz-tab-content active">
+
 <!-- KPI Summary Bar -->
 <div class="kpi-bar" id="kpi-bar" style="display:none;">
     <div class="kpi-card">
@@ -945,33 +990,6 @@
     </div>
 </div>
 
-<!-- Painel de Acompanhamento -->
-<div class="chart-card panel-section" id="crz-panel-container" style="display:none; overflow:hidden; padding:0; margin-bottom:14px;">
-    <div class="panel-header">
-        <span>📈 Painel de Acompanhamento — Evolução Diária do Funil</span>
-    </div>
-    <div class="panel-chart-row">
-        <div class="panel-chart-label">💰 Valor Investido (R$) <span class="panel-kpi-val" id="panel-kpi-spend">—</span></div>
-        <canvas id="panel-chart-spend" height="55"></canvas>
-    </div>
-    <div class="panel-chart-row">
-        <div class="panel-chart-label">🖱 CTR — Cliques / Impressões (%) <span class="panel-kpi-val" id="panel-kpi-ctr">—</span></div>
-        <canvas id="panel-chart-ctr" height="55"></canvas>
-    </div>
-    <div class="panel-chart-row">
-        <div class="panel-chart-label">📄 Connect Rate — Vis. Página / Cliques (%) <span class="panel-kpi-val" id="panel-kpi-cr">—</span></div>
-        <canvas id="panel-chart-cr" height="55"></canvas>
-    </div>
-    <div class="panel-chart-row">
-        <div class="panel-chart-label">📝 Taxa de Lead — TypeForm / Vis. Página (%) <span class="panel-kpi-val" id="panel-kpi-taxa-lead">—</span></div>
-        <canvas id="panel-chart-taxa-lead" height="55"></canvas>
-    </div>
-    <div class="panel-chart-row">
-        <div class="panel-chart-label">🎯 Taxa de MQL — MQL / TypeForm (%) <span class="panel-kpi-val" id="panel-kpi-taxa-mql">—</span></div>
-        <canvas id="panel-chart-taxa-mql" height="55"></canvas>
-    </div>
-</div>
-
 <!-- Cascade Filter Badge -->
 <div id="cascade-filter-bar" style="display:flex; align-items:center; gap:8px; margin-bottom:10px; flex-wrap:wrap;">
     <span id="cascade-filter-badge" class="timeline-filter-badge" style="display:none;"></span>
@@ -1062,7 +1080,36 @@
     </div>
 </div>
 
+</div><!-- /tab-principal -->
 
+<!-- Tab 2: Painel diário -->
+<div id="tab-painel-diario" class="crz-tab-content">
+    <div class="chart-card panel-section" id="crz-panel-container" style="overflow:hidden; padding:0; margin-bottom:14px;">
+        <div class="panel-header">
+            <span>📈 Evolução Diária do Funil</span>
+        </div>
+        <div class="panel-chart-row">
+            <div class="panel-chart-label">💰 Valor Investido (R$) <span class="panel-kpi-val" id="panel-kpi-spend">—</span></div>
+            <canvas id="panel-chart-spend" height="55"></canvas>
+        </div>
+        <div class="panel-chart-row">
+            <div class="panel-chart-label">🖱 CTR — Cliques / Impressões (%) <span class="panel-kpi-val" id="panel-kpi-ctr">—</span></div>
+            <canvas id="panel-chart-ctr" height="55"></canvas>
+        </div>
+        <div class="panel-chart-row">
+            <div class="panel-chart-label">📄 Connect Rate — Vis. Página / Cliques (%) <span class="panel-kpi-val" id="panel-kpi-cr">—</span></div>
+            <canvas id="panel-chart-cr" height="55"></canvas>
+        </div>
+        <div class="panel-chart-row">
+            <div class="panel-chart-label">📝 Taxa de Lead — TypeForm / Vis. Página (%) <span class="panel-kpi-val" id="panel-kpi-taxa-lead">—</span></div>
+            <canvas id="panel-chart-taxa-lead" height="55"></canvas>
+        </div>
+        <div class="panel-chart-row">
+            <div class="panel-chart-label">🎯 Taxa de MQL — MQL / TypeForm (%) <span class="panel-kpi-val" id="panel-kpi-taxa-mql">—</span></div>
+            <canvas id="panel-chart-taxa-mql" height="55"></canvas>
+        </div>
+    </div>
+</div><!-- /tab-painel-diario -->
 
 <!-- Loading / Error states -->
 <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius-md);">
@@ -1081,6 +1128,21 @@
 <script>
     const IS_CLIENT = {{ 'true' if client_mode else 'false' }};
     const LOCKED_PERIOD = '{{ locked_period if client_mode else "" }}';
+
+    // ── Tab System ───────────────────────────────────────────────────────────────
+    let _panelDataCache = null;   // dados do daily_funnel cacheados
+    let _panelRendered = false;   // se os gráficos já foram renderizados neste ciclo
+
+    function switchTab(tabId) {
+        document.querySelectorAll('.crz-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tabId));
+        document.querySelectorAll('.crz-tab-content').forEach(c => c.classList.toggle('active', c.id === tabId));
+
+        // Renderiza painel lazy — só quando clica na aba e dados já chegaram
+        if (tabId === 'tab-painel-diario' && _panelDataCache && !_panelRendered) {
+            renderPanelCharts(_panelDataCache);
+            _panelRendered = true;
+        }
+    }
 
     // ── Date Range Picker State ──────────────────────────────────────────────────
     const MONTHS_PT = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
@@ -1906,7 +1968,9 @@
         const signal = _loadAbortCtrl.signal;
 
         // Esconde todas as seções
-        ['kpi-bar','funnel-card','crz-meta','crz-main-grid','crz-panel-container','crz-timeline-container','crz-spend-container','crz-ads-container','crz-adsets-container','crz-campaigns-container'].forEach(id => {
+        _panelDataCache = null;
+        _panelRendered = false;
+        ['kpi-bar','funnel-card','crz-meta','crz-main-grid','crz-timeline-container','crz-spend-container','crz-ads-container','crz-adsets-container','crz-campaigns-container'].forEach(id => {
             const el = document.getElementById(id);
             if (el) { el.style.display = 'none'; el.classList.remove('crz-cascade'); }
         });
@@ -1971,7 +2035,13 @@
             } else if (stage === 'funnel') {
                 renderFunnel(d.funnel); reveal('funnel-card');
             } else if (stage === 'panel') {
-                renderPanelCharts(d.daily_funnel || []); reveal('crz-panel-container', 'block');
+                _panelDataCache = d.daily_funnel || [];
+                _panelRendered = false;
+                // Se a aba painel diário já está ativa, renderiza imediatamente
+                if (document.getElementById('tab-painel-diario').classList.contains('active')) {
+                    renderPanelCharts(_panelDataCache);
+                    _panelRendered = true;
+                }
             } else if (stage === 'charts') {
                 renderDonut(d.by_produto || {}); renderDayTable(d.by_date || []); reveal('crz-main-grid', 'grid');
             } else if (stage === 'timeline') {
