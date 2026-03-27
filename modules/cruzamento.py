@@ -224,7 +224,12 @@ def fetch_fb_insights(account_id, access_token, date_preset='last_30d', since=No
     if since and until:
         params['time_range'] = json.dumps({'since': since, 'until': until})
     else:
-        params['date_preset'] = date_preset
+        # Converte preset interno em datas reais (Meta API usa last_7d, não last_7_days)
+        since_d, until_d = preset_to_dates(date_preset)
+        if since_d and until_d:
+            params['time_range'] = json.dumps({'since': str(since_d), 'until': str(until_d)})
+        else:
+            params['date_preset'] = 'last_30d'  # fallback seguro
 
     ads = []
     url = base_url
@@ -982,7 +987,14 @@ def api_action_types():
     until = request.args.get('until')
 
     try:
-        # Usa os mesmos parâmetros do fetch principal (que já funciona), só reduz fields
+        # Converte preset interno (last_30_days) em datas reais (Meta API exige last_30d ou time_range)
+        since_d, until_d = preset_to_dates(date_preset, since, until)
+        if since_d is None or until_d is None:
+            # Fallback seguro: últimos 30 dias
+            from datetime import date as _d
+            until_d = _d.today()
+            since_d = until_d - timedelta(days=29)
+
         base_url = f"https://graph.facebook.com/v22.0/{AD_ACCOUNT_ID}/insights"
         params = {
             'access_token': token,
@@ -990,11 +1002,8 @@ def api_action_types():
             'fields': 'ad_id,actions',
             'limit': 500,
             'time_increment': 1,
+            'time_range': json.dumps({'since': str(since_d), 'until': str(until_d)}),
         }
-        if since and until:
-            params['time_range'] = json.dumps({'since': since, 'until': until})
-        else:
-            params['date_preset'] = date_preset
 
         totals = {}
         url = base_url
