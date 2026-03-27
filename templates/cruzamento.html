@@ -655,6 +655,43 @@
         color: var(--text-muted);
         font-size: 11px;
     }
+    /* ── Painel de Acompanhamento ── */
+    .panel-section {
+        margin-bottom: 14px;
+    }
+    .panel-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 18px;
+        border-bottom: 1px solid var(--border);
+        font-weight: 600;
+        font-size: 13px;
+    }
+    .panel-chart-row {
+        padding: 14px 20px;
+        border-bottom: 1px solid var(--border);
+    }
+    .panel-chart-row:last-child { border-bottom: none; }
+    .panel-chart-label {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 8px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .panel-chart-label span.panel-kpi-val {
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--text-primary);
+        text-transform: none;
+        letter-spacing: 0;
+    }
+
     /* Toggle Switch */
     .switch {
         position: relative;
@@ -905,6 +942,33 @@
     </div>
     <div style="padding:16px 20px;">
         <canvas id="spend-chart" height="70"></canvas>
+    </div>
+</div>
+
+<!-- Painel de Acompanhamento -->
+<div class="chart-card panel-section" id="crz-panel-container" style="display:none; overflow:hidden; padding:0; margin-bottom:14px;">
+    <div class="panel-header">
+        <span>📈 Painel de Acompanhamento — Evolução Diária do Funil</span>
+    </div>
+    <div class="panel-chart-row">
+        <div class="panel-chart-label">💰 Valor Investido (R$) <span class="panel-kpi-val" id="panel-kpi-spend">—</span></div>
+        <canvas id="panel-chart-spend" height="55"></canvas>
+    </div>
+    <div class="panel-chart-row">
+        <div class="panel-chart-label">🖱 CTR — Cliques / Impressões (%) <span class="panel-kpi-val" id="panel-kpi-ctr">—</span></div>
+        <canvas id="panel-chart-ctr" height="55"></canvas>
+    </div>
+    <div class="panel-chart-row">
+        <div class="panel-chart-label">📄 Connect Rate — Vis. Página / Cliques (%) <span class="panel-kpi-val" id="panel-kpi-cr">—</span></div>
+        <canvas id="panel-chart-cr" height="55"></canvas>
+    </div>
+    <div class="panel-chart-row">
+        <div class="panel-chart-label">📝 Taxa de Lead — TypeForm / Vis. Página (%) <span class="panel-kpi-val" id="panel-kpi-taxa-lead">—</span></div>
+        <canvas id="panel-chart-taxa-lead" height="55"></canvas>
+    </div>
+    <div class="panel-chart-row">
+        <div class="panel-chart-label">🎯 Taxa de MQL — MQL / TypeForm (%) <span class="panel-kpi-val" id="panel-kpi-taxa-mql">—</span></div>
+        <canvas id="panel-chart-taxa-mql" height="55"></canvas>
     </div>
 </div>
 
@@ -1842,7 +1906,7 @@
         const signal = _loadAbortCtrl.signal;
 
         // Esconde todas as seções
-        ['kpi-bar','funnel-card','crz-meta','crz-main-grid','crz-timeline-container','crz-spend-container','crz-ads-container','crz-adsets-container','crz-campaigns-container'].forEach(id => {
+        ['kpi-bar','funnel-card','crz-meta','crz-main-grid','crz-panel-container','crz-timeline-container','crz-spend-container','crz-ads-container','crz-adsets-container','crz-campaigns-container'].forEach(id => {
             const el = document.getElementById(id);
             if (el) { el.style.display = 'none'; el.classList.remove('crz-cascade'); }
         });
@@ -1906,6 +1970,8 @@
                 updateKPIs(d); reveal('kpi-bar');
             } else if (stage === 'funnel') {
                 renderFunnel(d.funnel); reveal('funnel-card');
+            } else if (stage === 'panel') {
+                renderPanelCharts(d.daily_funnel || []); reveal('crz-panel-container', 'block');
             } else if (stage === 'charts') {
                 renderDonut(d.by_produto || {}); renderDayTable(d.by_date || []); reveal('crz-main-grid', 'grid');
             } else if (stage === 'timeline') {
@@ -2032,6 +2098,111 @@
             }
         });
     }
+    // ── Painel de Acompanhamento ──────────────────────────────────────────────
+    const _panelCharts = {};
+
+    function renderPanelCharts(data) {
+        if (!data || data.length === 0) return;
+
+        const sorted = [...data].sort((a, b) => a.date.localeCompare(b.date));
+        const labels = sorted.map(d => {
+            const [y, m, dd] = d.date.split('-');
+            return `${dd}/${m}`;
+        });
+
+        function _avg(key) {
+            const vals = sorted.map(d => d[key]).filter(v => v != null);
+            return vals.length ? (vals.reduce((a, b) => a + b, 0) / vals.length) : null;
+        }
+        function _sum(key) {
+            return sorted.reduce((a, d) => a + (d[key] || 0), 0);
+        }
+        function _fmt(v, prefix='', suffix='', decimals=2) {
+            if (v == null) return '—';
+            return prefix + v.toLocaleString('pt-BR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }) + suffix;
+        }
+
+        // Atualiza KPIs de resumo no header de cada gráfico
+        document.getElementById('panel-kpi-spend').textContent     = _fmt(_sum('spend'), 'R$ ');
+        document.getElementById('panel-kpi-ctr').textContent        = _fmt(_avg('ctr'), '', '%');
+        document.getElementById('panel-kpi-cr').textContent         = _fmt(_avg('connect_rate'), '', '%');
+        document.getElementById('panel-kpi-taxa-lead').textContent  = _fmt(_avg('taxa_lead'), '', '%');
+        document.getElementById('panel-kpi-taxa-mql').textContent   = _fmt(_avg('taxa_mql'), '', '%');
+
+        const baseOpts = (color, yLabel, yCallback) => ({
+            responsive: true,
+            animation: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: ctx => ` ${yLabel}: ${yCallback(ctx.raw)}`
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    ticks: { color: '#5a5a6e', font: { family: 'Lexend', size: 10 }, maxRotation: 45 },
+                    grid:  { color: 'rgba(255,255,255,0.04)' }
+                },
+                y: {
+                    position: 'left',
+                    ticks: { color, font: { family: 'Lexend', size: 10 }, callback: yCallback },
+                    grid:  { color: 'rgba(255,255,255,0.06)' },
+                    title: { display: false }
+                }
+            }
+        });
+
+        function makeDataset(key, color) {
+            return {
+                data: sorted.map(d => d[key]),
+                borderColor: color,
+                backgroundColor: color + '22',
+                borderWidth: 2,
+                pointRadius: sorted.length > 20 ? 0 : 3,
+                pointHoverRadius: 5,
+                fill: true,
+                tension: 0.35,
+                spanGaps: true,
+            };
+        }
+
+        const configs = [
+            {
+                id: 'panel-chart-spend', key: 'spend', color: '#f59e0b',
+                label: 'Gasto', cb: v => v == null ? '—' : 'R$ ' + v.toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2})
+            },
+            {
+                id: 'panel-chart-ctr', key: 'ctr', color: '#4f9cf9',
+                label: 'CTR', cb: v => v == null ? '—' : v.toLocaleString('pt-BR', {minimumFractionDigits:2}) + '%'
+            },
+            {
+                id: 'panel-chart-cr', key: 'connect_rate', color: '#7f5af0',
+                label: 'Connect Rate', cb: v => v == null ? '—' : v.toLocaleString('pt-BR', {minimumFractionDigits:2}) + '%'
+            },
+            {
+                id: 'panel-chart-taxa-lead', key: 'taxa_lead', color: '#f9a84f',
+                label: 'Taxa Lead', cb: v => v == null ? '—' : v.toLocaleString('pt-BR', {minimumFractionDigits:2}) + '%'
+            },
+            {
+                id: 'panel-chart-taxa-mql', key: 'taxa_mql', color: '#2cb67d',
+                label: 'Taxa MQL', cb: v => v == null ? '—' : v.toLocaleString('pt-BR', {minimumFractionDigits:2}) + '%'
+            },
+        ];
+
+        configs.forEach(cfg => {
+            if (_panelCharts[cfg.id]) { _panelCharts[cfg.id].destroy(); }
+            const ctx = document.getElementById(cfg.id).getContext('2d');
+            _panelCharts[cfg.id] = new Chart(ctx, {
+                type: 'line',
+                data: { labels, datasets: [makeDataset(cfg.key, cfg.color)] },
+                options: baseOpts(cfg.color, cfg.label, cfg.cb),
+            });
+        });
+    }
+
     let timelineAllData  = [];
     let timelinePerCamp  = {};
     let timelinePerAdset = {};

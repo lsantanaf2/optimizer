@@ -690,6 +690,47 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows, mqls_all=None):
         prod = row.get('Produto indicado', '').strip() or 'Sem produto'
         by_produto[prod] = by_produto.get(prod, 0) + 1
 
+    # ── Funil diário (Painel de Acompanhamento) ────────────────────────────────
+    # Agrega todas as métricas de funil por dia a partir dos fb_ads
+    _daily_fb = {}
+    for ad in fb_ads:
+        d = ad.get('date_start', '')
+        if not d:
+            continue
+        e = _daily_fb.setdefault(d, {
+            'spend': 0.0, 'impressions': 0,
+            'link_clicks': 0, 'landing_page_views': 0, 'typeform_submits': 0
+        })
+        e['spend']              += ad.get('spend', 0.0)
+        e['impressions']        += ad.get('impressions', 0)
+        e['link_clicks']        += ad.get('link_clicks', 0)
+        e['landing_page_views'] += ad.get('landing_page_views', 0)
+        e['typeform_submits']   += ad.get('typeform_submits', 0)
+
+    all_panel_dates = sorted(set(list(_daily_fb.keys()) + list(by_date_raw.keys())))
+    daily_funnel = []
+    for dk in all_panel_dates:
+        fb  = _daily_fb.get(dk, {})
+        mql = by_date_raw.get(dk, {}).get('mqls', 0)
+        sp  = round(fb.get('spend', 0.0), 2)
+        imp = fb.get('impressions', 0)
+        lc  = fb.get('link_clicks', 0)
+        lpv = fb.get('landing_page_views', 0)
+        tf  = fb.get('typeform_submits', 0)
+        daily_funnel.append({
+            'date':          dk,
+            'spend':         sp,
+            'impressions':   imp,
+            'link_clicks':   lc,
+            'lpv':           lpv,
+            'typeform':      tf,
+            'mqls':          mql,
+            'ctr':           round(lc  / imp * 100, 2) if imp > 0 else None,
+            'connect_rate':  round(lpv / lc  * 100, 2) if lc  > 0 else None,
+            'taxa_lead':     round(tf  / lpv * 100, 2) if lpv > 0 else None,
+            'taxa_mql':      round(mql / tf  * 100, 2) if tf  > 0 else None,
+        })
+
     # ── Breakdown diário por entidade (pré-indexado O(n)) ──────────────────────
     def _build_entity_series(spend_map, mqls_map):
         all_keys = sorted(set(list(spend_map.keys()) + list(mqls_map.keys())))
@@ -814,6 +855,7 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows, mqls_all=None):
         'by_date_per_adset':     by_date_per_adset,
         'by_date_per_ad':        by_date_per_ad,
         'funnel':                funnel,
+        'daily_funnel':          daily_funnel,
     }
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -993,6 +1035,8 @@ def api_cruzamento_data():
             })
 
             yield _sse('funnel', {'funnel': resultado.get('funnel')})
+
+            yield _sse('panel', {'daily_funnel': resultado.get('daily_funnel', [])})
 
             yield _sse('charts', {
                 'by_produto': resultado.get('by_produto', {}),
