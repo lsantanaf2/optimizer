@@ -985,26 +985,30 @@ def api_action_types():
         base_url = f"https://graph.facebook.com/v22.0/{AD_ACCOUNT_ID}/insights"
         params = {
             'access_token': token,
-            'level': 'account',
-            'fields': 'actions',
-            'limit': 10,
+            'level': 'campaign',
+            'fields': 'campaign_name,actions',
+            'limit': 50,
         }
         if since and until:
             params['time_range'] = json.dumps({'since': since, 'until': until})
         else:
             params['date_preset'] = date_preset
 
-        resp = requests.get(base_url, params=params, timeout=30)
-        resp.raise_for_status()
-        body = resp.json()
-
-        # Agrega todos os action_types encontrados
         totals = {}
-        for item in body.get('data', []):
-            for a in item.get('actions', []):
-                at = a.get('action_type', '')
-                val = int(float(a.get('value', 0) or 0))
-                totals[at] = totals.get(at, 0) + val
+        url = base_url
+        while url:
+            resp = requests.get(url, params=params if url == base_url else None, timeout=30)
+            resp.raise_for_status()
+            body = resp.json()
+
+            for item in body.get('data', []):
+                for a in item.get('actions', []):
+                    at = a.get('action_type', '')
+                    val = int(float(a.get('value', 0) or 0))
+                    totals[at] = totals.get(at, 0) + val
+
+            url = body.get('paging', {}).get('next')
+            params = None
 
         # Ordena por valor desc e formata
         sorted_types = sorted(totals.items(), key=lambda x: -x[1])
