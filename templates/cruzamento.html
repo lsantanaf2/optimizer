@@ -1833,7 +1833,13 @@
         // display é controlado pelo cascade reveal em loadData()
     }
 
-    async function loadData() {
+    let _currentSSE = null; // referência para fechar ao recarregar
+
+    function loadData() {
+        // Fecha stream anterior se existir
+        if (_currentSSE) { _currentSSE.close(); _currentSSE = null; }
+
+        // Esconde todas as seções
         ['kpi-bar','funnel-card','crz-meta','crz-main-grid','crz-timeline-container','crz-spend-container','crz-ads-container','crz-adsets-container','crz-campaigns-container'].forEach(id => {
             const el = document.getElementById(id);
             if (el) { el.style.display = 'none'; el.classList.remove('crz-cascade'); }
@@ -1841,88 +1847,128 @@
         document.getElementById('crz-loading').style.display = '';
         document.getElementById('crz-error').style.display = 'none';
 
-        try {
-            const resp = await fetch(`/api/cruzamento/data?${getDateParams()}`);
-            const json = await resp.json();
-            if (!json.success) throw new Error(json.error || 'Erro desconhecido');
-
-            document.getElementById('crz-loading').style.display = 'none';
-            const d = json.data;
-
-            // Helper: revela um elemento com animação cascata
-            function reveal(id, displayType) {
-                const el = document.getElementById(id);
-                if (el) {
-                    el.style.display = displayType || '';
-                    el.classList.remove('crz-cascade');
-                    void el.offsetWidth; // force reflow para re-trigger animação
-                    el.classList.add('crz-cascade');
-                }
+        // Helper: revela um elemento com animação cascata
+        function reveal(id, displayType) {
+            const el = document.getElementById(id);
+            if (el) {
+                el.style.display = displayType || '';
+                el.classList.remove('crz-cascade');
+                void el.offsetWidth; // force reflow
+                el.classList.add('crz-cascade');
             }
+        }
 
-            // Prepara dados das tabelas (sem exibir ainda)
-            const adsData = (d.ads_consolidated || []).map(ad => ({
+        function showError(msg) {
+            document.getElementById('crz-loading').style.display = 'none';
+            document.getElementById('crz-error').style.display = '';
+            document.getElementById('crz-error-msg').textContent = '⚠️ ' + msg;
+        }
+
+        // Helper: transforma ads_consolidated cru em formato de tabela
+        function mapAds(raw) {
+            return (raw || []).map(ad => ({
                 ad_name: ad.ad_name, campaign_name: ad.campaign_name || '',
                 adset_name: ad.adset_name || '', spend: ad.spend,
                 receita: ad.fat_total || 0, mqls: ad.leads_total,
                 nc: ad.leads_a, ad_status: ad.ad_status
             }));
-            const adsetsData = (d.adsets_consolidated || []).map(s => ({
+        }
+        function mapAdSets(raw) {
+            return (raw || []).map(s => ({
                 adset_name: s.adset_name, campaign_name: s.campaign_name || '',
                 spend: s.spend, receita: s.fat_total || 0,
                 mqls: s.leads_total, nc: s.leads_a, ad_status: s.ad_status
             }));
-            const campsData = (d.campaigns_consolidated || []).map(c => ({
+        }
+        function mapCamps(raw) {
+            return (raw || []).map(c => ({
                 campaign_name: c.campaign_name, spend: c.spend,
                 receita: c.fat_total || 0, mqls: c.leads_total,
                 nc: c.leads_a, ad_status: c.ad_status
             }));
-
-            // Cascata escalonada — cada seção aparece 120ms após a anterior
-            const S = 120;
-            const steps = [
-                () => { updateKPIs(d); reveal('kpi-bar'); },
-                () => { renderFunnel(d.funnel); reveal('funnel-card'); },
-                () => {
-                    renderDonut(d.by_produto || {});
-                    renderDayTable(d.by_date || []);
-                    reveal('crz-main-grid', 'grid');
-                },
-                () => {
-                    timelineAllData  = d.by_date || [];
-                    timelinePerCamp  = d.by_date_per_campaign || {};
-                    timelinePerAdset = d.by_date_per_adset || {};
-                    timelinePerAd    = d.by_date_per_ad || {};
-                    timelineFilter   = null;
-                    document.getElementById('timeline-filter-badge').style.display = 'none';
-                    document.getElementById('timeline-reset-btn').style.display = 'none';
-                    renderTimelineChart();
-                    reveal('crz-timeline-container', 'block');
-                },
-                () => { renderSpendChart(); reveal('crz-spend-container', 'block'); },
-                () => { renderCampaignsTable(campsData); reveal('crz-campaigns-container', 'block'); },
-                () => { renderAdSetsTable(adsetsData); reveal('crz-adsets-container', 'block'); },
-                () => {
-                    renderAdsTable(adsData);
-                    reveal('crz-ads-container', 'block');
-                    selectedCampaign = null;
-                    selectedAdset = null;
-                    updateCascadeBadge();
-                },
-                () => {
-                    const m = json.meta || {};
-                    const meta = document.getElementById('crz-meta');
-                    meta.innerHTML = `⏱ ${m.elapsed_sec}s · 📘 ${m.fb_ads_count} ads · 📋 ${m.mqls_count} MQLs · ✅ ${m.wons_count} Wons · ${new Date(m.timestamp).toLocaleString('pt-BR')}`;
-                    reveal('crz-meta');
-                },
-            ];
-            steps.forEach((fn, i) => setTimeout(fn, i * S));
-
-        } catch (err) {
-            document.getElementById('crz-loading').style.display = 'none';
-            document.getElementById('crz-error').style.display = '';
-            document.getElementById('crz-error-msg').textContent = '⚠️ ' + err.message;
         }
+
+        // ── SSE Stream ──
+        const url = `/api/cruzamento/data?${getDateParams()}`;
+        const es = new EventSource(url);
+        _currentSSE = es;
+
+        es.onmessage = function(event) {
+            let d;
+            try { d = JSON.parse(event.data); } catch(e) { return; }
+            const stage = d.stage;
+
+            if (stage === 'status') {
+                // Atualiza texto do spinner
+                const loadEl = document.getElementById('crz-loading');
+                if (loadEl) loadEl.innerHTML = `<div class="crz-spinner"></div>${d.message || 'Carregando...'}`;
+                return;
+            }
+
+            // A partir do primeiro dado real, esconde o loading
+            document.getElementById('crz-loading').style.display = 'none';
+
+            if (stage === 'kpis') {
+                updateKPIs(d);
+                reveal('kpi-bar');
+            }
+            else if (stage === 'funnel') {
+                renderFunnel(d.funnel);
+                reveal('funnel-card');
+            }
+            else if (stage === 'charts') {
+                renderDonut(d.by_produto || {});
+                renderDayTable(d.by_date || []);
+                reveal('crz-main-grid', 'grid');
+            }
+            else if (stage === 'timeline') {
+                timelineAllData  = d.by_date || [];
+                timelinePerCamp  = d.by_date_per_campaign || {};
+                timelinePerAdset = d.by_date_per_adset || {};
+                timelinePerAd    = d.by_date_per_ad || {};
+                timelineFilter   = null;
+                document.getElementById('timeline-filter-badge').style.display = 'none';
+                document.getElementById('timeline-reset-btn').style.display = 'none';
+                renderTimelineChart();
+                reveal('crz-timeline-container', 'block');
+                renderSpendChart();
+                reveal('crz-spend-container', 'block');
+            }
+            else if (stage === 'campaigns') {
+                renderCampaignsTable(mapCamps(d.campaigns_consolidated));
+                reveal('crz-campaigns-container', 'block');
+            }
+            else if (stage === 'adsets') {
+                renderAdSetsTable(mapAdSets(d.adsets_consolidated));
+                reveal('crz-adsets-container', 'block');
+            }
+            else if (stage === 'ads') {
+                renderAdsTable(mapAds(d.ads_consolidated));
+                reveal('crz-ads-container', 'block');
+                selectedCampaign = null;
+                selectedAdset = null;
+                updateCascadeBadge();
+            }
+            else if (stage === 'done') {
+                es.close(); _currentSSE = null;
+                const m = d.meta || {};
+                const meta = document.getElementById('crz-meta');
+                meta.innerHTML = `⏱ ${m.elapsed_sec}s · 📘 ${m.fb_ads_count} ads · 📋 ${m.mqls_count} MQLs · ✅ ${m.wons_count} Wons · ${new Date(m.timestamp).toLocaleString('pt-BR')}`;
+                reveal('crz-meta');
+            }
+            else if (stage === 'error') {
+                es.close(); _currentSSE = null;
+                showError(d.message || 'Erro desconhecido');
+            }
+        };
+
+        es.onerror = function() {
+            es.close(); _currentSSE = null;
+            // Só mostra erro se nenhum dado foi recebido ainda
+            if (document.getElementById('crz-loading').style.display !== 'none') {
+                showError('Conexão perdida com o servidor.');
+            }
+        };
     }
 
     // ── Timeline Chart ────────────────────────────────────────────────────────
