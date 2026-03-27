@@ -963,3 +963,65 @@ def api_cruzamento_data():
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@cruzamento_bp.route('/api/cruzamento/action-types')
+def api_action_types():
+    """
+    Endpoint de diagnóstico: lista todos os action_types únicos encontrados
+    nos insights da conta, junto com o total de cada um.
+    Útil para descobrir o nome exato de eventos personalizados (ex: TypeformSubmit).
+    """
+    from app import obter_token
+    token = obter_token()
+    if not token:
+        return jsonify({'success': False, 'error': 'Não autenticado'}), 401
+
+    date_preset = request.args.get('date_preset', 'last_30_days')
+    since = request.args.get('since')
+    until = request.args.get('until')
+
+    try:
+        base_url = f"https://graph.facebook.com/v22.0/{AD_ACCOUNT_ID}/insights"
+        params = {
+            'access_token': token,
+            'level': 'account',
+            'fields': 'actions',
+            'limit': 10,
+        }
+        if since and until:
+            params['time_range'] = json.dumps({'since': since, 'until': until})
+        else:
+            params['date_preset'] = date_preset
+
+        resp = requests.get(base_url, params=params, timeout=30)
+        resp.raise_for_status()
+        body = resp.json()
+
+        # Agrega todos os action_types encontrados
+        totals = {}
+        for item in body.get('data', []):
+            for a in item.get('actions', []):
+                at = a.get('action_type', '')
+                val = int(float(a.get('value', 0) or 0))
+                totals[at] = totals.get(at, 0) + val
+
+        # Ordena por valor desc e formata
+        sorted_types = sorted(totals.items(), key=lambda x: -x[1])
+
+        return jsonify({
+            'success': True,
+            'date_preset': date_preset,
+            'action_types': [
+                {'action_type': at, 'total': v,
+                 'typeform_match': 'typeform' in at.lower()}
+                for at, v in sorted_types
+            ],
+            'typeform_action_type_env': TYPEFORM_ACTION_TYPE or '(auto-detect)',
+            'hint': 'Procure o action_type com typeform_match=true e configure TYPEFORM_ACTION_TYPE no VPS se necessário.'
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
