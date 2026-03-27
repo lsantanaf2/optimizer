@@ -690,7 +690,7 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows, mqls_all=None):
         prod = row.get('Produto indicado', '').strip() or 'Sem produto'
         by_produto[prod] = by_produto.get(prod, 0) + 1
 
-    # ── Breakdown diário por entidade (para gráfico de linha/barra) ───────────
+    # ── Breakdown diário por entidade (pré-indexado O(n)) ──────────────────────
     def _build_entity_series(spend_map, mqls_map):
         all_keys = sorted(set(list(spend_map.keys()) + list(mqls_map.keys())))
         result = []
@@ -705,57 +705,79 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows, mqls_all=None):
             })
         return result
 
-    # Por campanha
+    # Pré-indexar fb_ads por (campaign, date), (adset, date), (ad+adset, date) — O(n) único
+    _spend_by_camp_date = {}
+    _spend_by_adset_date = {}
+    _spend_by_ad_adset_date = {}
+    for ad in fb_ads:
+        d = ad.get('date_start', '')
+        if not d:
+            continue
+        sp = ad.get('spend', 0.0)
+        cn = _norm(ad.get('campaign_name', ''))
+        an = _norm(ad.get('adset_name', ''))
+        adn = _norm(ad.get('ad_name', ''))
+
+        k1 = (cn, d)
+        _spend_by_camp_date[k1] = _spend_by_camp_date.get(k1, 0.0) + sp
+        k2 = (an, d)
+        _spend_by_adset_date[k2] = _spend_by_adset_date.get(k2, 0.0) + sp
+        k3 = (adn, an, d)
+        _spend_by_ad_adset_date[k3] = _spend_by_ad_adset_date.get(k3, 0.0) + sp
+
+    # Pré-indexar mqls por utm_campaign/content/term → date — O(n) único
+    _mqls_by_camp_date = {}
+    _mqls_by_content_date = {}
+    _mqls_by_term_date = {}
+    for row in mqls_rows:
+        d = _parse_date_br(row.get('Data do preenchimento', ''))
+        if not d:
+            continue
+        dk = d.strftime('%Y-%m-%d')
+        uc = _norm(row.get('utm_campaign', ''))
+        if uc:
+            k = (uc, dk)
+            _mqls_by_camp_date[k] = _mqls_by_camp_date.get(k, 0) + 1
+        ucont = _norm(row.get('utm_content', ''))
+        if ucont:
+            k = (ucont, dk)
+            _mqls_by_content_date[k] = _mqls_by_content_date.get(k, 0) + 1
+        ut = _norm(row.get('utm_term', ''))
+        if ut:
+            k = (ut, dk)
+            _mqls_by_term_date[k] = _mqls_by_term_date.get(k, 0) + 1
+
+    # Helpers para extrair séries de datas dos índices pré-construídos
+    def _extract_spend_2key(idx, key_prefix):
+        return {d: v for (k, d), v in idx.items() if k == key_prefix}
+
+    def _extract_spend_3key(idx, k1, k2):
+        return {d: v for (a, b, d), v in idx.items() if a == k1 and b == k2}
+
+    def _extract_mqls_2key(idx, key_prefix):
+        return {d: v for (k, d), v in idx.items() if k == key_prefix}
+
+    # Por campanha — O(campaigns)
     by_date_per_campaign = {}
     for camp_norm, camp_data in fb_campaigns_by_name.items():
-        ds, dm = {}, {}
-        for ad in fb_ads:
-            if _norm(ad.get('campaign_name', '')) == camp_norm:
-                d = ad.get('date_start', '')
-                if d:
-                    ds[d] = ds.get(d, 0.0) + ad['spend']
-        for row in mqls_rows:
-            if _norm(row.get('utm_campaign', '')) == camp_norm:
-                d = _parse_date_br(row.get('Data do preenchimento', ''))
-                if d:
-                    k = d.strftime('%Y-%m-%d')
-                    dm[k] = dm.get(k, 0) + 1
+        ds = _extract_spend_2key(_spend_by_camp_date, camp_norm)
+        dm = _extract_mqls_2key(_mqls_by_camp_date, camp_norm)
         by_date_per_campaign[camp_data['campaign_name']] = _build_entity_series(ds, dm)
 
-    # Por conjunto
+    # Por conjunto — O(adsets)
     by_date_per_adset = {}
     for adset_norm, adset_data in fb_adsets_by_name.items():
-        ds, dm = {}, {}
-        for ad in fb_ads:
-            if _norm(ad.get('adset_name', '')) == adset_norm:
-                d = ad.get('date_start', '')
-                if d:
-                    ds[d] = ds.get(d, 0.0) + ad['spend']
-        for row in mqls_rows:
-            if _norm(row.get('utm_content', '')) == adset_norm:
-                d = _parse_date_br(row.get('Data do preenchimento', ''))
-                if d:
-                    k = d.strftime('%Y-%m-%d')
-                    dm[k] = dm.get(k, 0) + 1
+        ds = _extract_spend_2key(_spend_by_adset_date, adset_norm)
+        dm = _extract_mqls_2key(_mqls_by_content_date, adset_norm)
         by_date_per_adset[adset_data['adset_name']] = _build_entity_series(ds, dm)
 
-    # Por anúncio
+    # Por anúncio — O(ads)
     by_date_per_ad = {}
     for _ad_key, ad_data_item in fb_ads_by_name.items():
         ad_name_norm = ad_data_item['_name_norm']
         adset_name_item = _norm(ad_data_item.get('adset_name', ''))
-        ds, dm = {}, {}
-        for ad in fb_ads:
-            if _norm(ad.get('ad_name', '')) == ad_name_norm and _norm(ad.get('adset_name', '')) == adset_name_item:
-                d = ad.get('date_start', '')
-                if d:
-                    ds[d] = ds.get(d, 0.0) + ad['spend']
-        for row in mqls_rows:
-            if _norm(row.get('utm_term', '')) == ad_name_norm:
-                d = _parse_date_br(row.get('Data do preenchimento', ''))
-                if d:
-                    k = d.strftime('%Y-%m-%d')
-                    dm[k] = dm.get(k, 0) + 1
+        ds = _extract_spend_3key(_spend_by_ad_adset_date, ad_name_norm, adset_name_item)
+        dm = _extract_mqls_2key(_mqls_by_term_date, ad_name_norm)
         by_date_per_ad[ad_data_item['ad_name']] = _build_entity_series(ds, dm)
 
     # ── Funil de Conversão (agregado de todos os fb_ads do período) ──────────────
@@ -915,6 +937,7 @@ def cruzamento_vinci_page():
 
 @cruzamento_bp.route('/api/cruzamento/data')
 def api_cruzamento_data():
+    from flask import Response, stream_with_context
     from app import obter_token
     token = obter_token()
     if not token:
@@ -924,51 +947,98 @@ def api_cruzamento_data():
     since       = request.args.get('since')
     until       = request.args.get('until')
 
-    try:
-        t0 = time.time()
-        # Fetch paralelo: FB + Sheets simultaneamente + Status dos Ads
-        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-            fb_future     = executor.submit(fetch_fb_insights, AD_ACCOUNT_ID, token, date_preset, since, until)
-            sheets_future = executor.submit(fetch_sheets_data, SPREADSHEET_ID)
-            status_future = executor.submit(fetch_ads_status, AD_ACCOUNT_ID, token)
+    def _sse(stage, payload):
+        return f"data: {json.dumps({'stage': stage, **payload})}\n\n"
 
-            fb_ads                       = fb_future.result()
-            mqls_rows_all, wons_rows_all = sheets_future.result()
-            status_map                   = status_future.result()
+    def generate():
+        try:
+            t0 = time.time()
 
-        # Injeta o status real nos ads de performance
-        for ad in fb_ads:
-            ad['ad_status'] = status_map.get(ad.get('ad_id'), 'UNKNOWN')
+            yield _sse('status', {'message': 'Buscando Facebook Ads + Google Sheets...'})
 
-        # ── Aplicar filtro de data nas linhas do Sheets ─────────────────────────────────────
-        since_d, until_d = preset_to_dates(date_preset, since, until)
-        # MQLs: filtra por 'Data do preenchimento'
-        mqls_rows = filter_rows_by_date(mqls_rows_all, 'Data do preenchimento', since_d, until_d)
-        # Wons: filtra por 'Data de fechamento'
-        wons_rows = filter_rows_by_date(wons_rows_all, 'Data de fechamento', since_d, until_d)
+            # Fetch paralelo com keepalive — envia heartbeat a cada 3s
+            # para evitar que proxy/browser cortem a conexão por inatividade
+            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+                fb_future     = executor.submit(fetch_fb_insights, AD_ACCOUNT_ID, token, date_preset, since, until)
+                sheets_future = executor.submit(fetch_sheets_data, SPREADSHEET_ID)
+                status_future = executor.submit(fetch_ads_status, AD_ACCOUNT_ID, token)
 
-        resultado = processar_cruzamento(fb_ads, mqls_rows, wons_rows, mqls_all=mqls_rows_all)
-        elapsed = round(time.time() - t0, 2)
+                futures = [fb_future, sheets_future, status_future]
+                while not all(f.done() for f in futures):
+                    yield ": keepalive\n\n"
+                    time.sleep(3)
 
-        return jsonify({
-            'success':  True,
-            'data':     resultado,
-            'meta': {
-                'fb_ads_count':   len(fb_ads),
-                'mqls_count':     resultado['total_mqls'],
-                'wons_count':     resultado['total_wons'],
-                'elapsed_sec':    elapsed,
-                'date_preset':    date_preset,
-                'timestamp':      datetime.now(_BR_TZ).isoformat(),
-            }
-        })
+                fb_ads                       = fb_future.result()
+                mqls_rows_all, wons_rows_all = sheets_future.result()
+                status_map                   = status_future.result()
 
-    except FileNotFoundError as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({'success': False, 'error': str(e)}), 500
+            yield _sse('status', {'message': f'Processando {len(fb_ads)} registros...'})
+            yield ": keepalive\n\n"
+
+            for ad in fb_ads:
+                ad['ad_status'] = status_map.get(ad.get('ad_id'), 'UNKNOWN')
+
+            since_d, until_d = preset_to_dates(date_preset, since, until)
+            mqls_rows = filter_rows_by_date(mqls_rows_all, 'Data do preenchimento', since_d, until_d)
+            wons_rows = filter_rows_by_date(wons_rows_all, 'Data de fechamento', since_d, until_d)
+
+            resultado = processar_cruzamento(fb_ads, mqls_rows, wons_rows, mqls_all=mqls_rows_all)
+            elapsed = round(time.time() - t0, 2)
+
+            # Envia cada seção como evento SSE separado
+            yield _sse('kpis', {
+                'ads_consolidated': resultado['ads_consolidated'],
+                'total_mqls':       resultado['total_mqls'],
+                'fat_total_sheets': resultado['fat_total_sheets'],
+            })
+
+            yield _sse('funnel', {'funnel': resultado.get('funnel')})
+
+            yield _sse('charts', {
+                'by_produto': resultado.get('by_produto', {}),
+                'by_date':    resultado.get('by_date', []),
+            })
+
+            yield _sse('campaigns', {
+                'campaigns_consolidated': resultado['campaigns_consolidated'],
+            })
+
+            yield _sse('adsets', {
+                'adsets_consolidated': resultado['adsets_consolidated'],
+            })
+
+            yield _sse('ads', {
+                'ads_consolidated': resultado['ads_consolidated'],
+            })
+
+            yield _sse('timeline', {
+                'by_date':              resultado.get('by_date', []),
+                'by_date_per_campaign': resultado.get('by_date_per_campaign', {}),
+                'by_date_per_adset':    resultado.get('by_date_per_adset', {}),
+                'by_date_per_ad':       resultado.get('by_date_per_ad', {}),
+            })
+
+            yield _sse('done', {
+                'meta': {
+                    'fb_ads_count': len(fb_ads),
+                    'mqls_count':   resultado['total_mqls'],
+                    'wons_count':   resultado['total_wons'],
+                    'elapsed_sec':  elapsed,
+                    'date_preset':  date_preset,
+                    'timestamp':    datetime.now(_BR_TZ).isoformat(),
+                }
+            })
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            yield _sse('error', {'message': str(e)})
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype='text/event-stream',
+        headers={'X-Accel-Buffering': 'no', 'Cache-Control': 'no-cache'}
+    )
 
 
 @cruzamento_bp.route('/api/cruzamento/action-types')
