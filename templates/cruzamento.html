@@ -177,6 +177,15 @@
         padding: 12px 16px;
     }
 
+    /* ── Cascade Reveal ── */
+    @keyframes cascadeIn {
+        from { opacity: 0; transform: translateY(14px); }
+        to   { opacity: 1; transform: translateY(0); }
+    }
+    .crz-cascade {
+        animation: cascadeIn 0.35s ease-out forwards;
+    }
+
     /* ── Funil de Conversão ── */
     .funnel-card {
         background: var(--card-bg);
@@ -1472,7 +1481,7 @@
         if (!ads || ads.length === 0) return;
         allAdsRaw = ads;
         renderAdsTableBody();
-        document.getElementById('crz-ads-container').style.display = 'block';
+        // display controlado pelo cascade reveal
     }
 
     function sortAds(col) {
@@ -1587,7 +1596,7 @@
             return s;
         });
         renderAdSetsTableBody();
-        document.getElementById('crz-adsets-container').style.display = 'block';
+        // display controlado pelo cascade reveal
     }
 
     function sortAdSets(col) {
@@ -1661,7 +1670,7 @@
             return c;
         });
         renderCampaignsTableBody();
-        document.getElementById('crz-campaigns-container').style.display = 'block';
+        // display controlado pelo cascade reveal
     }
 
     function sortCampaigns(col) {
@@ -1804,7 +1813,7 @@
         document.getElementById('fb-typeform').style.width     = pct(tf)  + '%';
         document.getElementById('fb-mqls').style.width         = pct(mql) + '%';
 
-        document.getElementById('funnel-card').style.display = '';
+        // display é controlado pelo cascade reveal em loadData()
     }
 
     // ── KPIs ─────────────────────────────────────────────────────────────────────
@@ -1821,12 +1830,13 @@
         document.getElementById('kpi-roas').textContent    = roas != null ? fmtX(roas) : '—';
         document.getElementById('kpi-mqls').textContent    = totMqls || '—';
         document.getElementById('kpi-cpl').textContent     = cpl != null ? fmtR(cpl) : '—';
-        document.getElementById('kpi-bar').style.display   = '';
+        // display é controlado pelo cascade reveal em loadData()
     }
 
     async function loadData() {
         ['kpi-bar','funnel-card','crz-meta','crz-main-grid','crz-timeline-container','crz-spend-container','crz-ads-container','crz-adsets-container','crz-campaigns-container'].forEach(id => {
-            const el = document.getElementById(id); if (el) el.style.display = 'none';
+            const el = document.getElementById(id);
+            if (el) { el.style.display = 'none'; el.classList.remove('crz-cascade'); }
         });
         document.getElementById('crz-loading').style.display = '';
         document.getElementById('crz-error').style.display = 'none';
@@ -1836,63 +1846,77 @@
             const json = await resp.json();
             if (!json.success) throw new Error(json.error || 'Erro desconhecido');
 
-            updateKPIs(json.data);
-            renderFunnel(json.data.funnel);
-            renderDonut(json.data.by_produto || {});
-            renderDayTable(json.data.by_date || []);
-
-            renderAdsTable((json.data.ads_consolidated || []).map(ad => ({
-                ad_name:       ad.ad_name,
-                campaign_name: ad.campaign_name || '',
-                adset_name:    ad.adset_name || '',
-                spend:         ad.spend,
-                receita:       ad.fat_total || 0,
-                mqls:          ad.leads_total,
-                nc:            ad.leads_a,
-                ad_status:     ad.ad_status
-            })));
-            renderAdSetsTable((json.data.adsets_consolidated || []).map(s => ({
-                adset_name:    s.adset_name,
-                campaign_name: s.campaign_name || '',
-                spend:         s.spend,
-                receita:       s.fat_total || 0,
-                mqls:          s.leads_total,
-                nc:            s.leads_a,
-                ad_status:     s.ad_status
-            })));
-            renderCampaignsTable((json.data.campaigns_consolidated || []).map(c => ({
-                campaign_name: c.campaign_name,
-                spend:         c.spend,
-                receita:       c.fat_total || 0,
-                mqls:          c.leads_total,
-                nc:            c.leads_a,
-                ad_status:     c.ad_status
-            })));
-            // Limpar filtros cascata ao carregar novos dados
-            selectedCampaign = null;
-            selectedAdset = null;
-            updateCascadeBadge();
-
-            // Timeline chart
-            timelineAllData  = json.data.by_date || [];
-            timelinePerCamp  = json.data.by_date_per_campaign || {};
-            timelinePerAdset = json.data.by_date_per_adset || {};
-            timelinePerAd    = json.data.by_date_per_ad || {};
-            timelineFilter   = null;
-            document.getElementById('timeline-filter-badge').style.display = 'none';
-            document.getElementById('timeline-reset-btn').style.display = 'none';
-            document.getElementById('crz-timeline-container').style.display = 'block';
-            document.getElementById('crz-spend-container').style.display = 'block';
-            renderTimelineChart();
-            renderSpendChart();
-
-            document.getElementById('crz-main-grid').style.display = 'grid';
             document.getElementById('crz-loading').style.display = 'none';
+            const d = json.data;
 
-            const m = json.meta || {};
-            const meta = document.getElementById('crz-meta');
-            meta.style.display = '';
-            meta.innerHTML = `⏱ ${m.elapsed_sec}s · 📘 ${m.fb_ads_count} ads · 📋 ${m.mqls_count} MQLs · ✅ ${m.wons_count} Wons · ${new Date(m.timestamp).toLocaleString('pt-BR')}`;
+            // Helper: revela um elemento com animação cascata
+            function reveal(id, displayType) {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.style.display = displayType || '';
+                    el.classList.remove('crz-cascade');
+                    void el.offsetWidth; // force reflow para re-trigger animação
+                    el.classList.add('crz-cascade');
+                }
+            }
+
+            // Prepara dados das tabelas (sem exibir ainda)
+            const adsData = (d.ads_consolidated || []).map(ad => ({
+                ad_name: ad.ad_name, campaign_name: ad.campaign_name || '',
+                adset_name: ad.adset_name || '', spend: ad.spend,
+                receita: ad.fat_total || 0, mqls: ad.leads_total,
+                nc: ad.leads_a, ad_status: ad.ad_status
+            }));
+            const adsetsData = (d.adsets_consolidated || []).map(s => ({
+                adset_name: s.adset_name, campaign_name: s.campaign_name || '',
+                spend: s.spend, receita: s.fat_total || 0,
+                mqls: s.leads_total, nc: s.leads_a, ad_status: s.ad_status
+            }));
+            const campsData = (d.campaigns_consolidated || []).map(c => ({
+                campaign_name: c.campaign_name, spend: c.spend,
+                receita: c.fat_total || 0, mqls: c.leads_total,
+                nc: c.leads_a, ad_status: c.ad_status
+            }));
+
+            // Cascata escalonada — cada seção aparece 120ms após a anterior
+            const S = 120;
+            const steps = [
+                () => { updateKPIs(d); reveal('kpi-bar'); },
+                () => { renderFunnel(d.funnel); reveal('funnel-card'); },
+                () => {
+                    renderDonut(d.by_produto || {});
+                    renderDayTable(d.by_date || []);
+                    reveal('crz-main-grid', 'grid');
+                },
+                () => {
+                    timelineAllData  = d.by_date || [];
+                    timelinePerCamp  = d.by_date_per_campaign || {};
+                    timelinePerAdset = d.by_date_per_adset || {};
+                    timelinePerAd    = d.by_date_per_ad || {};
+                    timelineFilter   = null;
+                    document.getElementById('timeline-filter-badge').style.display = 'none';
+                    document.getElementById('timeline-reset-btn').style.display = 'none';
+                    renderTimelineChart();
+                    reveal('crz-timeline-container', 'block');
+                },
+                () => { renderSpendChart(); reveal('crz-spend-container', 'block'); },
+                () => { renderCampaignsTable(campsData); reveal('crz-campaigns-container', 'block'); },
+                () => { renderAdSetsTable(adsetsData); reveal('crz-adsets-container', 'block'); },
+                () => {
+                    renderAdsTable(adsData);
+                    reveal('crz-ads-container', 'block');
+                    selectedCampaign = null;
+                    selectedAdset = null;
+                    updateCascadeBadge();
+                },
+                () => {
+                    const m = json.meta || {};
+                    const meta = document.getElementById('crz-meta');
+                    meta.innerHTML = `⏱ ${m.elapsed_sec}s · 📘 ${m.fb_ads_count} ads · 📋 ${m.mqls_count} MQLs · ✅ ${m.wons_count} Wons · ${new Date(m.timestamp).toLocaleString('pt-BR')}`;
+                    reveal('crz-meta');
+                },
+            ];
+            steps.forEach((fn, i) => setTimeout(fn, i * S));
 
         } catch (err) {
             document.getElementById('crz-loading').style.display = 'none';
