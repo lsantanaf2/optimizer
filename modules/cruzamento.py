@@ -732,18 +732,21 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows, mqls_all=None):
         })
 
     # ── Breakdown diário por entidade (pré-indexado O(n)) ──────────────────────
-    def _build_entity_series(spend_map, mqls_map):
+    def _build_entity_series(spend_map, mqls_map, prods_map=None):
         all_keys = sorted(set(list(spend_map.keys()) + list(mqls_map.keys())))
         result = []
         for dk in all_keys:
             sp = round(spend_map.get(dk, 0.0), 2)
             mq = mqls_map.get(dk, 0)
-            result.append({
+            entry = {
                 'date':  dk,
                 'mqls':  mq,
                 'spend': sp,
                 'cpl':   round(sp / mq, 2) if mq > 0 and sp > 0 else None,
-            })
+            }
+            if prods_map is not None:
+                entry['produtos'] = prods_map.get(dk, {})
+            result.append(entry)
         return result
 
     # Pré-indexar fb_ads por (campaign, date), (adset, date), (ad+adset, date) — O(n) único
@@ -767,26 +770,37 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows, mqls_all=None):
         _spend_by_ad_adset_date[k3] = _spend_by_ad_adset_date.get(k3, 0.0) + sp
 
     # Pré-indexar mqls por utm_campaign/content/term → date — O(n) único
+    # Inclui breakdown por produto para o gráfico de timeline filtrado
     _mqls_by_camp_date = {}
     _mqls_by_content_date = {}
     _mqls_by_term_date = {}
+    _prods_by_camp_date = {}
+    _prods_by_content_date = {}
+    _prods_by_term_date = {}
     for row in mqls_rows:
         d = _parse_date_br(row.get('Data do preenchimento', ''))
         if not d:
             continue
         dk = d.strftime('%Y-%m-%d')
+        prod = row.get('Produto indicado', '').strip() or 'Sem produto'
         uc = _norm(row.get('utm_campaign', ''))
         if uc:
             k = (uc, dk)
             _mqls_by_camp_date[k] = _mqls_by_camp_date.get(k, 0) + 1
+            pd = _prods_by_camp_date.setdefault(k, {})
+            pd[prod] = pd.get(prod, 0) + 1
         ucont = _norm(row.get('utm_content', ''))
         if ucont:
             k = (ucont, dk)
             _mqls_by_content_date[k] = _mqls_by_content_date.get(k, 0) + 1
+            pd = _prods_by_content_date.setdefault(k, {})
+            pd[prod] = pd.get(prod, 0) + 1
         ut = _norm(row.get('utm_term', ''))
         if ut:
             k = (ut, dk)
             _mqls_by_term_date[k] = _mqls_by_term_date.get(k, 0) + 1
+            pd = _prods_by_term_date.setdefault(k, {})
+            pd[prod] = pd.get(prod, 0) + 1
 
     # Helpers para extrair séries de datas dos índices pré-construídos
     def _extract_spend_2key(idx, key_prefix):
@@ -798,19 +812,24 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows, mqls_all=None):
     def _extract_mqls_2key(idx, key_prefix):
         return {d: v for (k, d), v in idx.items() if k == key_prefix}
 
+    def _extract_prods_2key(idx, key_prefix):
+        return {d: v for (k, d), v in idx.items() if k == key_prefix}
+
     # Por campanha — O(campaigns)
     by_date_per_campaign = {}
     for camp_norm, camp_data in fb_campaigns_by_name.items():
         ds = _extract_spend_2key(_spend_by_camp_date, camp_norm)
         dm = _extract_mqls_2key(_mqls_by_camp_date, camp_norm)
-        by_date_per_campaign[camp_data['campaign_name']] = _build_entity_series(ds, dm)
+        dp = _extract_prods_2key(_prods_by_camp_date, camp_norm)
+        by_date_per_campaign[camp_data['campaign_name']] = _build_entity_series(ds, dm, dp)
 
     # Por conjunto — O(adsets)
     by_date_per_adset = {}
     for adset_norm, adset_data in fb_adsets_by_name.items():
         ds = _extract_spend_2key(_spend_by_adset_date, adset_norm)
         dm = _extract_mqls_2key(_mqls_by_content_date, adset_norm)
-        by_date_per_adset[adset_data['adset_name']] = _build_entity_series(ds, dm)
+        dp = _extract_prods_2key(_prods_by_content_date, adset_norm)
+        by_date_per_adset[adset_data['adset_name']] = _build_entity_series(ds, dm, dp)
 
     # Por anúncio — O(ads)
     by_date_per_ad = {}
@@ -819,7 +838,8 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows, mqls_all=None):
         adset_name_item = _norm(ad_data_item.get('adset_name', ''))
         ds = _extract_spend_3key(_spend_by_ad_adset_date, ad_name_norm, adset_name_item)
         dm = _extract_mqls_2key(_mqls_by_term_date, ad_name_norm)
-        by_date_per_ad[ad_data_item['ad_name']] = _build_entity_series(ds, dm)
+        dp = _extract_prods_2key(_prods_by_term_date, ad_name_norm)
+        by_date_per_ad[ad_data_item['ad_name']] = _build_entity_series(ds, dm, dp)
 
     # ── Funil de Conversão (agregado de todos os fb_ads do período) ──────────────
     _f_imp  = sum(ad.get('impressions', 0)        for ad in fb_ads)
