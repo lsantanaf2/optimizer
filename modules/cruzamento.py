@@ -517,50 +517,75 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows, mqls_all=None):
     matched_deal_ids_adsets    = set()
     matched_deal_ids_campaigns = set()
 
-    # ── 3.1: Cruzar Ads (utm_term ↔ ad_name ou ad_id, refinado por utm_content → adset)
-    # Agrupa compound entries por name_norm para distribuir leads sem duplicar
+    # ── 3.1: Cruzar Ads ──────────────────────────────────────────────────────
+    # Match primário: utm_term ↔ ad_name (ou ad_id)
+    # Fallback: utm_content ↔ adset_name → distribui para ads do adset
     from collections import defaultdict as _defaultdict
+
+    # Índice: adset_norm → lista de ad entries (para fallback)
+    _ads_by_adset_norm = _defaultdict(list)
+
     _ads_by_name_norm = _defaultdict(list)
     for _ak, _ad in fb_ads_by_name.items():
         _ads_by_name_norm[_ad['_name_norm']].append(_ad)
+        _as_norm = _norm(_ad.get('adset_name', ''))
+        if _as_norm:
+            _ads_by_adset_norm[_as_norm].append(_ad)
+
+    # Fase A: match por utm_term (primário)
+    _entry_leads_map = {}  # id(entry) → [leads]
+    for _ak, _ad in fb_ads_by_name.items():
+        _entry_leads_map[id(_ad)] = []
 
     for _nn, _entries in _ads_by_name_norm.items():
-        # Coleta todos os ad_ids do grupo para matching por ID
         _all_ids = set()
         for _e in _entries:
             _all_ids.update(_e['ad_ids'])
         _all_leads = _join_leads(leads_by_term, _nn, *_all_ids)
 
-        # Fase 1: atribui leads com utm_content === adset_norm
-        _entry_leads = {id(_e): [] for _e in _entries}
+        # Sub-fase 1: atribui leads com utm_content === adset_norm
         _assigned = set()
         for _e in _entries:
             _as_norm = _norm(_e.get('adset_name', ''))
             for _l in _all_leads:
                 if _l['deal_id'] not in _assigned and _l.get('utm_content', '') == _as_norm:
-                    _entry_leads[id(_e)].append(_l)
+                    _entry_leads_map[id(_e)].append(_l)
                     _assigned.add(_l['deal_id'])
 
-        # Fase 2: leads sem utm_content matchando → vão para a entry de maior spend
+        # Sub-fase 2: leads sem utm_content matchando → entry de maior spend
         _unassigned = [_l for _l in _all_leads if _l['deal_id'] not in _assigned]
         if _unassigned:
             _best = max(_entries, key=lambda e: e.get('spend', 0))
-            _entry_leads[id(_best)].extend(_unassigned)
+            _entry_leads_map[id(_best)].extend(_unassigned)
             _assigned.update(_l['deal_id'] for _l in _unassigned)
 
-        # Fase 3: consolida cada entry
-        for _e in _entries:
-            _my_leads = _entry_leads[id(_e)]
-            metrics = _calc_metrics(_e, _my_leads)
-            ads_consolidated.append({
-                'ad_name':       _e['ad_name'],
-                'campaign_name': _e['campaign_name'],
-                'adset_name':    _e['adset_name'],
-                'ad_status':     _e['ad_status'],
-                **metrics
-            })
-            for _l in _my_leads:
-                matched_deal_ids_ads.add(_l['deal_id'])
+        for _l in _all_leads:
+            matched_deal_ids_ads.add(_l['deal_id'])
+
+    # Fase B: fallback por utm_content → distribui leads não-matchados para ads do adset
+    # Leads que bateram no nível adset (utm_content) mas NÃO no nível ad (utm_term)
+    for _adset_norm, _adset_entries in _ads_by_adset_norm.items():
+        _content_leads = leads_by_content.get(_adset_norm, [])
+        _unmatched = [_l for _l in _content_leads if _l['deal_id'] not in matched_deal_ids_ads]
+        if not _unmatched:
+            continue
+        # Distribui para o ad de maior spend neste adset
+        _best_ad = max(_adset_entries, key=lambda e: e.get('spend', 0))
+        _entry_leads_map[id(_best_ad)].extend(_unmatched)
+        for _l in _unmatched:
+            matched_deal_ids_ads.add(_l['deal_id'])
+
+    # Fase C: consolida cada entry
+    for _ak, _ad in fb_ads_by_name.items():
+        _my_leads = _entry_leads_map[id(_ad)]
+        metrics = _calc_metrics(_ad, _my_leads)
+        ads_consolidated.append({
+            'ad_name':       _ad['ad_name'],
+            'campaign_name': _ad['campaign_name'],
+            'adset_name':    _ad['adset_name'],
+            'ad_status':     _ad['ad_status'],
+            **metrics
+        })
 
     # ── 3.2: Cruzar AdSets (utm_content ↔ adset_name ou adset_id)
     for name_norm, adset_data in fb_adsets_by_name.items():
