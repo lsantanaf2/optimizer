@@ -584,7 +584,10 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows, mqls_all=None):
             _ads_by_camp_norm[_cn].append(_ad)
 
     for _camp_norm, _camp_entries in _ads_by_camp_norm.items():
-        _camp_leads = leads_by_campaign.get(_camp_norm, [])
+        # Busca por nome normalizado E campaign_id (mesmo padrão do _join_leads)
+        _camp_fb = fb_campaigns_by_name.get(_camp_norm, {})
+        _camp_id = _camp_fb.get('campaign_id', '')
+        _camp_leads = _join_leads(leads_by_campaign, _camp_norm, _camp_id)
         _unmatched = [_l for _l in _camp_leads if _l['deal_id'] not in matched_deal_ids_ads]
         if not _unmatched:
             continue
@@ -626,8 +629,12 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows, mqls_all=None):
             matched_deal_ids_adsets.add(lead['deal_id'])
 
     # Fase B: fallback por utm_campaign → distribui leads não-matchados para adsets da campanha
+    # Usa mesma lógica do _join_leads: busca por nome normalizado E campaign_id
     for camp_norm, adset_entries in _adsets_by_camp_norm.items():
-        camp_leads = leads_by_campaign.get(camp_norm, [])
+        # Busca campaign_id do fb_campaigns_by_name para lookup completo
+        camp_fb = fb_campaigns_by_name.get(camp_norm, {})
+        camp_id = camp_fb.get('campaign_id', '')
+        camp_leads = _join_leads(leads_by_campaign, camp_norm, camp_id)
         unmatched = [l for l in camp_leads if l['deal_id'] not in matched_deal_ids_adsets]
         if not unmatched:
             continue
