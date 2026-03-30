@@ -575,7 +575,25 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows, mqls_all=None):
         for _l in _unmatched:
             matched_deal_ids_ads.add(_l['deal_id'])
 
-    # Fase C: consolida cada entry
+    # Fase C: fallback por utm_campaign → distribui leads que só matcharam campanha
+    # Leads com utm_campaign mas sem utm_content/utm_term matchando
+    _ads_by_camp_norm = _defaultdict(list)
+    for _ak, _ad in fb_ads_by_name.items():
+        _cn = _norm(_ad.get('campaign_name', ''))
+        if _cn:
+            _ads_by_camp_norm[_cn].append(_ad)
+
+    for _camp_norm, _camp_entries in _ads_by_camp_norm.items():
+        _camp_leads = leads_by_campaign.get(_camp_norm, [])
+        _unmatched = [_l for _l in _camp_leads if _l['deal_id'] not in matched_deal_ids_ads]
+        if not _unmatched:
+            continue
+        _best_ad = max(_camp_entries, key=lambda e: e.get('spend', 0))
+        _entry_leads_map[id(_best_ad)].extend(_unmatched)
+        for _l in _unmatched:
+            matched_deal_ids_ads.add(_l['deal_id'])
+
+    # Fase D: consolida cada entry
     for _ak, _ad in fb_ads_by_name.items():
         _my_leads = _entry_leads_map[id(_ad)]
         metrics = _calc_metrics(_ad, _my_leads)
@@ -587,9 +605,41 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows, mqls_all=None):
             **metrics
         })
 
-    # ── 3.2: Cruzar AdSets (utm_content ↔ adset_name ou adset_id)
+    # ── 3.2: Cruzar AdSets ─────────────────────────────────────────────────────
+    # Match primário: utm_content ↔ adset_name (ou adset_id)
+    # Fallback: utm_campaign ↔ campaign_name → distribui para adsets da campanha
+
+    # Índice: campaign_norm → lista de adset entries (para fallback)
+    _adsets_by_camp_norm = _defaultdict(list)
+    _adset_leads_map = {}  # name_norm → [leads]
+
+    for name_norm, adset_data in fb_adsets_by_name.items():
+        camp_norm = _norm(adset_data.get('campaign_name', ''))
+        if camp_norm:
+            _adsets_by_camp_norm[camp_norm].append((name_norm, adset_data))
+
+    # Fase A: match primário por utm_content
     for name_norm, adset_data in fb_adsets_by_name.items():
         m_leads = _join_leads(leads_by_content, name_norm, adset_data.get('adset_id', ''))
+        _adset_leads_map[name_norm] = m_leads
+        for lead in m_leads:
+            matched_deal_ids_adsets.add(lead['deal_id'])
+
+    # Fase B: fallback por utm_campaign → distribui leads não-matchados para adsets da campanha
+    for camp_norm, adset_entries in _adsets_by_camp_norm.items():
+        camp_leads = leads_by_campaign.get(camp_norm, [])
+        unmatched = [l for l in camp_leads if l['deal_id'] not in matched_deal_ids_adsets]
+        if not unmatched:
+            continue
+        # Distribui para o adset de maior spend nesta campanha
+        best_nn, best_data = max(adset_entries, key=lambda x: x[1].get('spend', 0))
+        _adset_leads_map.setdefault(best_nn, []).extend(unmatched)
+        for l in unmatched:
+            matched_deal_ids_adsets.add(l['deal_id'])
+
+    # Fase C: consolida
+    for name_norm, adset_data in fb_adsets_by_name.items():
+        m_leads = _adset_leads_map.get(name_norm, [])
         metrics = _calc_metrics(adset_data, m_leads)
         adsets_consolidated.append({
             'adset_name':    adset_data['adset_name'],
@@ -597,8 +647,6 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows, mqls_all=None):
             'ad_status':     adset_data['ad_status'],
             **metrics
         })
-        for lead in m_leads:
-            matched_deal_ids_adsets.add(lead['deal_id'])
 
     # ── 3.3: Cruzar Campaigns (utm_campaign ↔ campaign_name ou campaign_id)
     for name_norm, camp_data in fb_campaigns_by_name.items():
