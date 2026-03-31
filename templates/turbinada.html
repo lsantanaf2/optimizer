@@ -588,6 +588,15 @@
         return value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
 
+    function parseBRL(str) {
+        // Converte "1.234,56" ou "1234,56" ou "1234.56" para float
+        if (typeof str === 'number') return str;
+        str = String(str).trim();
+        // Se tem vírgula como decimal (padrão BR): remove pontos de milhar, troca vírgula por ponto
+        if (str.includes(',')) return parseFloat(str.replace(/\./g, '').replace(',', '.'));
+        return parseFloat(str);
+    }
+
     const ACCOUNT_ID = "{{ account_id }}";
     let currentLevel = 'campaign';
     let navStack = []; // [{level, parentIds, parentName}]
@@ -1133,7 +1142,7 @@
             }
 
             if (showBudget) {
-                const budget = item.daily_budget != null ? item.daily_budget.toFixed(2) : '—';
+                const budget = item.daily_budget != null ? formatBRL(item.daily_budget) : '—';
                 rows += `<td>
                 <div class="budget-cell">
                     <input type="text" class="budget-input" value="${budget}" data-original="${budget}" data-id="${item.id}" data-type="${currentLevel}" oninput="onBudgetEdit(this)">
@@ -1286,9 +1295,9 @@
 
     function multiply12(btn) {
         const input = btn.parentElement.querySelector('.budget-input');
-        const val = parseFloat(input.value);
+        const val = parseBRL(input.value);
         if (!isNaN(val)) {
-            input.value = (val * 1.2).toFixed(2);
+            input.value = formatBRL(val * 1.2);
             onBudgetEdit(input);
         }
     }
@@ -1298,7 +1307,7 @@
         const input = cell.querySelector('.budget-input');
         const entityId = btn.dataset.id;
         const entityType = btn.dataset.type;
-        const newBudget = parseFloat(input.value);
+        const newBudget = parseBRL(input.value);
 
         if (isNaN(newBudget) || newBudget <= 0) {
             mostrarToast('❌ Valor inválido');
@@ -1315,7 +1324,7 @@
             });
             const json = await resp.json();
             if (json.success) {
-                input.dataset.original = newBudget.toFixed(2);
+                input.dataset.original = formatBRL(newBudget);
                 btn.style.display = 'none';
                 btn.textContent = '✓';
                 // Atualiza allData para que reordenações futuras usem o orçamento correto
