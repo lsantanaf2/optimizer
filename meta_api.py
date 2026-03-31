@@ -194,8 +194,15 @@ class MetaUploader:
         elif parent_ids and level == 'ad':
             parent_field = "campaign.id" if parent_type == 'campaign' else "adset.id"
             insights_filter.append({"field": parent_field, "operator": "IN", "value": parent_ids})
+        # Aplicar filtro de status: para campaigns filtra campaign.effective_status,
+        # para adsets/ads filtra adset/ad.effective_status + campaign pai deve ser ACTIVE
         if level == 'campaign':
             insights_filter.append({"field": "campaign.effective_status", "operator": "IN", "value": status_values})
+        elif level == 'adset':
+            insights_filter.append({"field": "adset.effective_status", "operator": "IN", "value": status_values})
+            insights_filter.append({"field": "campaign.effective_status", "operator": "IN", "value": ["ACTIVE"]})
+        elif level == 'ad':
+            insights_filter.append({"field": "ad.effective_status", "operator": "IN", "value": status_values})
 
         insights_by_id = {}  # {entity_id: {p7d: {...}, p3d: {...}, ...}}
 
@@ -247,31 +254,29 @@ class MetaUploader:
         print(f"📊 [turbinada] {len(ids_with_spend)} {level}s com gasto encontrados")
 
         # ── PASSO 2: Buscar estrutura APENAS dos IDs com gasto ──
+        # Usa batch lookup GET /?ids=id1,id2&fields=... (garantido para qualquer entidade)
         struct_map = {}
         if ids_with_spend:
-            # Buscar em lotes de 50 IDs para não estourar limite de URL
             batch_size = 50
             for i in range(0, len(ids_with_spend), batch_size):
                 batch_ids = ids_with_spend[i:i + batch_size]
-                struct_url = f"https://graph.facebook.com/v22.0/{cfg['struct_endpoint']}"
-                struct_params = {
+                batch_url = "https://graph.facebook.com/v22.0/"
+                batch_params = {
                     'access_token': self.access_token,
+                    'ids': ','.join(batch_ids),
                     'fields': cfg['struct_fields'],
-                    'limit': 500,
-                    'filtering': json.dumps([{"field": "id", "operator": "IN", "value": batch_ids}]),
                 }
 
-                resp = requests.get(struct_url, params=struct_params, timeout=60)
-                for item in resp.json().get('data', []):
-                    struct_map[item['id']] = item
-
-                # Paginação de estrutura (raro com filtro por ID, mas seguro)
-                next_url = resp.json().get('paging', {}).get('next')
-                while next_url:
-                    resp = requests.get(next_url, timeout=60)
-                    for item in resp.json().get('data', []):
-                        struct_map[item['id']] = item
-                    next_url = resp.json().get('paging', {}).get('next')
+                try:
+                    resp = requests.get(batch_url, params=batch_params, timeout=60)
+                    resp_data = resp.json()
+                    # Batch lookup retorna {id: {fields...}, id2: {fields...}}
+                    if isinstance(resp_data, dict):
+                        for eid, item in resp_data.items():
+                            if isinstance(item, dict) and 'id' in item:
+                                struct_map[item['id']] = item
+                except Exception as e:
+                    print(f"   ⚠️ Batch struct lookup falhou: {e}")
 
         print(f"📊 [turbinada] {len(struct_map)} {level}s carregados (estrutura)")
 
