@@ -289,6 +289,29 @@
         border-left: 2px solid var(--border);
     }
 
+    /* Summary footer row */
+    .turb-table tfoot td {
+        padding: 8px 10px;
+        font-weight: 700;
+        font-size: 11px;
+        color: var(--text-primary);
+        background: rgba(8, 145, 178, 0.08);
+        border-top: 2px solid var(--accent);
+        position: sticky;
+        bottom: 0;
+        z-index: 2;
+    }
+    .turb-table tfoot td.metric {
+        text-align: right;
+        font-size: 11px;
+    }
+    .turb-table tfoot td.period-start {
+        border-left: 2px solid var(--border);
+    }
+    .turb-table tfoot td.period-cell {
+        border-left: 1px solid var(--border-light, #2a2a2a);
+    }
+
     /* Period group coloring */
     .cac-green td.p-group {
         background: rgba(34, 197, 94, 0.15) !important;
@@ -553,6 +576,7 @@
     <table class="turb-table" id="turb-table" style="display:none;">
         <thead id="turb-thead"></thead>
         <tbody id="turb-tbody"></tbody>
+        <tfoot id="turb-tfoot"></tfoot>
     </table>
     <div class="turb-no-periods" id="turb-no-periods" style="display:none;">
         ⚠️ Selecione ao menos um período para exibir a tabela.
@@ -1144,6 +1168,35 @@
         });
 
         tbody.innerHTML = rows;
+
+        // ---- Footer (linha de resumo) ----
+        const tfoot = document.getElementById('turb-tfoot');
+        let foot = '<tr>';
+        foot += '<td></td>';  // checkbox
+        foot += '<td></td>';  // status
+        foot += `<td style="font-weight:700;">TOTAL (${data.length})</td>`;
+        if (showBudget) {
+            const totalBudget = data.reduce((s, item) => s + (item.daily_budget || 0), 0);
+            foot += `<td style="font-weight:700;">R$ ${formatBRL(totalBudget)}</td>`;
+        }
+        periods.forEach((p, pi) => {
+            let totalSpend = 0, totalPurch = 0;
+            data.forEach(item => {
+                const pd = item[p.key] || { spend: 0, purchases: 0 };
+                totalSpend += pd.spend || 0;
+                totalPurch += pd.purchases || 0;
+            });
+            const totalCac = totalPurch > 0 ? totalSpend / totalPurch : null;
+            const spendStr = totalSpend > 0 ? `R$ ${formatBRL(totalSpend)}` : '—';
+            const purchStr = totalPurch > 0 ? totalPurch : '—';
+            const cacStr = totalCac !== null ? `R$ ${formatBRL(totalCac)}` : '—';
+            foot += `<td class="metric period-cell${pi === 0 ? ' period-start' : ''}" data-period="${p.key}">${spendStr}</td>`;
+            foot += `<td class="metric period-cell" data-period="${p.key}">${purchStr}</td>`;
+            foot += `<td class="metric period-cell" data-period="${p.key}">${cacStr}</td>`;
+        });
+        foot += '</tr>';
+        tfoot.innerHTML = foot;
+
         table.style.display = 'table';
         lastCheckboxIdx = -1;
     }
