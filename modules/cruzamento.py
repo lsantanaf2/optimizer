@@ -12,6 +12,7 @@ Autenticação Google: Service Account JSON (GOOGLE_CREDENTIALS_FILE)
 import os
 import json
 import time
+import threading
 import requests
 import concurrent.futures
 from datetime import datetime, timedelta, timezone
