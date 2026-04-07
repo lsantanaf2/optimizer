@@ -342,6 +342,17 @@
         background: rgba(255, 255, 255, 0.03);
     }
 
+    .crz-table tfoot td {
+        padding: 8px 10px;
+        font-weight: 700;
+        font-size: 11px;
+        color: var(--text-primary);
+        background: rgba(8, 145, 178, 0.08);
+        border-top: 2px solid var(--accent);
+        position: sticky;
+        bottom: 0;
+    }
+
     /* Row levels */
     .row-campaign td {
         background: rgba(0, 242, 255, 0.04);
@@ -691,6 +702,15 @@
     .crz-tab-content { display: none; }
     .crz-tab-content.active { display: block; }
 
+    /* Criativos status badges */
+    .status-badge {
+        display: inline-block; padding: 2px 10px; border-radius: 12px;
+        font-size: 10px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase;
+    }
+    .status-badge.escala { background: rgba(45, 182, 125, 0.15); color: #2db67d; }
+    .status-badge.teste  { background: rgba(79, 156, 249, 0.15); color: #4f9cf9; }
+    .status-badge.pausado { background: rgba(255, 255, 255, 0.06); color: var(--text-muted); }
+
     /* ── Painel de Acompanhamento ── */
     .panel-section {
         margin-bottom: 14px;
@@ -841,6 +861,7 @@
 <div class="crz-tabs" id="crz-tabs">
     <button class="crz-tab active" data-tab="tab-principal" onclick="switchTab('tab-principal')">Principal</button>
     <button class="crz-tab" data-tab="tab-painel-diario" onclick="switchTab('tab-painel-diario')">Painel diário</button>
+    <button class="crz-tab" data-tab="tab-criativos" onclick="switchTab('tab-criativos')">Criativos</button>
 </div>
 
 <!-- Tab 1: Principal -->
@@ -1111,6 +1132,34 @@
     </div>
 </div><!-- /tab-painel-diario -->
 
+<!-- Tab 3: Criativos -->
+<div id="tab-criativos" class="crz-tab-content">
+    <div class="chart-card" style="padding:0; overflow:hidden;">
+        <div style="padding:12px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between;">
+            <span style="font-size:13px; font-weight:700; color:var(--text-primary);">🎨 Criativos</span>
+            <span id="criativos-count" style="font-size:11px; color:var(--text-muted);"></span>
+        </div>
+        <div class="crz-table-wrap" style="max-height:600px;">
+            <table class="crz-table" id="criativos-table" style="display:none;">
+                <thead>
+                    <tr>
+                        <th style="text-align:left;">Nome</th>
+                        <th style="width:90px;">Status</th>
+                        <th style="width:110px; text-align:right;">Investimento</th>
+                        <th style="width:70px; text-align:right;">MQLs</th>
+                        <th style="width:90px; text-align:right;">Ads Ativos</th>
+                    </tr>
+                </thead>
+                <tbody id="criativos-tbody"></tbody>
+                <tfoot id="criativos-tfoot"></tfoot>
+            </table>
+        </div>
+        <div id="criativos-empty" style="display:none; padding:40px; text-align:center; color:var(--text-muted); font-size:13px;">
+            Nenhum dado de criativo disponível. Carregue os dados na aba Principal.
+        </div>
+    </div>
+</div><!-- /tab-criativos -->
+
 <!-- Loading / Error states -->
 <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius-md);">
     <div class="crz-state" id="crz-loading">
@@ -1132,6 +1181,8 @@
     // ── Tab System ───────────────────────────────────────────────────────────────
     let _panelDataCache = null;   // dados do daily_funnel cacheados
     let _panelRendered = false;   // se os gráficos já foram renderizados neste ciclo
+    let _criativosDataCache = null;  // dados de ads_consolidated cacheados
+    let _criativosRendered = false;
 
     function switchTab(tabId) {
         document.querySelectorAll('.crz-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tabId));
@@ -1142,6 +1193,98 @@
             renderPanelCharts(_panelDataCache);
             _panelRendered = true;
         }
+        if (tabId === 'tab-criativos' && _criativosDataCache && !_criativosRendered) {
+            renderCriativosTable(_criativosDataCache);
+            _criativosRendered = true;
+        }
+    }
+
+    function renderCriativosTable(adsRaw) {
+        // Filtra orgânicos/sem UTM
+        const ads = adsRaw.filter(a => a.ad_name && !a.ad_name.startsWith('🌿') && !a.ad_name.startsWith('⚠️'));
+
+        // Agrupa por ad_name
+        const grouped = {};
+        ads.forEach(ad => {
+            const name = ad.ad_name;
+            if (!grouped[name]) {
+                grouped[name] = { name, spend: 0, mqls: 0, activeCount: 0, campaigns: new Set() };
+            }
+            const g = grouped[name];
+            g.spend += ad.spend || 0;
+            g.mqls += ad.leads_total || 0;
+            if (ad.ad_status === 'ACTIVE') {
+                g.activeCount++;
+                g.campaigns.add(ad.campaign_name || '');
+            }
+        });
+
+        // Determina status de cada criativo
+        const criativos = Object.values(grouped).map(g => {
+            let status;
+            if (g.activeCount === 0) {
+                status = 'pausado';
+            } else {
+                // Verifica se TODAS as campanhas ativas contêm "TESTE"
+                const campArr = Array.from(g.campaigns);
+                const allTest = campArr.length > 0 && campArr.every(c => c.toUpperCase().includes('TESTE'));
+                const anyScale = campArr.some(c => !c.toUpperCase().includes('TESTE'));
+                status = anyScale ? 'escala' : 'teste';
+            }
+            return { name: g.name, status, spend: g.spend, mqls: g.mqls, activeCount: g.activeCount };
+        });
+
+        // Ordenar: escala > teste > pausado, sub por spend desc
+        const statusOrder = { escala: 0, teste: 1, pausado: 2 };
+        criativos.sort((a, b) => {
+            const so = statusOrder[a.status] - statusOrder[b.status];
+            return so !== 0 ? so : b.spend - a.spend;
+        });
+
+        const table = document.getElementById('criativos-table');
+        const tbody = document.getElementById('criativos-tbody');
+        const tfoot = document.getElementById('criativos-tfoot');
+        const empty = document.getElementById('criativos-empty');
+        const count = document.getElementById('criativos-count');
+
+        if (criativos.length === 0) {
+            table.style.display = 'none';
+            empty.style.display = '';
+            return;
+        }
+
+        const statusBadge = s => `<span class="status-badge ${s}">${s}</span>`;
+
+        let rows = '';
+        let totSpend = 0, totMqls = 0, totActive = 0;
+        criativos.forEach(c => {
+            totSpend += c.spend; totMqls += c.mqls; totActive += c.activeCount;
+            rows += `<tr>
+                <td style="text-align:left; max-width:400px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${c.name}">${c.name}</td>
+                <td style="text-align:center;">${statusBadge(c.status)}</td>
+                <td style="text-align:right;">${c.spend > 0 ? 'R$ ' + c.spend.toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
+                <td style="text-align:right;">${c.mqls || '—'}</td>
+                <td style="text-align:right;">${c.activeCount}</td>
+            </tr>`;
+        });
+
+        tbody.innerHTML = rows;
+
+        const escalaCount = criativos.filter(c => c.status === 'escala').length;
+        const testeCount = criativos.filter(c => c.status === 'teste').length;
+        const pausadoCount = criativos.filter(c => c.status === 'pausado').length;
+        count.textContent = `${criativos.length} criativos · ${escalaCount} escala · ${testeCount} teste · ${pausadoCount} pausados`;
+
+        tfoot.innerHTML = `<tr>
+            <td style="text-align:left; font-weight:700;">TOTAL (${criativos.length})</td>
+            <td></td>
+            <td style="text-align:right; font-weight:700;">R$ ${totSpend.toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2})}</td>
+            <td style="text-align:right; font-weight:700;">${totMqls}</td>
+            <td style="text-align:right; font-weight:700;">${totActive}</td>
+        </tr>`;
+
+        table.style.display = '';
+        empty.style.display = 'none';
     }
 
     // ── Date Range Picker State ──────────────────────────────────────────────────
@@ -1970,6 +2113,8 @@
         // Esconde todas as seções
         _panelDataCache = null;
         _panelRendered = false;
+        _criativosDataCache = null;
+        _criativosRendered = false;
         ['kpi-bar','funnel-card','crz-meta','crz-main-grid','crz-timeline-container','crz-spend-container','crz-ads-container','crz-adsets-container','crz-campaigns-container'].forEach(id => {
             const el = document.getElementById(id);
             if (el) { el.style.display = 'none'; el.classList.remove('crz-cascade'); }
@@ -2061,6 +2206,13 @@
             } else if (stage === 'ads') {
                 renderAdsTable(mapAds(d.ads_consolidated)); reveal('crz-ads-container', 'block');
                 selectedCampaign = null; selectedAdset = null; updateCascadeBadge();
+                // Cache para aba Criativos (lazy render)
+                _criativosDataCache = d.ads_consolidated || [];
+                _criativosRendered = false;
+                if (document.getElementById('tab-criativos').classList.contains('active')) {
+                    renderCriativosTable(_criativosDataCache);
+                    _criativosRendered = true;
+                }
             } else if (stage === 'done') {
                 const m = d.meta || {};
                 const meta = document.getElementById('crz-meta');
