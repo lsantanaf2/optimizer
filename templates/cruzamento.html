@@ -1200,8 +1200,13 @@
     }
 
     function renderCriativosTable(adsRaw) {
-        // Filtra orgânicos/sem UTM
-        const ads = adsRaw.filter(a => a.ad_name && !a.ad_name.startsWith('🌿') && !a.ad_name.startsWith('⚠️'));
+        // Filtra: só campanhas com [VINCI] ou [TAY] no nome (ativas ou pausadas)
+        const ads = adsRaw.filter(a => {
+            if (!a.ad_name || a.ad_name.startsWith('🌿') || a.ad_name.startsWith('⚠️')) return false;
+            const cn = (a.campaign_name || '').toUpperCase();
+            if (!cn.includes('[VINCI]') && !cn.includes('[TAY]')) return false;
+            return true;
+        });
 
         // Agrupa por ad_name
         const grouped = {};
