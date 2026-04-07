@@ -1235,11 +1235,10 @@
     }
 
     function renderCriativosTable(adsRaw) {
-        // Filtra: só campanhas com [VINCI] ou [TAY] no nome (ativas ou pausadas)
+        // Filtra: exclui orgânicos e campanhas com "180" no nome
         const ads = adsRaw.filter(a => {
             if (!a.ad_name || a.ad_name.startsWith('🌿') || a.ad_name.startsWith('⚠️')) return false;
-            const cn = (a.campaign_name || '').toUpperCase();
-            if (!cn.includes('[VINCI]') && !cn.includes('[TAY]')) return false;
+            if (a.campaign_name && a.campaign_name.includes('180')) return false;
             return true;
         });
 
