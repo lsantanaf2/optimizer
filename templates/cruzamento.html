@@ -1250,7 +1250,11 @@
             const g = grouped[name];
             g.spend += ad.spend || 0;
             g.mqls += ad.leads_total || 0;
-            if (ad.ad_status === 'ACTIVE') {
+            // Ad só é realmente ativo se ad + adset + campanha estão ACTIVE
+            const reallyActive = ad.ad_status === 'ACTIVE'
+                && ad.adset_status === 'ACTIVE'
+                && ad.campaign_status === 'ACTIVE';
+            if (reallyActive) {
                 g.activeCount++;
                 g.campaigns.add(ad.campaign_name || '');
             }

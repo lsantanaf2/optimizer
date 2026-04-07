@@ -295,6 +295,48 @@ def fetch_ads_status(account_id, access_token):
         print(f"⚠️ Erro ao buscar status dos ads: {e}")
     return status_map
 
+
+def fetch_campaigns_status(account_id, access_token):
+    """Busca o effective_status de todas as campanhas da conta."""
+    base_url = f"https://graph.facebook.com/v22.0/{account_id}/campaigns"
+    params = {'access_token': access_token, 'fields': 'id,effective_status', 'limit': 500}
+    status_map = {}
+    url = base_url
+    try:
+        while url:
+            resp = requests.get(url, params=params if url == base_url else None, timeout=30)
+            if resp.status_code != 200:
+                break
+            body = resp.json()
+            for item in body.get('data', []):
+                status_map[item['id']] = item.get('effective_status', 'UNKNOWN')
+            url = body.get('paging', {}).get('next')
+            params = None
+    except Exception as e:
+        print(f"⚠️ Erro ao buscar status das campanhas: {e}")
+    return status_map
+
+
+def fetch_adsets_status(account_id, access_token):
+    """Busca o effective_status de todos os adsets da conta."""
+    base_url = f"https://graph.facebook.com/v22.0/{account_id}/adsets"
+    params = {'access_token': access_token, 'fields': 'id,effective_status', 'limit': 500}
+    status_map = {}
+    url = base_url
+    try:
+        while url:
+            resp = requests.get(url, params=params if url == base_url else None, timeout=30)
+            if resp.status_code != 200:
+                break
+            body = resp.json()
+            for item in body.get('data', []):
+                status_map[item['id']] = item.get('effective_status', 'UNKNOWN')
+            url = body.get('paging', {}).get('next')
+            params = None
+    except Exception as e:
+        print(f"⚠️ Erro ao buscar status dos adsets: {e}")
+    return status_map
+
 # ── Processamento: Duplo Join em Memória ──────────────────────────────────────
 def processar_cruzamento(fb_ads, mqls_rows, wons_rows, mqls_all=None):
     """
@@ -426,7 +468,9 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows, mqls_all=None):
                 fb_ads_by_name[ad_key] = {
                     'ad_name':            ad.get('ad_name', 'Desconhecido'),
                     'campaign_name':      ad.get('campaign_name', ''),
+                    'campaign_status':    ad.get('campaign_status', 'UNKNOWN'),
                     'adset_name':         ad.get('adset_name', ''),
+                    'adset_status':       ad.get('adset_status', 'UNKNOWN'),
                     'ad_status':          ad.get('ad_status', 'UNKNOWN'),
                     'ad_ids':             set(),
                     '_name_norm':         name_norm,
@@ -603,7 +647,9 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows, mqls_all=None):
         ads_consolidated.append({
             'ad_name':       _ad['ad_name'],
             'campaign_name': _ad['campaign_name'],
+            'campaign_status': _ad.get('campaign_status', 'UNKNOWN'),
             'adset_name':    _ad['adset_name'],
+            'adset_status':  _ad.get('adset_status', 'UNKNOWN'),
             'ad_status':     _ad['ad_status'],
             **metrics
         })
@@ -1100,12 +1146,14 @@ def api_cruzamento_data():
 
             # Fetch paralelo com keepalive — envia heartbeat a cada 3s
             # para evitar que proxy/browser cortem a conexão por inatividade
-            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
                 fb_future     = executor.submit(fetch_fb_insights, AD_ACCOUNT_ID, token, date_preset, since, until)
                 sheets_future = executor.submit(fetch_sheets_data, SPREADSHEET_ID)
                 status_future = executor.submit(fetch_ads_status, AD_ACCOUNT_ID, token)
+                camp_status_future = executor.submit(fetch_campaigns_status, AD_ACCOUNT_ID, token)
+                adset_status_future = executor.submit(fetch_adsets_status, AD_ACCOUNT_ID, token)
 
-                futures = [fb_future, sheets_future, status_future]
+                futures = [fb_future, sheets_future, status_future, camp_status_future, adset_status_future]
                 while not all(f.done() for f in futures):
                     yield ": keepalive\n\n"
                     time.sleep(3)
@@ -1113,18 +1161,38 @@ def api_cruzamento_data():
                 fb_ads                       = fb_future.result()
                 mqls_rows_all, wons_rows_all = sheets_future.result()
                 status_map                   = status_future.result()
+                camp_status_map              = camp_status_future.result()
+                adset_status_map             = adset_status_future.result()
 
             yield _sse('status', {'message': f'Processando {len(fb_ads)} registros...'})
             yield ": keepalive\n\n"
 
             for ad in fb_ads:
                 ad['ad_status'] = status_map.get(ad.get('ad_id'), 'UNKNOWN')
+                ad['campaign_status'] = camp_status_map.get(ad.get('campaign_id'), 'UNKNOWN')
+                ad['adset_status'] = adset_status_map.get(ad.get('adset_id'), 'UNKNOWN')
 
             since_d, until_d = preset_to_dates(date_preset, since, until)
             mqls_rows = filter_rows_by_date(mqls_rows_all, 'Data do preenchimento', since_d, until_d)
             wons_rows = filter_rows_by_date(wons_rows_all, 'Data de fechamento', since_d, until_d)
 
-            resultado = processar_cruzamento(fb_ads, mqls_rows, wons_rows, mqls_all=mqls_rows_all)
+            # Processa em thread separada com heartbeat para manter conexão viva
+            _resultado_box = [None, None]  # [resultado, error]
+            def _process():
+                try:
+                    _resultado_box[0] = processar_cruzamento(fb_ads, mqls_rows, wons_rows, mqls_all=mqls_rows_all)
+                except Exception as e:
+                    _resultado_box[1] = e
+
+            proc_thread = threading.Thread(target=_process, daemon=True)
+            proc_thread.start()
+            while proc_thread.is_alive():
+                yield ": keepalive\n\n"
+                proc_thread.join(timeout=3)
+
+            if _resultado_box[1]:
+                raise _resultado_box[1]
+            resultado = _resultado_box[0]
             elapsed = round(time.time() - t0, 2)
 
             # Envia cada seção como evento SSE separado
@@ -1133,15 +1201,18 @@ def api_cruzamento_data():
                 'total_mqls':       resultado['total_mqls'],
                 'fat_total_sheets': resultado['fat_total_sheets'],
             })
+            yield ": keepalive\n\n"
 
             yield _sse('funnel', {'funnel': resultado.get('funnel')})
 
             yield _sse('panel', {'daily_funnel': resultado.get('daily_funnel', [])})
+            yield ": keepalive\n\n"
 
             yield _sse('charts', {
                 'by_produto': resultado.get('by_produto', {}),
                 'by_date':    resultado.get('by_date', []),
             })
+            yield ": keepalive\n\n"
 
             yield _sse('campaigns', {
                 'campaigns_consolidated': resultado['campaigns_consolidated'],
@@ -1154,6 +1225,7 @@ def api_cruzamento_data():
             yield _sse('ads', {
                 'ads_consolidated': resultado['ads_consolidated'],
             })
+            yield ": keepalive\n\n"
 
             yield _sse('timeline', {
                 'by_date':              resultado.get('by_date', []),
