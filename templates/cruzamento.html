@@ -830,6 +830,7 @@
                         <label class="drp-preset" data-preset="last_30d"><input type="radio" name="drp" value="last_30d"> Últimos 30 dias</label>
                         <label class="drp-preset" data-preset="this_month"><input type="radio" name="drp" value="this_month"> Este mês</label>
                         <label class="drp-preset" data-preset="last_month"><input type="radio" name="drp" value="last_month"> Mês passado</label>
+                        <label class="drp-preset" data-preset="this_year"><input type="radio" name="drp" value="this_year"> Este ano</label>
                         <label class="drp-preset" data-preset="maximum"><input type="radio" name="drp" value="maximum"> Tempo todo</label>
                         <label class="drp-preset" data-preset="custom"><input type="radio" name="drp" value="custom"> Personalizado</label>
                     </div>
@@ -1183,6 +1184,7 @@
     let _panelRendered = false;   // se os gráficos já foram renderizados neste ciclo
     let _criativosDataCache = null;  // dados de ads_consolidated cacheados
     let _criativosRendered = false;
+    let _presetBeforeCriativos = null; // salva preset anterior ao entrar na aba
 
     function switchTab(tabId) {
         document.querySelectorAll('.crz-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tabId));
@@ -1193,9 +1195,38 @@
             renderPanelCharts(_panelDataCache);
             _panelRendered = true;
         }
-        if (tabId === 'tab-criativos' && _criativosDataCache && !_criativosRendered) {
-            renderCriativosTable(_criativosDataCache);
-            _criativosRendered = true;
+
+        // Aba Criativos: força preset "Este ano" e refaz fetch se necessário
+        if (tabId === 'tab-criativos') {
+            if (appliedPreset !== 'this_year') {
+                _presetBeforeCriativos = appliedPreset;
+                appliedPreset = 'this_year';
+                drpPreset = 'this_year';
+                const { since, until } = presetToDates('this_year');
+                appliedSince = since; appliedUntil = until;
+                updateTriggerLabel();
+                _criativosRendered = false;
+                _criativosDataCache = null;
+                loadData();
+            } else if (_criativosDataCache && !_criativosRendered) {
+                renderCriativosTable(_criativosDataCache);
+                _criativosRendered = true;
+            }
+        } else {
+            // Ao sair da aba Criativos, restaura preset anterior
+            if (_presetBeforeCriativos && appliedPreset === 'this_year') {
+                appliedPreset = _presetBeforeCriativos;
+                drpPreset = _presetBeforeCriativos;
+                if (_presetBeforeCriativos === 'maximum') {
+                    appliedSince = null; appliedUntil = null;
+                } else {
+                    const { since, until } = presetToDates(_presetBeforeCriativos);
+                    appliedSince = since; appliedUntil = until;
+                }
+                _presetBeforeCriativos = null;
+                updateTriggerLabel();
+                loadData();
+            }
         }
     }
 
@@ -1324,6 +1355,7 @@
                 since: new Date(today.getFullYear(), today.getMonth()-1, 1),
                 until: new Date(today.getFullYear(), today.getMonth(), 0)
             };
+            case 'this_year': return { since: new Date(today.getFullYear(), 0, 1), until: new Date(today) };
             default: return { since: new Date(today - 6*86400000), until: new Date(today) };
         }
     }
