@@ -1150,6 +1150,8 @@
                         <th style="width:110px; text-align:right;">Investimento</th>
                         <th style="width:70px; text-align:right;">MQLs</th>
                         <th style="width:100px; text-align:right;">CPMQL</th>
+                        <th style="width:110px; text-align:right;">Receita</th>
+                        <th style="width:80px; text-align:right;">ROAS</th>
                     </tr>
                 </thead>
                 <tbody id="criativos-tbody"></tbody>
@@ -1245,11 +1247,12 @@
         ads.forEach(ad => {
             const name = ad.ad_name;
             if (!grouped[name]) {
-                grouped[name] = { name, spend: 0, mqls: 0, activeCount: 0, campaigns: new Set() };
+                grouped[name] = { name, spend: 0, mqls: 0, receita: 0, activeCount: 0, campaigns: new Set() };
             }
             const g = grouped[name];
             g.spend += ad.spend || 0;
             g.mqls += ad.leads_total || 0;
+            g.receita += ad.fat_total || 0;
             // Ad só é realmente ativo se ad + adset + campanha estão ACTIVE
             const reallyActive = ad.ad_status === 'ACTIVE'
                 && ad.adset_status === 'ACTIVE'
@@ -1272,7 +1275,7 @@
                 const anyScale = campArr.some(c => !c.toUpperCase().includes('TESTE'));
                 status = anyScale ? 'escala' : 'teste';
             }
-            return { name: g.name, status, spend: g.spend, mqls: g.mqls, activeCount: g.activeCount };
+            return { name: g.name, status, spend: g.spend, mqls: g.mqls, receita: g.receita, activeCount: g.activeCount };
         });
 
         // Ordenar: escala > teste > pausado, sub por spend desc
@@ -1299,10 +1302,11 @@
         const fmtBRL = v => v > 0 ? 'R$ ' + v.toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2}) : '—';
 
         let rows = '';
-        let totSpend = 0, totMqls = 0, totActive = 0;
+        let totSpend = 0, totMqls = 0, totActive = 0, totReceita = 0;
         criativos.forEach(c => {
-            totSpend += c.spend; totMqls += c.mqls; totActive += c.activeCount;
+            totSpend += c.spend; totMqls += c.mqls; totActive += c.activeCount; totReceita += c.receita;
             const cpmql = c.mqls > 0 ? c.spend / c.mqls : 0;
+            const roas = c.spend > 0 ? c.receita / c.spend : 0;
             rows += `<tr>
                 <td style="text-align:left; max-width:400px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${c.name}">${c.name}</td>
                 <td style="text-align:right;">${c.activeCount}</td>
@@ -1310,6 +1314,8 @@
                 <td style="text-align:right;">${fmtBRL(c.spend)}</td>
                 <td style="text-align:right;">${c.mqls || '—'}</td>
                 <td style="text-align:right;">${cpmql > 0 ? fmtBRL(cpmql) : '—'}</td>
+                <td style="text-align:right;">${c.receita > 0 ? fmtBRL(c.receita) : '—'}</td>
+                <td style="text-align:right;">${roas > 0 ? roas.toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
             </tr>`;
         });
 
@@ -1321,6 +1327,7 @@
         count.textContent = `${criativos.length} criativos · ${escalaCount} escala · ${testeCount} teste · ${pausadoCount} pausados`;
 
         const totCpmql = totMqls > 0 ? totSpend / totMqls : 0;
+        const totRoas = totSpend > 0 ? totReceita / totSpend : 0;
         tfoot.innerHTML = `<tr>
             <td style="text-align:left; font-weight:700;">TOTAL (${criativos.length})</td>
             <td style="text-align:right; font-weight:700;">${totActive}</td>
@@ -1328,6 +1335,8 @@
             <td style="text-align:right; font-weight:700;">${fmtBRL(totSpend)}</td>
             <td style="text-align:right; font-weight:700;">${totMqls}</td>
             <td style="text-align:right; font-weight:700;">${totCpmql > 0 ? fmtBRL(totCpmql) : '—'}</td>
+            <td style="text-align:right; font-weight:700;">${totReceita > 0 ? fmtBRL(totReceita) : '—'}</td>
+            <td style="text-align:right; font-weight:700;">${totRoas > 0 ? totRoas.toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
         </tr>`;
 
         table.style.display = '';
