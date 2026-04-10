@@ -859,10 +859,15 @@
 </div>
 
 <!-- Tabs -->
-<div class="crz-tabs" id="crz-tabs">
+<div class="crz-tabs" id="crz-tabs" style="display:flex; align-items:center;">
     <button class="crz-tab active" data-tab="tab-principal" onclick="switchTab('tab-principal')">Principal</button>
     <button class="crz-tab" data-tab="tab-painel-diario" onclick="switchTab('tab-painel-diario')">Painel diário</button>
     <button class="crz-tab" data-tab="tab-criativos" onclick="switchTab('tab-criativos')">Criativos</button>
+    <button class="crz-tab" data-tab="tab-fase1" onclick="switchTab('tab-fase1')">Fase 1 — Ganho de seguidores</button>
+    <button id="crz-filters-btn" onclick="openFiltersModal()" title="Gerenciar filtros de campanhas excluídas"
+            style="margin-left:auto; background:transparent; border:1px solid var(--border); color:var(--text-secondary); border-radius:8px; padding:6px 10px; cursor:pointer; font-size:14px;">
+        ⚙️ Filtros
+    </button>
 </div>
 
 <!-- Tab 1: Principal -->
@@ -1165,6 +1170,78 @@
     </div>
 </div><!-- /tab-criativos -->
 
+<!-- Tab 4: Fase 1 - Ganho de seguidores -->
+<div id="tab-fase1" class="crz-tab-content">
+    <!-- KPIs consolidados -->
+    <div class="kpi-bar" id="fase1-kpi-bar" style="display:none;">
+        <div class="kpi-card">
+            <div class="kpi-label">💸 Investimento Total</div>
+            <div class="kpi-value" id="fase1-kpi-spend">—</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">👥 Seguidores Ganhos</div>
+            <div class="kpi-value" id="fase1-kpi-followers">—</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">💰 Custo Médio por Seguidor</div>
+            <div class="kpi-value" id="fase1-kpi-cps">—</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">📦 Posts Impulsionados</div>
+            <div class="kpi-value" id="fase1-kpi-count">—</div>
+        </div>
+    </div>
+
+    <div class="chart-card" style="padding:0; overflow:hidden; margin-top:14px;">
+        <div style="padding:12px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between;">
+            <span style="font-size:13px; font-weight:700; color:var(--text-primary);">📸 Posts do Instagram impulsionados</span>
+            <span id="fase1-count" style="font-size:11px; color:var(--text-muted);"></span>
+        </div>
+        <div class="crz-table-wrap" style="max-height:600px;">
+            <table class="crz-table" id="fase1-table" style="display:none;">
+                <thead>
+                    <tr>
+                        <th style="text-align:left;">Campanha / Post</th>
+                        <th style="width:140px; text-align:right;">Investimento</th>
+                        <th style="width:120px; text-align:right;">Seguidores</th>
+                        <th style="width:140px; text-align:right;">Custo / Seguidor</th>
+                    </tr>
+                </thead>
+                <tbody id="fase1-tbody"></tbody>
+                <tfoot id="fase1-tfoot"></tfoot>
+            </table>
+        </div>
+        <div id="fase1-empty" style="display:none; padding:40px; text-align:center; color:var(--text-muted); font-size:13px;">
+            Nenhum post do Instagram impulsionado encontrado neste período.
+        </div>
+    </div>
+</div><!-- /tab-fase1 -->
+
+<!-- Modal: Gerenciamento de Filtros -->
+<div id="filters-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:9999; align-items:center; justify-content:center;">
+    <div style="background:var(--card-bg); border:1px solid var(--border); border-radius:12px; max-width:560px; width:90%; max-height:80vh; overflow:auto; padding:24px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
+            <h3 style="margin:0; font-size:16px; color:var(--text-primary);">⚙️ Filtros de Campanhas Excluídas</h3>
+            <button onclick="closeFiltersModal()" style="background:transparent; border:none; color:var(--text-muted); font-size:22px; cursor:pointer;">×</button>
+        </div>
+        <p style="font-size:12px; color:var(--text-muted); margin:0 0 14px;">
+            Campanhas cujo nome contém qualquer um dos textos abaixo serão <strong>excluídas</strong> de todas as views (Principal, Painel, Criativos). Posts do Instagram (campanhas começando com "Post do Instagram") são automaticamente movidos para a aba "Fase 1".
+        </p>
+        <div id="filters-list" style="display:flex; flex-direction:column; gap:8px; margin-bottom:14px;"></div>
+        <div style="display:flex; gap:8px; margin-bottom:16px;">
+            <input type="text" id="filter-new-input" placeholder="Adicionar novo padrão (ex: [TESTE])"
+                   style="flex:1; padding:9px 12px; border:1px solid var(--border); background:var(--bg-deep); color:var(--text-primary); border-radius:6px; font-size:13px;"
+                   onkeydown="if(event.key==='Enter'){addFilterPattern();event.preventDefault();}">
+            <button onclick="addFilterPattern()" style="background:var(--accent); color:#fff; border:none; border-radius:6px; padding:9px 14px; cursor:pointer; font-size:13px;">+ Adicionar</button>
+        </div>
+        <div style="display:flex; gap:8px; justify-content:flex-end;">
+            <button onclick="resetFiltersToDefault()" style="background:transparent; border:1px solid var(--border); color:var(--text-secondary); border-radius:6px; padding:9px 14px; cursor:pointer; font-size:13px;">Restaurar padrão</button>
+            <button onclick="saveFilters()" style="background:var(--success); color:#fff; border:none; border-radius:6px; padding:9px 18px; cursor:pointer; font-size:13px; font-weight:600;">💾 Salvar e Recarregar</button>
+        </div>
+        <div id="filters-msg" style="margin-top:10px; font-size:12px; color:var(--text-muted);"></div>
+    </div>
+</div>
+
 <!-- Loading / Error states -->
 <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius-md);">
     <div class="crz-state" id="crz-loading">
@@ -1198,6 +1275,12 @@
         if (tabId === 'tab-painel-diario' && _panelDataCache && !_panelRendered) {
             renderPanelCharts(_panelDataCache);
             _panelRendered = true;
+        }
+
+        // Aba Fase 1: render lazy quando dados já chegaram
+        if (tabId === 'tab-fase1' && _fase1DataCache && !_fase1Rendered) {
+            renderFase1Table(_fase1DataCache);
+            _fase1Rendered = true;
         }
 
         // Aba Criativos: força preset "Últimos 60 dias" e refaz fetch se necessário
@@ -1346,6 +1429,151 @@
 
         table.style.display = '';
         empty.style.display = 'none';
+    }
+
+    // ── Fase 1: Posts do Instagram impulsionados ────────────────────────────────
+    let _fase1DataCache = null;
+    let _fase1Rendered = false;
+
+    function renderFase1Table(posts) {
+        const table  = document.getElementById('fase1-table');
+        const tbody  = document.getElementById('fase1-tbody');
+        const tfoot  = document.getElementById('fase1-tfoot');
+        const empty  = document.getElementById('fase1-empty');
+        const count  = document.getElementById('fase1-count');
+        const kpiBar = document.getElementById('fase1-kpi-bar');
+
+        const fmtBRL = v => 'R$ ' + (v || 0).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
+        const fmtInt = v => (v || 0).toLocaleString('pt-BR');
+
+        if (!posts || posts.length === 0) {
+            table.style.display = 'none';
+            empty.style.display = '';
+            kpiBar.style.display = 'none';
+            count.textContent = '';
+            return;
+        }
+
+        let totSpend = 0, totFollows = 0;
+        let rows = '';
+        posts.forEach(p => {
+            totSpend   += p.spend || 0;
+            totFollows += p.instagram_follows || 0;
+            const cps = p.instagram_follows > 0 ? (p.spend / p.instagram_follows) : 0;
+            rows += `<tr>
+                <td style="text-align:left; max-width:520px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${p.campaign_name}">${p.campaign_name}</td>
+                <td style="text-align:right;">${fmtBRL(p.spend)}</td>
+                <td style="text-align:right;">${fmtInt(p.instagram_follows)}</td>
+                <td style="text-align:right;">${cps > 0 ? fmtBRL(cps) : '—'}</td>
+            </tr>`;
+        });
+        tbody.innerHTML = rows;
+
+        const totCps = totFollows > 0 ? (totSpend / totFollows) : 0;
+        tfoot.innerHTML = `<tr>
+            <td style="text-align:left; font-weight:700;">TOTAL (${posts.length})</td>
+            <td style="text-align:right; font-weight:700;">${fmtBRL(totSpend)}</td>
+            <td style="text-align:right; font-weight:700;">${fmtInt(totFollows)}</td>
+            <td style="text-align:right; font-weight:700;">${totCps > 0 ? fmtBRL(totCps) : '—'}</td>
+        </tr>`;
+
+        document.getElementById('fase1-kpi-spend').textContent     = fmtBRL(totSpend);
+        document.getElementById('fase1-kpi-followers').textContent = fmtInt(totFollows);
+        document.getElementById('fase1-kpi-cps').textContent       = totCps > 0 ? fmtBRL(totCps) : '—';
+        document.getElementById('fase1-kpi-count').textContent     = posts.length;
+        kpiBar.style.display = '';
+
+        count.textContent = `${posts.length} posts impulsionados`;
+        table.style.display = '';
+        empty.style.display = 'none';
+    }
+
+    // ── Modal de Filtros ─────────────────────────────────────────────────────────
+    let _filtersWorking = []; // estado do editor enquanto modal aberto
+
+    async function openFiltersModal() {
+        const modal = document.getElementById('filters-modal');
+        modal.style.display = 'flex';
+        document.getElementById('filters-msg').textContent = 'Carregando...';
+        try {
+            const resp = await fetch('/api/cruzamento/filters');
+            const data = await resp.json();
+            if (!data.success) throw new Error(data.error || 'Erro');
+            _filtersWorking = [...(data.patterns || [])];
+            renderFiltersList();
+            document.getElementById('filters-msg').textContent = '';
+        } catch (e) {
+            document.getElementById('filters-msg').textContent = '❌ ' + e.message;
+        }
+    }
+
+    function closeFiltersModal() {
+        document.getElementById('filters-modal').style.display = 'none';
+    }
+
+    function renderFiltersList() {
+        const list = document.getElementById('filters-list');
+        if (_filtersWorking.length === 0) {
+            list.innerHTML = '<div style="color:var(--text-muted); font-size:12px; font-style:italic;">Nenhum filtro definido — todas as campanhas serão exibidas.</div>';
+            return;
+        }
+        list.innerHTML = _filtersWorking.map((p, i) => `
+            <div style="display:flex; align-items:center; gap:8px; padding:8px 12px; background:var(--bg-deep); border:1px solid var(--border); border-radius:6px;">
+                <span style="flex:1; font-family:var(--font-mono); font-size:12px; color:var(--text-primary);">${p.replace(/</g, '&lt;')}</span>
+                <button onclick="removeFilterPattern(${i})" style="background:transparent; border:none; color:var(--danger, #e74c3c); cursor:pointer; font-size:16px;" title="Remover">×</button>
+            </div>
+        `).join('');
+    }
+
+    function addFilterPattern() {
+        const input = document.getElementById('filter-new-input');
+        const val = (input.value || '').trim();
+        if (!val) return;
+        if (_filtersWorking.includes(val)) {
+            document.getElementById('filters-msg').textContent = '⚠️ Já existe';
+            return;
+        }
+        _filtersWorking.push(val);
+        input.value = '';
+        document.getElementById('filters-msg').textContent = '';
+        renderFiltersList();
+    }
+
+    function removeFilterPattern(idx) {
+        _filtersWorking.splice(idx, 1);
+        renderFiltersList();
+    }
+
+    async function resetFiltersToDefault() {
+        try {
+            const resp = await fetch('/api/cruzamento/filters');
+            const data = await resp.json();
+            _filtersWorking = [...(data.defaults || [])];
+            renderFiltersList();
+            document.getElementById('filters-msg').textContent = 'Padrão restaurado. Clique em Salvar para aplicar.';
+        } catch (e) {
+            document.getElementById('filters-msg').textContent = '❌ ' + e.message;
+        }
+    }
+
+    async function saveFilters() {
+        document.getElementById('filters-msg').textContent = 'Salvando...';
+        try {
+            const resp = await fetch('/api/cruzamento/filters', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({patterns: _filtersWorking})
+            });
+            const data = await resp.json();
+            if (!data.success) throw new Error(data.error || 'Erro');
+            document.getElementById('filters-msg').textContent = '✅ Salvo. Recarregando dados...';
+            setTimeout(() => {
+                closeFiltersModal();
+                loadData();
+            }, 600);
+        } catch (e) {
+            document.getElementById('filters-msg').textContent = '❌ ' + e.message;
+        }
     }
 
     // ── Date Range Picker State ──────────────────────────────────────────────────
@@ -2177,6 +2405,8 @@
         _panelRendered = false;
         _criativosDataCache = null;
         _criativosRendered = false;
+        _fase1DataCache = null;
+        _fase1Rendered = false;
         ['kpi-bar','funnel-card','crz-meta','crz-main-grid','crz-timeline-container','crz-spend-container','crz-ads-container','crz-adsets-container','crz-campaigns-container'].forEach(id => {
             const el = document.getElementById(id);
             if (el) { el.style.display = 'none'; el.classList.remove('crz-cascade'); }
@@ -2274,6 +2504,13 @@
                 if (document.getElementById('tab-criativos').classList.contains('active')) {
                     renderCriativosTable(_criativosDataCache);
                     _criativosRendered = true;
+                }
+            } else if (stage === 'instagram_posts') {
+                _fase1DataCache = d.instagram_posts_consolidated || [];
+                _fase1Rendered = false;
+                if (document.getElementById('tab-fase1').classList.contains('active')) {
+                    renderFase1Table(_fase1DataCache);
+                    _fase1Rendered = true;
                 }
             } else if (stage === 'done') {
                 const m = d.meta || {};

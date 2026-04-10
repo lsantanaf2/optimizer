@@ -1,6 +1,7 @@
 import os
 import json
 import time
+import requests as req_lib
 import tempfile
 import queue
 import threading
@@ -59,7 +60,7 @@ from modules.account_settings import (
 import atexit
 atexit.register(close_db)
 
-VERSION = "v2.5.7"
+VERSION = "v2.5.8"
 
 @app.before_request
 def ensure_db():
@@ -312,7 +313,11 @@ def listar_campanhas(account_id):
 
 @app.route('/api/conta/<account_id>/campanhas')
 def api_campanhas(account_id):
-    """API: lista campanhas ATIVO+PAUSADO da conta (chamada pelo frontend via AJAX)."""
+    """API: lista campanhas da conta. Parâmetros:
+       - status: 'ACTIVE' (default) ou 'PAUSED' ou 'ACTIVE,PAUSED'
+       - after: cursor para paginação (só para PAUSED)
+       - limit: máximo de resultados (default 50)
+    """
     if not account_id.startswith('act_'):
         account_id = f"act_{account_id}"
     access_token = obter_token()
@@ -329,20 +334,45 @@ def api_campanhas(account_id):
             except Exception:
                 pass
 
-        conta = AdAccount(account_id)
-        campanhas_data = conta.get_campaigns(
-            fields=['id', 'name', 'objective', 'effective_status'],
-            params={'filtering': [{'field': 'effective_status', 'operator': 'IN', 'value': ['ACTIVE', 'PAUSED']}]}
-        )
+        status_filter = request.args.get('status', 'ACTIVE')
+        after_cursor = request.args.get('after', '')
+        limit = min(int(request.args.get('limit', 50)), 200)
+
+        statuses = [s.strip() for s in status_filter.split(',')]
+
+        # Usa requests direto para controlar paginação via cursor
+        url = f"https://graph.facebook.com/v22.0/{account_id}/campaigns"
+        params = {
+            'access_token': access_token,
+            'fields': 'id,name,objective,effective_status',
+            'filtering': json.dumps([{'field': 'effective_status', 'operator': 'IN', 'value': statuses}]),
+            'limit': limit,
+        }
+        if after_cursor:
+            params['after'] = after_cursor
+
+        resp = req_lib.get(url, params=params, timeout=30)
+        body = resp.json()
+
         campanhas = []
-        for c in campanhas_data:
+        for c in body.get('data', []):
             campanhas.append({
                 'id': c.get('id'),
                 'name': c.get('name'),
                 'objective': c.get('objective'),
                 'status': c.get('effective_status', 'UNKNOWN')
             })
-        return jsonify({'campaigns': campanhas, 'account_name': session.get('account_name', '')})
+
+        # Cursor para próxima página
+        paging = body.get('paging', {})
+        next_cursor = paging.get('cursors', {}).get('after', '') if paging.get('next') else ''
+
+        return jsonify({
+            'campaigns': campanhas,
+            'account_name': session.get('account_name', ''),
+            'has_more': bool(next_cursor),
+            'after': next_cursor,
+        })
     except Exception as e:
         import traceback; traceback.print_exc()
         return jsonify({'error': str(e)}), 500

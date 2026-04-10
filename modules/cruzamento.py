@@ -35,6 +35,58 @@ GOOGLE_CREDS_FILE   = os.getenv('GOOGLE_CREDENTIALS_FILE', 'google_credentials.j
 # Se for uma Custom Conversion criada no Ads Manager, usar 'offsite_conversion.custom.{ID}'.
 TYPEFORM_ACTION_TYPE = os.getenv('TYPEFORM_ACTION_TYPE', 'offsite_conversion.fb_pixel_custom')
 
+# Padrão de campanhas que são "Posts do Instagram impulsionados" — separadas em aba própria.
+INSTAGRAM_POST_PREFIX = 'post do instagram'
+
+# Persistência de filtros configuráveis (excluir campanhas das views principais).
+FILTERS_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'cruzamento_filters.json')
+DEFAULT_EXCLUDED_PATTERNS = [
+    '[DEMO-180]',
+    '[PUBLICO FRIO]',
+    '[EVENTO MQL]',
+    '[BRANDING RENAISSANCE]',
+]
+
+def load_excluded_patterns():
+    """Carrega lista de padrões a excluir do arquivo de config (ou usa default)."""
+    try:
+        if os.path.exists(FILTERS_FILE):
+            with open(FILTERS_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                patterns = data.get('excluded_patterns', [])
+                if isinstance(patterns, list):
+                    return [str(p).strip() for p in patterns if str(p).strip()]
+    except Exception as e:
+        print(f"⚠️ Erro ao carregar filtros: {e}")
+    return list(DEFAULT_EXCLUDED_PATTERNS)
+
+
+def save_excluded_patterns(patterns):
+    """Salva lista de padrões no arquivo de config."""
+    try:
+        clean = [str(p).strip() for p in patterns if str(p).strip()]
+        with open(FILTERS_FILE, 'w', encoding='utf-8') as f:
+            json.dump({'excluded_patterns': clean}, f, ensure_ascii=False, indent=2)
+        return True, clean
+    except Exception as e:
+        print(f"❌ Erro ao salvar filtros: {e}")
+        return False, []
+
+
+def _matches_excluded(campaign_name, patterns):
+    """True se campaign_name contém qualquer um dos padrões (case-insensitive)."""
+    if not campaign_name or not patterns:
+        return False
+    cn = campaign_name.lower()
+    return any(p.lower() in cn for p in patterns)
+
+
+def _is_instagram_post(campaign_name):
+    """True se campanha é um Post do Instagram impulsionado."""
+    if not campaign_name:
+        return False
+    return campaign_name.strip().lower().startswith(INSTAGRAM_POST_PREFIX)
+
 # Nomes das abas na planilha
 ABA_MQLS  = 'MQLs'
 ABA_WONS  = 'Wons'
@@ -251,6 +303,12 @@ def fetch_fb_insights(account_id, access_token, date_preset='last_30d', since=No
                     return _act(TYPEFORM_ACTION_TYPE, _a)
                 return sum(int(float(a.get('value', 0) or 0)) for a in _a if 'typeform' in a.get('action_type', '').lower())
 
+            def _act_ig_follows(_a=actions):
+                # Seguidores ganhos no Instagram via boost — Meta retorna em 'actions' com
+                # action_type contendo 'follow' (ex: 'onsite_conversion.follow', 'follow').
+                # Soma todos os tipos contendo 'follow' para cobrir variações da API.
+                return sum(int(float(a.get('value', 0) or 0)) for a in _a if 'follow' in a.get('action_type', '').lower())
+
             ads.append({
                 'campaign_id':        item.get('campaign_id', ''),
                 'campaign_name':      item.get('campaign_name', ''),
@@ -264,6 +322,7 @@ def fetch_fb_insights(account_id, access_token, date_preset='last_30d', since=No
                 'link_clicks':        int(item.get('inline_link_clicks', 0) or 0),
                 'landing_page_views': _act('landing_page_view'),
                 'typeform_submits':   _act_typeform(),
+                'instagram_follows':  _act_ig_follows(),
                 'date_start':         item.get('date_start', ''),
             })
 
@@ -339,24 +398,38 @@ def fetch_adsets_status(account_id, access_token):
     return status_map
 
 # ── Processamento: Duplo Join em Memória ──────────────────────────────────────
-def processar_cruzamento(fb_ads, mqls_rows, wons_rows, mqls_all=None):
+def processar_cruzamento(fb_ads, mqls_rows, wons_rows, mqls_all=None, excluded_patterns=None):
     """
     Passo 1: MQLs × Wons por 'Deal ID'  → enriquece cada lead com venda
     Passo 2: leads × FB ads por utm_content (norm) ↔ ad_name (norm)
              fallback: utm_campaign ↔ campaign_name
 
-    Retorna hierarquia:
-    [
-      {
-        campaign_id, campaign_name, spend, impressions, clicks,
-        leads_total, leads_a, leads_b, vendas_a, vendas_b,
-        fat_a, fat_b, fat_total, lucro, cpl, cpl_a, cpl_b,
-        adsets: [
-          { ...mesmas métricas..., ads: [ ...mesmas métricas... ] }
-        ]
-      }
-    ]
+    excluded_patterns: lista de strings — campanhas contendo qualquer padrão
+                       são EXCLUÍDAS de todas as views (filtro global).
+                       Se None, usa load_excluded_patterns().
+
+    Posts do Instagram impulsionados (campanhas começando com "Post do Instagram")
+    são separados das views principais e agregados em instagram_posts_consolidated
+    para a aba "Fase 1 - Ganho de seguidores".
     """
+
+    # ── Filtro global: remove campanhas excluídas e separa Posts do Instagram ──
+    if excluded_patterns is None:
+        excluded_patterns = load_excluded_patterns()
+
+    fb_ads_main = []
+    fb_ads_ig_posts = []
+    for ad in fb_ads:
+        cn = ad.get('campaign_name', '')
+        if _matches_excluded(cn, excluded_patterns):
+            continue  # exclui completamente
+        if _is_instagram_post(cn):
+            fb_ads_ig_posts.append(ad)
+            continue  # vai pra aba Fase 1, fora das views principais
+        fb_ads_main.append(ad)
+
+    # A partir daqui o fluxo principal opera sobre fb_ads filtrado.
+    fb_ads = fb_ads_main
 
     # ── Passo 1: Join Wons → indexar por Deal ID ──────────────────────────────
     # Mapeamento: deal_id → { produto, valor }
@@ -987,10 +1060,44 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows, mqls_all=None):
         'mql_rate':          round(_f_mql / _f_tf  * 100, 2) if _f_tf  > 0 else 0,
     }
 
+    # ── Aba "Fase 1 - Ganho de seguidores": agrega Posts do Instagram por campanha ──
+    # Cada campanha "Post do Instagram: ..." vira uma linha com spend + follows.
+    ig_posts_by_campaign = {}
+    for ad in fb_ads_ig_posts:
+        camp_id = ad.get('campaign_id', '')
+        camp_name = ad.get('campaign_name', '') or 'Sem nome'
+        key = camp_id or camp_name
+        if key not in ig_posts_by_campaign:
+            ig_posts_by_campaign[key] = {
+                'campaign_id':       camp_id,
+                'campaign_name':     camp_name,
+                'campaign_status':   ad.get('campaign_status', 'UNKNOWN'),
+                'spend':             0.0,
+                'instagram_follows': 0,
+                'impressions':       0,
+                'clicks':            0,
+            }
+        slot = ig_posts_by_campaign[key]
+        slot['spend']             += float(ad.get('spend', 0) or 0)
+        slot['instagram_follows'] += int(ad.get('instagram_follows', 0) or 0)
+        slot['impressions']       += int(ad.get('impressions', 0) or 0)
+        slot['clicks']            += int(ad.get('clicks', 0) or 0)
+        if ad.get('campaign_status') == 'ACTIVE':
+            slot['campaign_status'] = 'ACTIVE'
+
+    instagram_posts_consolidated = sorted(
+        ig_posts_by_campaign.values(),
+        key=lambda x: -x['spend']
+    )
+    for p in instagram_posts_consolidated:
+        p['cost_per_follow'] = round(p['spend'] / p['instagram_follows'], 2) if p['instagram_follows'] > 0 else 0.0
+        p['spend'] = round(p['spend'], 2)
+
     return {
         'ads_consolidated': ads_consolidated,
         'adsets_consolidated': adsets_consolidated,
         'campaigns_consolidated': campaigns_consolidated,
+        'instagram_posts_consolidated': instagram_posts_consolidated,
         'organicos':             organico_metrics,
         'total_leads':           len(leads_enriquecidos),
         'total_mqls':            mqls_in_period_count,
@@ -1228,6 +1335,11 @@ def api_cruzamento_data():
             })
             yield ": keepalive\n\n"
 
+            yield _sse('instagram_posts', {
+                'instagram_posts_consolidated': resultado.get('instagram_posts_consolidated', []),
+            })
+            yield ": keepalive\n\n"
+
             yield _sse('timeline', {
                 'by_date':              resultado.get('by_date', []),
                 'by_date_per_campaign': resultado.get('by_date_per_campaign', {}),
@@ -1256,6 +1368,36 @@ def api_cruzamento_data():
         mimetype='text/event-stream',
         headers={'X-Accel-Buffering': 'no', 'Cache-Control': 'no-cache'}
     )
+
+
+@cruzamento_bp.route('/api/cruzamento/filters', methods=['GET', 'POST'])
+def api_cruzamento_filters():
+    """
+    GET: retorna lista atual de padrões excluídos.
+    POST: salva nova lista. Body: {"patterns": ["[TAG1]", "[TAG2]"]}.
+    """
+    from app import obter_token
+    if not obter_token():
+        return jsonify({'success': False, 'error': 'Não autenticado'}), 401
+
+    if request.method == 'GET':
+        return jsonify({
+            'success': True,
+            'patterns': load_excluded_patterns(),
+            'defaults': DEFAULT_EXCLUDED_PATTERNS,
+            'instagram_post_prefix': INSTAGRAM_POST_PREFIX,
+        })
+
+    # POST
+    body = request.get_json(silent=True) or {}
+    patterns = body.get('patterns', [])
+    if not isinstance(patterns, list):
+        return jsonify({'success': False, 'error': 'patterns deve ser uma lista'}), 400
+
+    ok, saved = save_excluded_patterns(patterns)
+    if not ok:
+        return jsonify({'success': False, 'error': 'Falha ao salvar filtros'}), 500
+    return jsonify({'success': True, 'patterns': saved})
 
 
 @cruzamento_bp.route('/api/cruzamento/action-types')

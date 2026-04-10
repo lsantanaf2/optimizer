@@ -58,6 +58,9 @@ test-results.json
 # Google Service Account credentials (NUNCA commitar!)
 google_credentials.json
 
+# Filtros configuráveis da página de cruzamento (runtime, por instância)
+cruzamento_filters.json
+
 # AIOX Local (AIOX)
 .aiox-core/local/
 .aiox/install-log.txt
