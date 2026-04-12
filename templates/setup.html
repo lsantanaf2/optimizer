@@ -358,9 +358,9 @@
                 <div class="upload-box" id="box-stories">
                     <div class="upload-icon">📱</div>
                     <div class="upload-label">Stories / Reels</div>
-                    <div class="upload-hint">9:16 · Imagem ou Vídeo</div>
+                    <div class="upload-hint">9:16 · Imagem ou Vídeo · <span style="color:var(--accent);font-weight:600;">Arraste vários para criar ads separados</span></div>
 
-                    <input type="file" id="arquivo_stories" accept="image/*,video/*"
+                    <input type="file" id="arquivo_stories" accept="image/*,video/*" multiple
                         onchange="previewFile(this, 'preview-stories')">
 
                     <div class="upload-options">
@@ -1037,6 +1037,13 @@
             const type = previewId.includes('feed') ? 'feed' : 'stories';
             const urlInput = document.getElementById(`url_${type}_remote`);
 
+            if (input.files.length > 1 && type === 'stories') {
+                // Múltiplos arquivos no stories — batch mode: adiciona diretamente à fila
+                adicionarMultiplosStoriesNaFila(Array.from(input.files));
+                input.value = ''; // reset input
+                return;
+            }
+
             if (input.files.length > 0) {
                 preview.textContent = '📎 ' + input.files[0].name;
                 preview.style.display = 'block';
@@ -1049,6 +1056,87 @@
                 }
             }
         }
+
+        // ======================== BATCH STORIES ADD ========================
+        // Adiciona múltiplos arquivos de stories à fila — cada arquivo = 1 ad separado
+        function adicionarMultiplosStoriesNaFila(files) {
+            if (!files || files.length === 0) return;
+
+            const mediaExts = ['mp4', 'mov', 'avi', 'mkv', 'webm', 'm4v', 'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'];
+            const validFiles = files.filter(f => {
+                const ext = f.name.split('.').pop().toLowerCase();
+                return mediaExts.includes(ext);
+            });
+
+            if (validFiles.length === 0) {
+                mostrarToast('⚠️ Nenhum arquivo de mídia válido');
+                return;
+            }
+
+            validFiles.forEach(file => {
+                const baseName = file.name.replace(/\.[^/.]+$/, '');
+                const mediaType = file.type.startsWith('video') ? 'video' : 'image';
+                const item = {
+                    id: Date.now() + Math.random(),
+                    adName: baseName,
+                    mediaType: mediaType,
+                    feedFile: null,
+                    storiesFile: file,
+                    feedFileName: null,
+                    storiesFileName: file.name,
+                    urlFeed: '',
+                    urlStories: '',
+                };
+                filaAnuncios.push(item);
+            });
+
+            renderizarFila();
+            mostrarToast(`🎉 ${validFiles.length} ads de stories adicionados à fila!`);
+            logConsole(`📱 Batch stories: ${validFiles.length} arquivo(s) adicionado(s) à fila como ads separados.`, 'log-success');
+        }
+
+        // ======================== DRAG & DROP NO BOX-STORIES ========================
+        // Inicializa drag-and-drop no box-stories ao carregar a página
+        document.addEventListener('DOMContentLoaded', function() {
+            const boxStories = document.getElementById('box-stories');
+            if (!boxStories) return;
+
+            boxStories.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                this.style.borderColor = 'var(--accent)';
+                this.style.background = 'rgba(127,90,240,0.08)';
+            });
+
+            boxStories.addEventListener('dragleave', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                this.style.borderColor = '';
+                this.style.background = '';
+            });
+
+            boxStories.addEventListener('drop', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                this.style.borderColor = '';
+                this.style.background = '';
+
+                const files = Array.from(e.dataTransfer.files);
+                if (files.length === 0) return;
+
+                if (files.length === 1) {
+                    // Um arquivo — comportamento normal (preenche o input)
+                    const dt = new DataTransfer();
+                    dt.items.add(files[0]);
+                    const input = document.getElementById('arquivo_stories');
+                    input.files = dt.files;
+                    previewFile(input, 'preview-stories');
+                } else {
+                    // Múltiplos arquivos — batch add direto na fila
+                    adicionarMultiplosStoriesNaFila(files);
+                }
+            });
+        });
 
         function validarInputMidia(type) {
             const urlInput = document.getElementById(`url_${type}_remote`);
