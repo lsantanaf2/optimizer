@@ -16,7 +16,7 @@ from facebook_business.adobjects.adaccount import AdAccount
 from facebook_business.adobjects.campaign import Campaign
 from facebook_business.adobjects.adset import AdSet
 from facebook_business.adobjects.business import Business
-from meta_api import MetaUploader
+from meta_api import MetaUploader, GeoComplianceError
 
 load_dotenv('notepad.env')
 
@@ -60,7 +60,7 @@ from modules.account_settings import (
 import atexit
 atexit.register(close_db)
 
-VERSION = "v2.5.9"
+VERSION = "v2.5.10"
 
 @app.before_request
 def ensure_db():
@@ -488,6 +488,22 @@ def api_remove_asset(account_id):
     return jsonify({'success': ok})
 
 
+@app.route('/api/conta/<account_id>/save-compliance', methods=['POST'])
+def api_save_compliance(account_id):
+    """Salva nome do anunciante e pagador (transparência de anúncios Meta)."""
+    from modules.account_settings import save_compliance_info
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'Não autenticado'}), 401
+    data = request.get_json() or {}
+    ok = save_compliance_info(
+        user_id, account_id,
+        advertiser_name=data.get('advertiser_name', ''),
+        payer_name=data.get('payer_name', '')
+    )
+    return jsonify({'success': ok})
+
+
 @app.route('/api/conta/<account_id>/save-cac', methods=['POST'])
 def api_save_cac(account_id):
     """Salva o CAC ideal da conta."""
@@ -691,6 +707,16 @@ def upload_single(campaign_id):
     lead_gen_form_id = request.form.get('lead_gen_form_id') or None
     url_feed_remote = request.form.get('url_feed_remote') or None
     url_stories_remote = request.form.get('url_stories_remote') or None
+    # Países a excluir da segmentação (geo-compliance bypass)
+    excluded_countries_raw = request.form.get('excluded_countries', '')
+    excluded_countries = [c.strip().upper() for c in excluded_countries_raw.split(',') if c.strip()] or None
+
+    # Compliance de transparência (anunciante/pagador) — lê do banco
+    from modules.account_settings import get_settings_for_setup
+    _compliance_settings = get_settings_for_setup(session.get('user_id'), account_id)
+    _compliance = (_compliance_settings.get('saved_assets') or {}).get('compliance') or {}
+    compliance_advertiser = _compliance.get('advertiser_name') or None
+    compliance_payer = _compliance.get('payer_name') or None
 
     # Salvar arquivos locais em temp dir antes da thread
     temp_dir = tempfile.mkdtemp(prefix='optimizer_')
@@ -759,7 +785,19 @@ def upload_single(campaign_id):
 
             actual_adset_id = target_adset_id
             if destino == 'duplicar' and estrategia == 'agrupado':
-                actual_adset_id = uploader.duplicate_adset(target_adset_id)
+                try:
+                    actual_adset_id = uploader.duplicate_adset(
+                        target_adset_id,
+                        excluded_countries=excluded_countries,
+                        compliance_advertiser=compliance_advertiser,
+                        compliance_payer=compliance_payer)
+                except GeoComplianceError as geo_err:
+                    _evt('geo_compliance_error', **{
+                        'country_code': geo_err.country_code,
+                        'country_name': geo_err.country_name,
+                        'message': str(geo_err),
+                    })
+                    return
                 uploader.smart_delay()
 
             # Aguardar processamento de vídeos
@@ -894,12 +932,36 @@ def duplicate_adset_route(campaign_id):
         adset_status = request.form.get('adset_status', 'PAUSED').upper()
         if adset_status not in ('ACTIVE', 'PAUSED'):
             adset_status = 'PAUSED'
+        excluded_countries_raw = request.form.get('excluded_countries', '')
+        excluded_countries = [c.strip().upper() for c in excluded_countries_raw.split(',') if c.strip()] or None
+
+        # Compliance de transparência — lê do banco
+        from modules.account_settings import get_settings_for_setup
+        _cs = get_settings_for_setup(session.get('user_id'), account_id)
+        _compliance = (_cs.get('saved_assets') or {}).get('compliance') or {}
+        compliance_advertiser = _compliance.get('advertiser_name') or None
+        compliance_payer = _compliance.get('payer_name') or None
 
         if not adset_modelo:
             return jsonify({'success': False, 'error': 'Nenhum Ad Set modelo informado'}), 400
 
         uploader = MetaUploader(account_id, access_token, APP_ID, APP_SECRET)
-        new_adset_id = uploader.duplicate_adset(adset_modelo, new_name=adset_name or None, adset_status=adset_status)
+        try:
+            new_adset_id = uploader.duplicate_adset(
+                adset_modelo, new_name=adset_name or None,
+                adset_status=adset_status,
+                excluded_countries=excluded_countries,
+                compliance_advertiser=compliance_advertiser,
+                compliance_payer=compliance_payer)
+        except GeoComplianceError as geo_err:
+            return jsonify({
+                'success': False,
+                'compliance_error': True,
+                'country_code': geo_err.country_code,
+                'country_name': geo_err.country_name,
+                'error': str(geo_err),
+                'logs': uploader.logs,
+            }), 200  # 200 para o frontend processar o JSON normalamente
 
         return jsonify({
             'success': True,

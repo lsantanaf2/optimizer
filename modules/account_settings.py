@@ -302,6 +302,44 @@ def remove_single_asset(user_id, meta_account_id, asset_type, key_field, value):
         return False
 
 
+def save_compliance_info(user_id, meta_account_id, advertiser_name, payer_name=None):
+    """
+    Salva informações de anunciante/pagador (compliance de transparência de anúncios).
+    Armazena em saved_assets['compliance'] para reutilização automática em novas duplicações.
+
+    advertiser_name: nome do anunciante verificado (obrigatório)
+    payer_name: nome do pagador (opcional; se None, assume igual ao anunciante)
+    """
+    if not _db_ok():
+        return False
+    try:
+        imported_id = get_or_create_imported_account(user_id, meta_account_id)
+        if not imported_id:
+            return False
+        execute(
+            "INSERT INTO ad_account_settings (ad_account_id) VALUES (%s) ON CONFLICT DO NOTHING",
+            (imported_id,)
+        )
+        row = fetch_one("SELECT saved_assets FROM ad_account_settings WHERE ad_account_id = %s", (imported_id,))
+        assets = (row['saved_assets'] or {}) if row else {}
+        if isinstance(assets, str):
+            assets = json.loads(assets)
+
+        assets['compliance'] = {
+            'advertiser_name': advertiser_name.strip() if advertiser_name else '',
+            'payer_name': (payer_name.strip() if payer_name else '') or advertiser_name.strip(),
+        }
+
+        execute(
+            "UPDATE ad_account_settings SET saved_assets = %s WHERE ad_account_id = %s",
+            (json.dumps(assets, ensure_ascii=False), imported_id)
+        )
+        return True
+    except Exception as e:
+        logger.error(f"[account_settings] Erro ao save_compliance_info: {e}")
+        return False
+
+
 def save_cac_target(user_id, meta_account_id, cac_value):
     """Salva o CAC ideal de uma conta."""
     if not _db_ok():

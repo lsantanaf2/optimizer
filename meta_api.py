@@ -29,6 +29,74 @@ from facebook_business.adobjects.user import User
 from facebook_business.adobjects.adspixel import AdsPixel
 
 
+# ── Geo Compliance ────────────────────────────────────────────────────────────
+class GeoComplianceError(Exception):
+    """Erro de conformidade geográfica da Meta (ex: Taiwan, Índia).
+    Indica que o Ad Set precisa de informações de anunciante verificado
+    para veicular anúncios naquele país.
+    """
+    def __init__(self, country_code, country_name, original_message=''):
+        self.country_code = country_code
+        self.country_name = country_name
+        self.original_message = original_message
+        super().__init__(
+            f"Conformidade geográfica requerida para {country_name} ({country_code}): {original_message}"
+        )
+
+# Mapeamento de error_subcode → (código ISO, nome do país)
+# Adicione novos países aqui quando necessário.
+GEO_COMPLIANCE_SUBCODES = {
+    3858495: ('TW', 'Taiwan'),
+    # 3858496: ('IN', 'Índia'),  # exemplo — adicionar quando identificado
+}
+
+# Strings presentes no error_user_msg que indicam qual país está em questão
+GEO_COMPLIANCE_MSG_PATTERNS = [
+    ('taiwan',    'TW', 'Taiwan'),
+    ('india',     'IN', 'Índia'),
+    ('índia',     'IN', 'Índia'),
+    ('japão',     'JP', 'Japão'),
+    ('japan',     'JP', 'Japão'),
+    ('coreia',    'KR', 'Coreia do Sul'),
+    ('korea',     'KR', 'Coreia do Sul'),
+    ('singapura', 'SG', 'Singapura'),
+    ('singapore', 'SG', 'Singapura'),
+]
+
+def _detect_geo_compliance_error(err_str, error_data=None):
+    """
+    Analisa string de erro e retorna (country_code, country_name) se for
+    um erro de conformidade geográfica, ou (None, None) se não for.
+    """
+    # 1. Verifica subcode específico
+    if error_data:
+        subcode = error_data.get('error_subcode') or error_data.get('code')
+        if subcode in GEO_COMPLIANCE_SUBCODES:
+            return GEO_COMPLIANCE_SUBCODES[subcode]
+
+    # 2. Verifica blame_field_specs
+    blame = []
+    if error_data:
+        blame = [b for spec in (error_data.get('error_data', {}) or {}).get('blame_field_specs', []) for b in spec]
+    if 'compliance_section' in blame or 'compliance_section' in err_str.lower():
+        # Tenta identificar o país pelo texto da mensagem
+        err_lower = err_str.lower()
+        for keyword, code, name in GEO_COMPLIANCE_MSG_PATTERNS:
+            if keyword in err_lower:
+                return code, name
+        return 'XX', 'País desconhecido'
+
+    # 3. Busca por subcode no texto
+    import re as _re
+    m = _re.search(r'"error_subcode"\s*:\s*(\d+)', err_str)
+    if m:
+        subcode = int(m.group(1))
+        if subcode in GEO_COMPLIANCE_SUBCODES:
+            return GEO_COMPLIANCE_SUBCODES[subcode]
+
+    return None, None
+
+
 def list_drive_folder(folder_url):
     """
     Tenta listar arquivos de uma pasta pública do Google Drive sem usar API Key.
@@ -1942,10 +2010,33 @@ class MetaUploader:
 
     # ======================== DUPLICAR AD SET ========================
 
-    def duplicate_adset(self, source_adset_id, new_name=None, adset_status='PAUSED'):
-        """Duplica um Ad Set existente. Retorna o ID do novo Ad Set."""
+    def duplicate_adset(self, source_adset_id, new_name=None, adset_status='PAUSED',
+                        excluded_countries=None, compliance_advertiser=None, compliance_payer=None):
+        """Duplica um Ad Set existente. Retorna o ID do novo Ad Set.
+
+        excluded_countries:   lista de códigos ISO a excluir da segmentação (ex: ['TW']).
+        compliance_advertiser: nome do anunciante para transparência de anúncios.
+        compliance_payer:      nome do pagador (se diferente do anunciante).
+        """
         adset_status = adset_status.upper() if adset_status in ('ACTIVE', 'PAUSED') else 'PAUSED'
-        self._log(f"📋 Duplicando Ad Set {source_adset_id} (status destino: {adset_status})...")
+        extra = f" | excluindo: {excluded_countries}" if excluded_countries else ""
+        self._log(f"📋 Duplicando Ad Set {source_adset_id} (status: {adset_status}{extra})...")
+
+        # Se há países para excluir OU compliance definido, usa duplicação manual (mais controle)
+        if excluded_countries or compliance_advertiser:
+            reason = []
+            if excluded_countries:    reason.append(f"geo-exclusão: {excluded_countries}")
+            if compliance_advertiser: reason.append(f"compliance: {compliance_advertiser}")
+            self._log(f"🔧 Criando manualmente ({', '.join(reason)})...")
+            adset_id = self._manual_duplicate_adset(
+                source_adset_id, new_name,
+                adset_status=adset_status,
+                excluded_countries=excluded_countries,
+                compliance_advertiser=compliance_advertiser,
+                compliance_payer=compliance_payer,
+            )
+            self._log(f"✅ Ad Set duplicado (novo ID: {adset_id})")
+            return adset_id
 
         def _do():
             source = AdSet(source_adset_id)
@@ -1963,13 +2054,18 @@ class MetaUploader:
                 copied_id = result.get('copied_adset_id') or result.get('id')
             except Exception as copy_err:
                 err_str = str(copy_err)
-                # Fallback: se erro é location_types (subcode 1870199), cria manualmente
+                # Fallback 1: erro location_types → cria manualmente
                 if '1870199' in err_str or 'location_types' in err_str:
                     self._log("⚠️ Erro location_types na cópia. Criando manualmente...")
-                    copied_id = self._manual_duplicate_adset(source_adset_id, new_name)
+                    copied_id = self._manual_duplicate_adset(
+                        source_adset_id, new_name, adset_status=adset_status)
                     return copied_id
-                else:
-                    raise
+                # Fallback 2: erro de compliance geográfica → propaga como GeoComplianceError
+                country_code, country_name = _detect_geo_compliance_error(err_str)
+                if country_code:
+                    self._log(f"⚠️ Erro de conformidade para {country_name} ({country_code})")
+                    raise GeoComplianceError(country_code, country_name, err_str)
+                raise
 
             # Definir status final + renomear
             if copied_id:
@@ -1996,8 +2092,17 @@ class MetaUploader:
         self._log(f"✅ Ad Set duplicado (novo ID: {adset_id})")
         return adset_id
 
-    def _manual_duplicate_adset(self, source_adset_id, new_name=None):
-        """Cria um novo Ad Set copiando configs do original (fallback para location_types)."""
+    def _manual_duplicate_adset(self, source_adset_id, new_name=None,
+                                adset_status='PAUSED', excluded_countries=None,
+                                compliance_advertiser=None, compliance_payer=None):
+        """Cria um novo Ad Set copiando configs do original.
+        Usado como fallback para location_types, geo-exclusão e compliance de transparência.
+
+        excluded_countries:   lista de códigos ISO (ex: ['TW']). Remove restrições de país
+                              do targeting original e adiciona como excluded_geo_locations.
+        compliance_advertiser: nome do anunciante para transparência de anúncios (Meta Taiwan etc.).
+        compliance_payer:      nome do pagador (se diferente do anunciante).
+        """
         import json as _json
 
         # Ler config completa do original
@@ -2017,12 +2122,38 @@ class MetaUploader:
         if 'error' in resp:
             raise Exception(f"Erro ao ler Ad Set original: {resp['error'].get('message')}")
 
-        # Limpar targeting: remover location_types
+        # Processar targeting
         targeting = resp.get('targeting', {})
         geo = targeting.get('geo_locations', {})
+
+        # Sempre remove location_types (causa erros na API)
         if 'location_types' in geo:
             del geo['location_types']
             self._log("🔧 Removido location_types do targeting")
+
+        if excluded_countries:
+            # Modo geo-exclusão: remove restrição de países específicos → targeting mundial
+            # mantendo apenas exclusões. A Meta interpreta ausência de geo_locations.countries
+            # + presença de excluded_geo_locations como "todo mundo exceto X".
+            if 'countries' in geo:
+                original_countries = geo.pop('countries')
+                self._log(f"🌍 Removido targeting de países original ({original_countries}) → mundial")
+            if 'regions' in geo:
+                del geo['regions']
+            if 'cities' in geo:
+                del geo['cities']
+
+            # Garante que há ao menos um campo em geo_locations (obrigatório pela API)
+            if not geo:
+                geo['location_types'] = ['home']  # Meta aceita este valor mínimo
+            targeting['geo_locations'] = geo
+
+            # Adiciona exclusão dos países problemáticos
+            existing_excl = targeting.get('excluded_geo_locations', {})
+            excl_countries = list(set(existing_excl.get('countries', []) + excluded_countries))
+            existing_excl['countries'] = excl_countries
+            targeting['excluded_geo_locations'] = existing_excl
+            self._log(f"🚫 Países excluídos da segmentação: {excl_countries}")
 
         # Montar params do novo ad set
         create_params = {
@@ -2034,6 +2165,15 @@ class MetaUploader:
             'optimization_goal': resp.get('optimization_goal', 'OFFSITE_CONVERSIONS'),
             'access_token': self.access_token,
         }
+
+        # Transparência dos anúncios (obrigatório em alguns países como Taiwan)
+        if compliance_advertiser:
+            compliance_section = {'advertiser_name': compliance_advertiser}
+            if compliance_payer:
+                compliance_section['payer_name'] = compliance_payer
+            create_params['compliance_section'] = _json.dumps(compliance_section)
+            self._log(f"📋 Compliance: anunciante={compliance_advertiser}" +
+                      (f", pagador={compliance_payer}" if compliance_payer else ""))
 
         # Copiar campos opcionais
         if resp.get('daily_budget'):
