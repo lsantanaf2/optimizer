@@ -42,7 +42,6 @@ INSTAGRAM_POST_PREFIX = 'post do instagram'
 FILTERS_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'cruzamento_filters.json')
 DEFAULT_EXCLUDED_PATTERNS = [
     '[DEMO-180]',
-    '[PUBLICO FRIO]',
     '[EVENTO MQL]',
     '[BRANDING RENAISSANCE]',
 ]
