@@ -1252,16 +1252,51 @@ def api_cruzamento_data():
 
             yield _sse('status', {'message': 'Buscando Facebook Ads + Google Sheets...'})
 
+            # ── Google Ads: verificar se está configurado para este user ──
+            google_ads_future = None
+            google_ads_enabled = False
+            try:
+                from modules.google_ads import (
+                    is_google_ads_configured, get_google_ads_config_from_db,
+                    fetch_google_ads_insights, _get_valid_token, save_google_ads_config,
+                )
+                user_id = session.get('user_id')
+                account_id = session.get('account_id', '')
+                if is_google_ads_configured() and user_id:
+                    ga_config = get_google_ads_config_from_db(user_id, account_id)
+                    if ga_config:
+                        ga_token, ga_config_updated = _get_valid_token(ga_config)
+                        if ga_token:
+                            google_ads_enabled = True
+                            # Salvar token renovado se mudou
+                            if ga_config_updated and ga_config_updated.get('access_token') != ga_config.get('access_token'):
+                                save_google_ads_config(user_id, account_id, ga_config_updated)
+            except Exception as ga_init_err:
+                print(f"[cruzamento] Google Ads init check failed (non-blocking): {ga_init_err}")
+
             # Fetch paralelo com keepalive — envia heartbeat a cada 3s
             # para evitar que proxy/browser cortem a conexão por inatividade
-            with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
                 fb_future     = executor.submit(fetch_fb_insights, AD_ACCOUNT_ID, token, date_preset, since, until)
                 sheets_future = executor.submit(fetch_sheets_data, SPREADSHEET_ID)
                 status_future = executor.submit(fetch_ads_status, AD_ACCOUNT_ID, token)
                 camp_status_future = executor.submit(fetch_campaigns_status, AD_ACCOUNT_ID, token)
                 adset_status_future = executor.submit(fetch_adsets_status, AD_ACCOUNT_ID, token)
 
+                # Google Ads fetch em paralelo (se configurado)
+                if google_ads_enabled:
+                    since_d, until_d = preset_to_dates(date_preset, since, until)
+                    ga_since = str(since_d) if since_d else str((_date.today() - timedelta(days=29)))
+                    ga_until = str(until_d) if until_d else str(_date.today())
+                    google_ads_future = executor.submit(
+                        fetch_google_ads_insights, ga_token, ga_config['customer_id'],
+                        ga_since, ga_until
+                    )
+                    yield _sse('status', {'message': 'Buscando Facebook Ads + Google Ads + Google Sheets...'})
+
                 futures = [fb_future, sheets_future, status_future, camp_status_future, adset_status_future]
+                if google_ads_future:
+                    futures.append(google_ads_future)
                 while not all(f.done() for f in futures):
                     yield ": keepalive\n\n"
                     time.sleep(3)
@@ -1271,6 +1306,18 @@ def api_cruzamento_data():
                 status_map                   = status_future.result()
                 camp_status_map              = camp_status_future.result()
                 adset_status_map             = adset_status_future.result()
+
+                # ── Merge Google Ads data (soma ao fb_ads) ──
+                google_ads_count = 0
+                if google_ads_future:
+                    try:
+                        google_ads_data = google_ads_future.result()
+                        if google_ads_data:
+                            google_ads_count = len(google_ads_data)
+                            fb_ads.extend(google_ads_data)
+                            print(f"[cruzamento] Google Ads: {google_ads_count} registros somados aos {len(fb_ads) - google_ads_count} do Meta")
+                    except Exception as ga_err:
+                        print(f"[cruzamento] Google Ads fetch failed (non-blocking): {ga_err}")
 
             yield _sse('status', {'message': f'Processando {len(fb_ads)} registros...'})
             yield ": keepalive\n\n"
@@ -1350,6 +1397,8 @@ def api_cruzamento_data():
             yield _sse('done', {
                 'meta': {
                     'fb_ads_count': len(fb_ads),
+                    'google_ads_count': google_ads_count,
+                    'google_ads_enabled': google_ads_enabled,
                     'mqls_count':   resultado['total_mqls'],
                     'wons_count':   resultado['total_wons'],
                     'elapsed_sec':  elapsed,

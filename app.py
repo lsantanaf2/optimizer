@@ -5,6 +5,7 @@ import requests as req_lib
 import tempfile
 import queue
 import threading
+from datetime import datetime
 from flask import (
     Flask, request, redirect, session, render_template,
     jsonify, Response, stream_with_context, url_for, copy_current_request_context
@@ -60,7 +61,7 @@ from modules.account_settings import (
 import atexit
 atexit.register(close_db)
 
-VERSION = "v2.5.10"
+VERSION = "v2.6.0"
 
 @app.before_request
 def ensure_db():
@@ -516,6 +517,120 @@ def api_save_cac(account_id):
     ok = save_cac_target(user_id, account_id, float(cac) if cac else None)
     return jsonify({'success': ok})
 
+
+# ======================== GOOGLE ADS INTEGRATION ========================
+
+@app.route('/api/google-ads/status')
+def api_google_ads_status():
+    """Retorna status da integração Google Ads para o frontend."""
+    from modules.google_ads import is_google_ads_configured, get_google_ads_config_from_db
+    user_id = session.get('user_id')
+    account_id = session.get('account_id', '')
+    configured = is_google_ads_configured()
+    connected = False
+    customer_id = None
+    if configured and user_id:
+        ga_config = get_google_ads_config_from_db(user_id, account_id)
+        if ga_config and ga_config.get('refresh_token'):
+            connected = True
+            customer_id = ga_config.get('customer_id')
+    return jsonify({
+        'configured': configured,
+        'connected': connected,
+        'customer_id': customer_id,
+    })
+
+
+@app.route('/auth/google-ads')
+def google_ads_auth():
+    """Redireciona para consent screen do Google para conectar Google Ads."""
+    from modules.google_ads import get_google_ads_auth_url, is_google_ads_configured
+    if not is_google_ads_configured():
+        return jsonify({'error': 'Google Ads não configurado no servidor'}), 400
+    url = get_google_ads_auth_url(state=session.get('account_id', ''))
+    if not url:
+        return jsonify({'error': 'Erro ao gerar URL de autenticação'}), 500
+    return redirect(url)
+
+
+@app.route('/callback/google-ads')
+def google_ads_callback():
+    """Callback OAuth do Google Ads — troca code por tokens e salva."""
+    from modules.google_ads import (
+        exchange_google_ads_code, list_accessible_customers,
+        save_google_ads_config
+    )
+
+    code = request.args.get('code')
+    error = request.args.get('error')
+    state_account_id = request.args.get('state', '')
+
+    if error:
+        return f"Erro na autorização Google: {error}", 400
+    if not code:
+        return "Código de autorização não recebido", 400
+
+    tokens = exchange_google_ads_code(code)
+    if not tokens:
+        return "Erro ao trocar código por tokens", 500
+
+    # Listar contas acessíveis para auto-selecionar
+    customers = list_accessible_customers(tokens['access_token'])
+
+    user_id = session.get('user_id')
+    account_id = state_account_id or session.get('account_id', '')
+
+    if not user_id:
+        return "Sessão expirada — faça login novamente", 401
+
+    # Salvar config com primeiro customer (usuário pode trocar depois)
+    config = {
+        'access_token':  tokens['access_token'],
+        'refresh_token': tokens['refresh_token'],
+        'expires_at':    tokens['expires_at'],
+        'customer_id':   customers[0] if customers else '',
+        'all_customers': customers,
+        'connected_at':  datetime.now().isoformat(),
+    }
+    save_google_ads_config(user_id, account_id, config)
+
+    # Redirecionar de volta para cruzamento
+    return redirect('/cruzamento')
+
+
+@app.route('/api/google-ads/disconnect', methods=['POST'])
+def api_google_ads_disconnect():
+    """Desconecta Google Ads (remove tokens do banco)."""
+    from modules.google_ads import save_google_ads_config
+    user_id = session.get('user_id')
+    account_id = session.get('account_id', '')
+    if not user_id:
+        return jsonify({'error': 'Não autenticado'}), 401
+    save_google_ads_config(user_id, account_id, {})
+    return jsonify({'success': True})
+
+
+@app.route('/api/google-ads/select-customer', methods=['POST'])
+def api_google_ads_select_customer():
+    """Seleciona qual customer ID (conta Google Ads) usar."""
+    from modules.google_ads import get_google_ads_config_from_db, save_google_ads_config
+    user_id = session.get('user_id')
+    account_id = session.get('account_id', '')
+    if not user_id:
+        return jsonify({'error': 'Não autenticado'}), 401
+    data = request.get_json() or {}
+    customer_id = data.get('customer_id', '')
+    if not customer_id:
+        return jsonify({'error': 'customer_id obrigatório'}), 400
+    ga_config = get_google_ads_config_from_db(user_id, account_id)
+    if not ga_config:
+        return jsonify({'error': 'Google Ads não conectado'}), 400
+    ga_config['customer_id'] = customer_id
+    save_google_ads_config(user_id, account_id, ga_config)
+    return jsonify({'success': True, 'customer_id': customer_id})
+
+
+# ======================== GOOGLE DRIVE ========================
 
 @app.route('/api/drive/list_folder', methods=['POST'])
 def api_drive_list_folder():
