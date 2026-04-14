@@ -532,6 +532,8 @@ def google_ads_auth():
     from modules.google_ads import get_google_ads_auth_url, is_google_ads_configured
     if not is_google_ads_configured():
         return jsonify({'error': 'Google Ads não configurado no servidor'}), 400
+    # Guarda de onde veio (opcional): /auth/google-ads?from=test → volta para /google-ads/test
+    session['ga_return_to'] = request.args.get('from', '')
     url = get_google_ads_auth_url(state=session.get('account_id', ''))
     if not url:
         return jsonify({'error': 'Erro ao gerar URL de autenticação'}), 500
@@ -587,7 +589,10 @@ def google_ads_callback():
     }
     save_google_ads_config(user_id, account_id, config)
 
-    # Redirecionar de volta para cruzamento
+    # Redirecionar conforme origem (test page ou cruzamento)
+    return_to = session.pop('ga_return_to', '') or ''
+    if return_to == 'test':
+        return redirect('/google-ads/test')
     return redirect('/cruzamento')
 
 

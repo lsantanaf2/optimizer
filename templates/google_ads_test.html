@@ -82,7 +82,7 @@ async function checkStatus() {
 }
 
 function connectGA() {
-  window.location.href = '/auth/google-ads';
+  window.location.href = '/auth/google-ads?from=test';
 }
 
 async function disconnectGA() {
@@ -102,8 +102,9 @@ async function loadCustomers() {
       document.getElementById('customers-box').textContent = '❌ ' + d.error;
       return;
     }
-    document.getElementById('login-cid-info').textContent =
-      'Login Customer ID (MCC): ' + (d.login_cid || '(não configurado)');
+    document.getElementById('login-cid-info').innerHTML =
+      'MCC (Login Customer ID): <code>' + (d.login_cid || '—') + '</code> ' +
+      '<span style="color:#888;">(listagem abaixo mostra TODAS as contas que seu login Google tem acesso direto, não apenas as do MCC)</span>';
     const box = document.getElementById('customers-box');
     if (!d.customers || d.customers.length === 0) {
       box.innerHTML = '⚠️ Nenhuma conta acessível. Verifique se o usuário tem acesso no Google Ads.';

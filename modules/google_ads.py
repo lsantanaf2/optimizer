@@ -171,18 +171,19 @@ def _get_valid_token(google_ads_config):
 
 def list_accessible_customers(access_token):
     """
-    Lista todos os customer IDs acessíveis pelo usuário autenticado.
+    Lista TODOS os customer IDs que o usuário autenticado tem acesso direto.
+    NÃO envia login-customer-id para retornar todas as contas (não só as do MCC).
     Retorna lista de customer IDs (strings sem hífens, ex: '1234567890').
     """
     if not access_token:
         return []
 
+    # IMPORTANTE: Para listAccessibleCustomers, NÃO mandar login-customer-id.
+    # Esse endpoint retorna todas as contas que o OAuth user tem acesso direto.
     headers = {
         'Authorization': f'Bearer {access_token}',
         'developer-token': GOOGLE_ADS_DEVELOPER_TOKEN,
     }
-    if GOOGLE_ADS_LOGIN_CUSTOMER_ID:
-        headers['login-customer-id'] = GOOGLE_ADS_LOGIN_CUSTOMER_ID
 
     url = f'https://googleads.googleapis.com/{GOOGLE_ADS_API_VERSION}/customers:listAccessibleCustomers'
 
