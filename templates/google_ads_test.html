@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div style="max-width:1100px; margin:20px auto; padding:0 20px; color:#e8e8f0;">
+
+  <h1 style="margin-bottom:6px;">🔬 Google Ads — Página de Teste</h1>
+  <p style="color:#aaa; margin-top:0;">Valida se a integração está puxando contas e campanhas corretamente.</p>
+
+  <!-- Conexão -->
+  <div class="card" style="margin-top:20px; padding:18px; background:#1a1d2e; border:1px solid #2a2f4a; border-radius:10px;">
+    <h3 style="margin-top:0;">1. Status da Conexão</h3>
+    <div id="status-box" style="padding:10px; background:#12152b; border-radius:6px; font-family:monospace;">Carregando…</div>
+    <button onclick="connectGA()" id="btn-connect" style="margin-top:10px; display:none; background:#7c4dff; color:#fff; border:none; padding:10px 18px; border-radius:6px; cursor:pointer;">
+      🔌 Conectar Google Ads
+    </button>
+    <button onclick="disconnectGA()" id="btn-disconnect" style="margin-top:10px; display:none; background:#e74c3c; color:#fff; border:none; padding:10px 18px; border-radius:6px; cursor:pointer;">
+      ❌ Desconectar
+    </button>
+  </div>
+
+  <!-- Contas -->
+  <div class="card" style="margin-top:20px; padding:18px; background:#1a1d2e; border:1px solid #2a2f4a; border-radius:10px;">
+    <h3 style="margin-top:0;">2. Contas Acessíveis (Customer IDs)</h3>
+    <div id="login-cid-info" style="font-size:0.85em; color:#888; margin-bottom:10px;"></div>
+    <div id="customers-box" style="padding:10px; background:#12152b; border-radius:6px; font-family:monospace; min-height:40px;">—</div>
+    <div style="margin-top:12px;">
+      <label style="display:block; color:#ccc; margin-bottom:6px;">Selecionar conta:</label>
+      <select id="select-customer" style="width:100%; padding:10px; background:#12152b; color:#fff; border:1px solid #333; border-radius:6px;">
+        <option value="">— conecte primeiro —</option>
+      </select>
+      <button onclick="selectCustomer()" style="margin-top:8px; background:#4dd0e1; color:#000; border:none; padding:8px 16px; border-radius:6px; cursor:pointer;">
+        💾 Salvar seleção
+      </button>
+    </div>
+  </div>
+
+  <!-- Campanhas -->
+  <div class="card" style="margin-top:20px; padding:18px; background:#1a1d2e; border:1px solid #2a2f4a; border-radius:10px;">
+    <h3 style="margin-top:0;">3. Campanhas</h3>
+    <button onclick="loadCampaigns()" style="background:#4caf50; color:#fff; border:none; padding:10px 18px; border-radius:6px; cursor:pointer;">
+      🔄 Carregar campanhas da conta selecionada
+    </button>
+    <div id="campaigns-box" style="margin-top:14px;"></div>
+  </div>
+
+  <!-- Log -->
+  <div class="card" style="margin-top:20px; padding:18px; background:#1a1d2e; border:1px solid #2a2f4a; border-radius:10px;">
+    <h3 style="margin-top:0;">📋 Log de Requests</h3>
+    <pre id="log-box" style="background:#0a0c1a; padding:12px; border-radius:6px; font-size:0.85em; max-height:300px; overflow:auto; color:#a0e0a0;">aguardando…</pre>
+  </div>
+
+</div>
+
+<script>
+const logBox = document.getElementById('log-box');
+function log(msg, obj) {
+  const t = new Date().toLocaleTimeString();
+  logBox.textContent += `\n[${t}] ${msg}` + (obj ? ' → ' + JSON.stringify(obj, null, 2) : '');
+  logBox.scrollTop = logBox.scrollHeight;
+}
+
+async function checkStatus() {
+  try {
+    const r = await fetch('/api/google-ads/status');
+    const d = await r.json();
+    log('GET /api/google-ads/status', d);
+    const box = document.getElementById('status-box');
+    if (!d.configured) {
+      box.innerHTML = '❌ <b>Não configurado</b> — env vars ausentes no servidor';
+      document.getElementById('btn-connect').style.display = 'none';
+    } else if (!d.connected) {
+      box.innerHTML = '⚠️ <b>Configurado mas não conectado</b> — clique em Conectar';
+      document.getElementById('btn-connect').style.display = 'inline-block';
+    } else {
+      box.innerHTML = `✅ <b>Conectado</b><br>Customer ID ativo: <code>${d.customer_id || '(nenhum)'}</code>`;
+      document.getElementById('btn-disconnect').style.display = 'inline-block';
+      loadCustomers();
+    }
+  } catch (e) {
+    log('Erro status', {msg: e.message});
+  }
+}
+
+function connectGA() {
+  window.location.href = '/auth/google-ads';
+}
+
+async function disconnectGA() {
+  if (!confirm('Desconectar Google Ads?')) return;
+  const r = await fetch('/api/google-ads/disconnect', {method: 'POST'});
+  const d = await r.json();
+  log('POST /api/google-ads/disconnect', d);
+  checkStatus();
+}
+
+async function loadCustomers() {
+  try {
+    const r = await fetch('/api/google-ads/customers');
+    const d = await r.json();
+    log('GET /api/google-ads/customers', d);
+    if (d.error) {
+      document.getElementById('customers-box').textContent = '❌ ' + d.error;
+      return;
+    }
+    document.getElementById('login-cid-info').textContent =
+      'Login Customer ID (MCC): ' + (d.login_cid || '(não configurado)');
+    const box = document.getElementById('customers-box');
+    if (!d.customers || d.customers.length === 0) {
+      box.innerHTML = '⚠️ Nenhuma conta acessível. Verifique se o usuário tem acesso no Google Ads.';
+      return;
+    }
+    box.innerHTML = d.customers.map(c =>
+      `<div>• <code>${c}</code> ${c === d.selected ? '⭐ (selecionado)' : ''}</div>`
+    ).join('');
+    const sel = document.getElementById('select-customer');
+    sel.innerHTML = d.customers.map(c =>
+      `<option value="${c}" ${c === d.selected ? 'selected' : ''}>${c}</option>`
+    ).join('');
+  } catch (e) {
+    log('Erro customers', {msg: e.message});
+  }
+}
+
+async function selectCustomer() {
+  const cid = document.getElementById('select-customer').value;
+  if (!cid) return alert('Selecione uma conta');
+  const r = await fetch('/api/google-ads/select-customer', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({customer_id: cid})
+  });
+  const d = await r.json();
+  log('POST /api/google-ads/select-customer', d);
+  if (d.success) { alert('✅ Conta selecionada: ' + cid); checkStatus(); }
+  else alert('❌ ' + (d.error || 'erro'));
+}
+
+async function loadCampaigns() {
+  const box = document.getElementById('campaigns-box');
+  box.innerHTML = '⏳ Carregando…';
+  try {
+    const r = await fetch('/api/google-ads/campaigns');
+    const d = await r.json();
+    log('GET /api/google-ads/campaigns', {count: d.count, customer_id: d.customer_id, error: d.error});
+    if (d.error) { box.innerHTML = '❌ ' + d.error; return; }
+    if (!d.campaigns || d.campaigns.length === 0) {
+      box.innerHTML = `⚠️ Nenhuma campanha encontrada na conta <code>${d.customer_id}</code>.`;
+      return;
+    }
+    const rows = d.campaigns.map(c => `
+      <tr>
+        <td style="padding:8px; border-bottom:1px solid #2a2f4a;"><code>${c.id}</code></td>
+        <td style="padding:8px; border-bottom:1px solid #2a2f4a;">${c.name}</td>
+        <td style="padding:8px; border-bottom:1px solid #2a2f4a;">
+          <span style="padding:2px 8px; border-radius:4px; font-size:0.8em;
+                       background:${c.status === 'ENABLED' ? '#4caf50' : '#666'};
+                       color:#fff;">${c.status}</span>
+        </td>
+        <td style="padding:8px; border-bottom:1px solid #2a2f4a; color:#888;">${c.channel_type || '—'}</td>
+        <td style="padding:8px; border-bottom:1px solid #2a2f4a; color:#888;">${c.start_date || '—'}</td>
+      </tr>`).join('');
+    box.innerHTML = `
+      <p style="color:#aaa;">Conta <code>${d.customer_id}</code> — <b>${d.count}</b> campanha(s)</p>
+      <table style="width:100%; border-collapse:collapse; background:#12152b; border-radius:6px; overflow:hidden;">
+        <thead><tr style="background:#0a0c1a; text-align:left;">
+          <th style="padding:10px;">ID</th><th style="padding:10px;">Nome</th>
+          <th style="padding:10px;">Status</th><th style="padding:10px;">Tipo</th>
+          <th style="padding:10px;">Início</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  } catch (e) {
+    box.innerHTML = '❌ Erro: ' + e.message;
+    log('Erro campaigns', {msg: e.message});
+  }
+}
+
+checkStatus();
+</script>
+{% endblock %}

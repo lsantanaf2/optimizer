@@ -623,6 +623,84 @@ def api_google_ads_select_customer():
     return jsonify({'success': True, 'customer_id': customer_id})
 
 
+@app.route('/google-ads/test')
+def google_ads_test_page():
+    """Página de teste da integração Google Ads — lista contas e campanhas."""
+    user_id = session.get('user_id')
+    if not user_id:
+        return redirect('/login')
+    return render_template('google_ads_test.html')
+
+
+@app.route('/api/google-ads/customers')
+def api_google_ads_customers():
+    """Retorna a lista de customer IDs acessíveis + o selecionado atualmente."""
+    from modules.google_ads import (
+        get_google_ads_config_from_db, _get_valid_token,
+        list_accessible_customers, save_google_ads_config
+    )
+    user_id = session.get('user_id')
+    account_id = session.get('account_id', '')
+    if not user_id:
+        return jsonify({'error': 'Não autenticado'}), 401
+
+    ga_config = get_google_ads_config_from_db(user_id, account_id)
+    if not ga_config:
+        return jsonify({'error': 'Google Ads não conectado'}), 400
+
+    access_token, updated_config = _get_valid_token(ga_config)
+    if not access_token:
+        return jsonify({'error': 'Token Google Ads inválido — reconecte'}), 400
+
+    # Se token foi renovado, salva no banco
+    if updated_config and updated_config != ga_config:
+        updated_config['customer_id'] = ga_config.get('customer_id', '')
+        updated_config['all_customers'] = ga_config.get('all_customers', [])
+        save_google_ads_config(user_id, account_id, updated_config)
+        ga_config = updated_config
+
+    customers = list_accessible_customers(access_token)
+    return jsonify({
+        'customers':    customers,
+        'selected':     ga_config.get('customer_id', ''),
+        'login_cid':    os.getenv('GOOGLE_ADS_LOGIN_CUSTOMER_ID', ''),
+    })
+
+
+@app.route('/api/google-ads/campaigns')
+def api_google_ads_campaigns():
+    """Lista as campanhas do customer_id selecionado (ou do passado via ?customer_id=...)."""
+    from modules.google_ads import (
+        get_google_ads_config_from_db, _get_valid_token,
+        fetch_google_ads_campaigns, save_google_ads_config
+    )
+    user_id = session.get('user_id')
+    account_id = session.get('account_id', '')
+    if not user_id:
+        return jsonify({'error': 'Não autenticado'}), 401
+
+    ga_config = get_google_ads_config_from_db(user_id, account_id)
+    if not ga_config:
+        return jsonify({'error': 'Google Ads não conectado'}), 400
+
+    access_token, updated_config = _get_valid_token(ga_config)
+    if not access_token:
+        return jsonify({'error': 'Token inválido — reconecte'}), 400
+
+    if updated_config and updated_config != ga_config:
+        updated_config['customer_id'] = ga_config.get('customer_id', '')
+        updated_config['all_customers'] = ga_config.get('all_customers', [])
+        save_google_ads_config(user_id, account_id, updated_config)
+        ga_config = updated_config
+
+    customer_id = request.args.get('customer_id') or ga_config.get('customer_id', '')
+    if not customer_id:
+        return jsonify({'error': 'Nenhum customer_id selecionado'}), 400
+
+    campaigns = fetch_google_ads_campaigns(access_token, customer_id)
+    return jsonify({'customer_id': customer_id, 'campaigns': campaigns, 'count': len(campaigns)})
+
+
 # ======================== GOOGLE DRIVE ========================
 
 @app.route('/api/drive/list_folder', methods=['POST'])

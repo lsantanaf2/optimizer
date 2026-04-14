@@ -312,6 +312,62 @@ def fetch_google_ads_insights(access_token, customer_id, since_str, until_str):
         return []
 
 
+def fetch_google_ads_campaigns(access_token, customer_id):
+    """
+    Lista campanhas (ativas e pausadas) de um customer_id.
+    Retorna lista de dicts: {id, name, status, channel_type, start_date, end_date}.
+    """
+    if not access_token or not customer_id:
+        return []
+
+    headers = {
+        'Authorization': f'Bearer {access_token}',
+        'developer-token': GOOGLE_ADS_DEVELOPER_TOKEN,
+        'Content-Type': 'application/json',
+    }
+    if GOOGLE_ADS_LOGIN_CUSTOMER_ID:
+        headers['login-customer-id'] = GOOGLE_ADS_LOGIN_CUSTOMER_ID
+
+    query = """
+        SELECT
+            campaign.id,
+            campaign.name,
+            campaign.status,
+            campaign.advertising_channel_type,
+            campaign.start_date,
+            campaign.end_date
+        FROM campaign
+        WHERE campaign.status != 'REMOVED'
+        ORDER BY campaign.status, campaign.name
+    """
+
+    url = f'https://googleads.googleapis.com/{GOOGLE_ADS_API_VERSION}/customers/{customer_id}/googleAds:searchStream'
+
+    try:
+        resp = requests.post(url, headers=headers, json={'query': query.strip()}, timeout=30)
+        if resp.status_code != 200:
+            print(f"[google_ads] Erro ao listar campanhas ({resp.status_code}): {resp.text[:500]}", flush=True)
+            return []
+
+        results = resp.json()
+        campaigns = []
+        for batch in results:
+            for row in batch.get('results', []):
+                c = row.get('campaign', {})
+                campaigns.append({
+                    'id':           str(c.get('id', '')),
+                    'name':         c.get('name', ''),
+                    'status':       c.get('status', ''),
+                    'channel_type': c.get('advertisingChannelType', ''),
+                    'start_date':   c.get('startDate', ''),
+                    'end_date':     c.get('endDate', ''),
+                })
+        return campaigns
+    except Exception as e:
+        print(f"[google_ads] Erro ao listar campanhas: {e}", flush=True)
+        return []
+
+
 def get_google_ads_config_from_db(user_id, meta_account_id):
     """
     Lê configuração do Google Ads salva no banco (saved_assets['google_ads']).
