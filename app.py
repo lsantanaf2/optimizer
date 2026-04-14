@@ -489,21 +489,6 @@ def api_remove_asset(account_id):
     return jsonify({'success': ok})
 
 
-@app.route('/api/conta/<account_id>/save-compliance', methods=['POST'])
-def api_save_compliance(account_id):
-    """Salva nome do anunciante e pagador (transparência de anúncios Meta)."""
-    from modules.account_settings import save_compliance_info
-    user_id = session.get('user_id')
-    if not user_id:
-        return jsonify({'error': 'Não autenticado'}), 401
-    data = request.get_json() or {}
-    ok = save_compliance_info(
-        user_id, account_id,
-        advertiser_name=data.get('advertiser_name', ''),
-        payer_name=data.get('payer_name', '')
-    )
-    return jsonify({'success': ok})
-
 
 @app.route('/api/conta/<account_id>/save-cac', methods=['POST'])
 def api_save_cac(account_id):
@@ -573,6 +558,14 @@ def google_ads_callback():
     tokens = exchange_google_ads_code(code)
     if not tokens:
         return "Erro ao trocar código por tokens", 500
+    if tokens.get('error'):
+        return (f"<h2>Erro ao trocar código por tokens</h2>"
+                f"<p><b>Status HTTP:</b> {tokens.get('status')}</p>"
+                f"<p><b>Redirect URI enviado:</b> {tokens.get('redirect_uri_usado')}</p>"
+                f"<p><b>Resposta do Google:</b></p>"
+                f"<pre style='background:#f4f4f4;padding:12px;border-radius:6px;'>"
+                f"{tokens.get('body')}</pre>"
+                f"<p><a href='/cruzamento'>← voltar</a></p>"), 500
 
     # Listar contas acessíveis para auto-selecionar
     customers = list_accessible_customers(tokens['access_token'])
@@ -826,13 +819,6 @@ def upload_single(campaign_id):
     excluded_countries_raw = request.form.get('excluded_countries', '')
     excluded_countries = [c.strip().upper() for c in excluded_countries_raw.split(',') if c.strip()] or None
 
-    # Compliance de transparência (anunciante/pagador) — lê do banco
-    from modules.account_settings import get_settings_for_setup
-    _compliance_settings = get_settings_for_setup(session.get('user_id'), account_id)
-    _compliance = (_compliance_settings.get('saved_assets') or {}).get('compliance') or {}
-    compliance_advertiser = _compliance.get('advertiser_name') or None
-    compliance_payer = _compliance.get('payer_name') or None
-
     # Salvar arquivos locais em temp dir antes da thread
     temp_dir = tempfile.mkdtemp(prefix='optimizer_')
     feed_path = None
@@ -903,9 +889,7 @@ def upload_single(campaign_id):
                 try:
                     actual_adset_id = uploader.duplicate_adset(
                         target_adset_id,
-                        excluded_countries=excluded_countries,
-                        compliance_advertiser=compliance_advertiser,
-                        compliance_payer=compliance_payer)
+                        excluded_countries=excluded_countries)
                 except GeoComplianceError as geo_err:
                     _evt('geo_compliance_error', **{
                         'country_code': geo_err.country_code,
@@ -1050,13 +1034,6 @@ def duplicate_adset_route(campaign_id):
         excluded_countries_raw = request.form.get('excluded_countries', '')
         excluded_countries = [c.strip().upper() for c in excluded_countries_raw.split(',') if c.strip()] or None
 
-        # Compliance de transparência — lê do banco
-        from modules.account_settings import get_settings_for_setup
-        _cs = get_settings_for_setup(session.get('user_id'), account_id)
-        _compliance = (_cs.get('saved_assets') or {}).get('compliance') or {}
-        compliance_advertiser = _compliance.get('advertiser_name') or None
-        compliance_payer = _compliance.get('payer_name') or None
-
         if not adset_modelo:
             return jsonify({'success': False, 'error': 'Nenhum Ad Set modelo informado'}), 400
 
@@ -1065,9 +1042,7 @@ def duplicate_adset_route(campaign_id):
             new_adset_id = uploader.duplicate_adset(
                 adset_modelo, new_name=adset_name or None,
                 adset_status=adset_status,
-                excluded_countries=excluded_countries,
-                compliance_advertiser=compliance_advertiser,
-                compliance_payer=compliance_payer)
+                excluded_countries=excluded_countries)
         except GeoComplianceError as geo_err:
             return jsonify({
                 'success': False,

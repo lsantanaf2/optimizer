@@ -95,8 +95,9 @@ def exchange_google_ads_code(code):
     )
 
     if resp.status_code != 200:
-        print(f"[google_ads] Erro ao trocar code: {resp.status_code} {resp.text}")
-        return None
+        print(f"[google_ads] Erro ao trocar code: {resp.status_code} {resp.text}", flush=True)
+        return {'error': True, 'status': resp.status_code, 'body': resp.text,
+                'redirect_uri_usado': GOOGLE_ADS_REDIRECT_URI}
 
     data = resp.json()
     return {
