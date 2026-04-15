@@ -1412,6 +1412,7 @@
 
     // ── Tab System ───────────────────────────────────────────────────────────────
     let _panelDataCache = null;   // dados do daily_funnel cacheados
+    let _panelGoogleMerged = false; // true se painel contém dados mesclados FB+Google
     let _panelRendered = false;   // se os gráficos já foram renderizados neste ciclo
     let _criativosDataCache = null;  // dados de ads_consolidated cacheados
     let _criativosRendered = false;
@@ -2642,7 +2643,15 @@
                 renderFunnel(d.funnel); reveal('funnel-card');
             } else if (stage === 'panel') {
                 _panelDataCache = d.daily_funnel || [];
+                _panelGoogleMerged = !!d.google_merged;
                 _panelRendered = false;
+                // Atualiza o cabeçalho indicando se o Google foi mesclado
+                const panelHdr = document.querySelector('#crz-panel-container .panel-header span');
+                if (panelHdr) {
+                    panelHdr.innerHTML = _panelGoogleMerged
+                        ? '📈 Evolução Diária do Funil <span style="font-size:11px; color:var(--text-secondary); font-weight:normal; margin-left:6px;">(Investimento e Cliques: FB + Google · Demais métricas: Meta only)</span>'
+                        : '📈 Evolução Diária do Funil';
+                }
                 // Se a aba painel diário já está ativa, renderiza imediatamente
                 if (document.getElementById('tab-painel-diario').classList.contains('active')) {
                     renderPanelCharts(_panelDataCache);

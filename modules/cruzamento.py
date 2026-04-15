@@ -333,6 +333,94 @@ def fetch_fb_insights(account_id, access_token, date_preset='last_30d', since=No
 
     return ads
 
+def fetch_vinci_daily(since_dt=None, until_dt=None):
+    """
+    Lê planilha pública VINCI (Google Ads) e retorna dict agregado por data:
+        { 'YYYY-MM-DD': {'spend': float, 'clicks': int} }
+    Filtra por data (se fornecidas) e apenas linhas com 'VINCI' no nome da campanha.
+    Não levanta exceção — em caso de erro retorna {}.
+    """
+    import csv
+    import io
+
+    SHEET_ID  = os.getenv('GOOGLE_ADS_SHEET_ID', '1vhctrrIBQujABaD0VROW8dNHuZIqA-MIX8ESZC77tLg')
+    SHEET_GID = os.getenv('GOOGLE_ADS_SHEET_GID', '2054617579')
+    FILTER_KW = 'VINCI'
+
+    url = f'https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&gid={SHEET_GID}'
+    try:
+        resp = requests.get(url, timeout=10)
+        resp.raise_for_status()
+    except Exception as e:
+        print(f"⚠️ VINCI daily fetch falhou (non-blocking): {e}")
+        return {}
+
+    def _parse_num(s):
+        if not s:
+            return 0.0
+        s = s.strip().replace('%', '')
+        if ',' in s and '.' in s:
+            s = s.replace('.', '').replace(',', '.')
+        elif ',' in s:
+            s = s.replace(',', '.')
+        try:
+            return float(s)
+        except ValueError:
+            return 0.0
+
+    result = {}
+    try:
+        reader = csv.DictReader(io.StringIO(resp.text))
+        headers_map = {}
+        for row in reader:
+            if not headers_map:
+                for k in row.keys():
+                    kl = k.lower()
+                    if 'date' in kl or 'data' in kl:
+                        headers_map['date'] = k
+                    elif 'campaign' in kl or 'campanha' in kl:
+                        headers_map['campaign'] = k
+                    elif 'cost' in kl or 'custo' in kl or 'spend' in kl or 'gasto' in kl:
+                        headers_map['cost'] = k
+                    elif 'click' in kl or 'clique' in kl:
+                        headers_map['clicks'] = k
+
+            date_col     = headers_map.get('date', 'Date (Segment)')
+            campaign_col = headers_map.get('campaign', 'Campaign Name')
+            cost_col     = headers_map.get('cost', 'Cost')
+            clicks_col   = headers_map.get('clicks', 'Clicks')
+
+            name = row.get(campaign_col, '').strip()
+            if FILTER_KW.upper() not in name.upper():
+                continue
+
+            date_str = row.get(date_col, '').strip()
+            if not date_str:
+                continue
+            try:
+                row_dt = datetime.strptime(date_str, '%d/%m/%Y').date()
+            except ValueError:
+                continue
+
+            if since_dt and row_dt < since_dt:
+                continue
+            if until_dt and row_dt > until_dt:
+                continue
+
+            key = row_dt.strftime('%Y-%m-%d')
+            spend  = _parse_num(row.get(cost_col, '0'))
+            clicks = int(_parse_num(row.get(clicks_col, '0')))
+
+            entry = result.setdefault(key, {'spend': 0.0, 'clicks': 0})
+            entry['spend']  += spend
+            entry['clicks'] += clicks
+    except Exception as e:
+        print(f"⚠️ VINCI daily parse falhou: {e}")
+        return {}
+
+    return result
+
+
 def fetch_ads_status(account_id, access_token):
     """Busca o status (ACTIVE, PAUSED, etc) de todos os ads."""
     base_url = f"https://graph.facebook.com/v22.0/{account_id}/ads"
@@ -1275,12 +1363,16 @@ def api_cruzamento_data():
 
             # Fetch paralelo com keepalive — envia heartbeat a cada 3s
             # para evitar que proxy/browser cortem a conexão por inatividade
-            with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=7) as executor:
                 fb_future     = executor.submit(fetch_fb_insights, AD_ACCOUNT_ID, token, date_preset, since, until)
                 sheets_future = executor.submit(fetch_sheets_data, SPREADSHEET_ID)
                 status_future = executor.submit(fetch_ads_status, AD_ACCOUNT_ID, token)
                 camp_status_future = executor.submit(fetch_campaigns_status, AD_ACCOUNT_ID, token)
                 adset_status_future = executor.submit(fetch_adsets_status, AD_ACCOUNT_ID, token)
+
+                # VINCI daily (Google Ads via planilha pública) — usado para mesclar no Painel Diário
+                _since_d_pre, _until_d_pre = preset_to_dates(date_preset, since, until)
+                vinci_daily_future = executor.submit(fetch_vinci_daily, _since_d_pre, _until_d_pre)
 
                 # Google Ads fetch em paralelo (se configurado)
                 if google_ads_enabled:
@@ -1293,7 +1385,7 @@ def api_cruzamento_data():
                     )
                     yield _sse('status', {'message': 'Buscando Facebook Ads + Google Ads + Google Sheets...'})
 
-                futures = [fb_future, sheets_future, status_future, camp_status_future, adset_status_future]
+                futures = [fb_future, sheets_future, status_future, camp_status_future, adset_status_future, vinci_daily_future]
                 if google_ads_future:
                     futures.append(google_ads_future)
                 while not all(f.done() for f in futures):
@@ -1317,6 +1409,15 @@ def api_cruzamento_data():
                             print(f"[cruzamento] Google Ads: {google_ads_count} registros somados aos {len(fb_ads) - google_ads_count} do Meta")
                     except Exception as ga_err:
                         print(f"[cruzamento] Google Ads fetch failed (non-blocking): {ga_err}")
+
+                # VINCI daily (Google via planilha) — usado no Painel Diário para mesclar spend/clicks
+                vinci_daily = {}
+                try:
+                    vinci_daily = vinci_daily_future.result() or {}
+                    if vinci_daily:
+                        print(f"[cruzamento] VINCI daily: {len(vinci_daily)} dias de Google Ads (planilha) para merge no painel")
+                except Exception as vd_err:
+                    print(f"[cruzamento] VINCI daily fetch falhou (non-blocking): {vd_err}")
 
             yield _sse('status', {'message': f'Processando {len(fb_ads)} registros...'})
             yield ": keepalive\n\n"
@@ -1359,7 +1460,44 @@ def api_cruzamento_data():
 
             yield _sse('funnel', {'funnel': resultado.get('funnel')})
 
-            yield _sse('panel', {'daily_funnel': resultado.get('daily_funnel', [])})
+            # ── Merge VINCI daily (Google Ads via planilha) no Painel Diário ──
+            # Só mescla `spend` e `link_clicks` — são as únicas métricas que o Google
+            # fornece na planilha. Impressões, LPV e TypeForm submits continuam
+            # Meta-only (Google não expõe esses dados via planilha), por isso
+            # CTR/connect_rate/taxa_lead/taxa_mql NÃO são recalculados para evitar
+            # distorções (dividir clicks totais por impressões só do Meta seria incorreto).
+            daily_funnel = resultado.get('daily_funnel', [])
+            existing_dates = {entry['date'] for entry in daily_funnel}
+            # 1) Soma em dias que já existem em daily_funnel
+            for entry in daily_funnel:
+                gd = vinci_daily.get(entry['date'])
+                if gd:
+                    entry['spend']       = round(entry.get('spend', 0.0) + gd.get('spend', 0.0), 2)
+                    entry['link_clicks'] = entry.get('link_clicks', 0) + gd.get('clicks', 0)
+                    entry['has_google']  = True
+            # 2) Acrescenta dias do Google que não apareceram no Meta/Sheet (raro mas possível)
+            for dk, gd in vinci_daily.items():
+                if dk not in existing_dates:
+                    daily_funnel.append({
+                        'date':          dk,
+                        'spend':         round(gd.get('spend', 0.0), 2),
+                        'impressions':   0,
+                        'link_clicks':   gd.get('clicks', 0),
+                        'lpv':           0,
+                        'typeform':      0,
+                        'mqls':          0,
+                        'ctr':           None,
+                        'connect_rate':  None,
+                        'taxa_lead':     None,
+                        'taxa_mql':      None,
+                        'has_google':    True,
+                    })
+            daily_funnel.sort(key=lambda e: e['date'])
+
+            yield _sse('panel', {
+                'daily_funnel': daily_funnel,
+                'google_merged': bool(vinci_daily),
+            })
             yield ": keepalive\n\n"
 
             yield _sse('charts', {
