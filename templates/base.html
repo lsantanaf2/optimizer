@@ -66,6 +66,14 @@
                     <span class="nav-icon">📥</span>
                     <span class="nav-label">Instagram</span>
                 </a>
+
+                <!-- Google Ads (teste) -->
+                <a href="{{ url_for('google_ads_test_page') }}"
+                    class="nav-item {% if request.endpoint == 'google_ads_test_page' %}active{% endif %}"
+                    title="Google Ads (teste)">
+                    <span class="nav-icon">🔍</span>
+                    <span class="nav-label">Google Ads</span>
+                </a>
             </nav>
             <div class="sidebar-footer">
                 <a href="{{ url_for('auth.account_profile') }}" class="nav-item {% if request.endpoint == 'auth.account_profile' %}active{% endif %}" title="Minha Conta">
