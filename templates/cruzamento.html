@@ -815,10 +815,6 @@
         {% endif %}
     </h2>
     <div class="crz-right">
-        <button id="btn-google-ads" onclick="toggleGoogleAds()" style="display:none; background:transparent; border:1px solid #4285f4; color:#4285f4; border-radius:6px; padding:5px 12px; cursor:pointer; font-size:0.85em; margin-right:8px;" title="Integração Google Ads">
-            <span id="btn-google-ads-icon">🔗</span>
-            <span id="btn-google-ads-text">Google Ads</span>
-        </button>
         <div class="drp-wrap" id="drp-wrap">
             <button class="drp-trigger" id="drp-trigger" onclick="toggleDatePicker()">
                 <span>📅</span>
@@ -2882,53 +2878,15 @@
         renderSpendChart();
     }
 
-    // ── Google Ads Integration UI ──────────────────────────────────────────────
-    let _googleAdsStatus = { configured: false, connected: false, customer_id: null };
-
+    // ── Google Ads badge (status visual apenas — conexão via Perfil) ───────────
     async function checkGoogleAdsStatus() {
         try {
             const resp = await fetch('/api/google-ads/status');
             const data = await resp.json();
-            _googleAdsStatus = data;
-            const btn = document.getElementById('btn-google-ads');
             const badge = document.getElementById('google-ads-badge');
-
-            if (data.configured) {
-                btn.style.display = 'inline-flex';
-                if (data.connected) {
-                    btn.style.borderColor = '#34a853';
-                    btn.style.color = '#34a853';
-                    document.getElementById('btn-google-ads-icon').textContent = '✅';
-                    document.getElementById('btn-google-ads-text').textContent = 'Google Ads';
-                    if (badge) badge.style.display = 'inline';
-                } else {
-                    btn.style.borderColor = '#4285f4';
-                    btn.style.color = '#4285f4';
-                    document.getElementById('btn-google-ads-icon').textContent = '🔗';
-                    document.getElementById('btn-google-ads-text').textContent = 'Conectar Google Ads';
-                    if (badge) badge.style.display = 'none';
-                }
-            }
+            if (badge) badge.style.display = (data.connected) ? 'inline' : 'none';
         } catch (e) {
             console.warn('Google Ads status check failed:', e);
-        }
-    }
-
-    function toggleGoogleAds() {
-        if (_googleAdsStatus.connected) {
-            if (confirm('Desconectar Google Ads?\nOs dados do Google não serão mais incluídos no cruzamento.')) {
-                fetch('/api/google-ads/disconnect', { method: 'POST' })
-                    .then(r => r.json())
-                    .then(d => {
-                        if (d.success) {
-                            mostrarToast('Google Ads desconectado');
-                            checkGoogleAdsStatus();
-                            loadData();
-                        }
-                    });
-            }
-        } else {
-            window.location.href = '/auth/google-ads';
         }
     }
 
