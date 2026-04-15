@@ -61,7 +61,7 @@ from modules.account_settings import (
 import atexit
 atexit.register(close_db)
 
-VERSION = "v2.6.1"
+VERSION = "v2.6.2"
 
 @app.before_request
 def ensure_db():
@@ -710,49 +710,32 @@ def api_google_ads_campaigns():
 
 # ======================== GOOGLE ADS — SHEETS FALLBACK ========================
 
-@app.route('/api/cruzamento/google-ads-sheets')
-@login_required
-def api_google_ads_sheets():
+def _fetch_vinci_sheet(since_dt=None, until_dt=None):
     """
-    Busca dados do Google Ads via Google Sheets público (fallback sem API OAuth).
-    Filtra campanhas que contenham 'VINCI' no nome.
-    Query params: since=YYYY-MM-DD, until=YYYY-MM-DD
+    Busca e agrega dados do Google Ads (planilha pública VINCI).
+    Retorna dict: {'campaigns': [...], 'totals': {'spend','conversions','clicks'}, 'error': str|None}
+    Função reutilizada pelos endpoints de Google Ads Sheets e Consolidado.
     """
     import requests as _req
     import csv
     import io
-    from datetime import datetime, timedelta
 
     SHEET_ID  = os.getenv('GOOGLE_ADS_SHEET_ID', '1vhctrrIBQujABaD0VROW8dNHuZIqA-MIX8ESZC77tLg')
     SHEET_GID = os.getenv('GOOGLE_ADS_SHEET_GID', '2054617579')
-    FILTER_KW = 'VINCI'  # filtro de nome de campanha
-
-    # Parâmetros de data
-    since_str = request.args.get('since', '')
-    until_str = request.args.get('until', '')
-    try:
-        since_dt = datetime.strptime(since_str, '%Y-%m-%d').date() if since_str else None
-        until_dt = datetime.strptime(until_str, '%Y-%m-%d').date() if until_str else None
-    except ValueError:
-        since_dt = until_dt = None
+    FILTER_KW = 'VINCI'
 
     url = f'https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&gid={SHEET_GID}'
     try:
         resp = _req.get(url, timeout=10)
         resp.raise_for_status()
     except Exception as e:
-        return jsonify({'error': f'Erro ao buscar Sheets: {str(e)}'}), 500
-
-    # Parse CSV
-    reader = csv.DictReader(io.StringIO(resp.text))
-    campaigns = {}  # campaign_name → {spend, conversions, clicks}
+        return {'campaigns': [], 'totals': {'spend': 0.0, 'conversions': 0.0, 'clicks': 0},
+                'error': f'Erro ao buscar Sheets: {str(e)}'}
 
     def parse_num(s):
-        """Converte '1.234,56' ou '1234.56' ou '1,23%' para float."""
         if not s:
             return 0.0
         s = s.strip().replace('%', '')
-        # Formato brasileiro: ponto como milhar, vírgula como decimal
         if ',' in s and '.' in s:
             s = s.replace('.', '').replace(',', '.')
         elif ',' in s:
@@ -762,9 +745,11 @@ def api_google_ads_sheets():
         except ValueError:
             return 0.0
 
-    headers_map = {}  # mapeia colunas pelo índice (robustez a variações de cabeçalho)
+    reader = csv.DictReader(io.StringIO(resp.text))
+    campaigns = {}
+    headers_map = {}
+
     for row in reader:
-        # Detectar colunas dinamicamente
         if not headers_map:
             for k in row.keys():
                 kl = k.lower()
@@ -781,29 +766,27 @@ def api_google_ads_sheets():
                 elif 'ctr' in kl:
                     headers_map['ctr'] = k
 
-        date_col       = headers_map.get('date', 'Date (Segment)')
-        campaign_col   = headers_map.get('campaign', 'Campaign Name')
-        cost_col       = headers_map.get('cost', 'Cost')
-        conv_col       = headers_map.get('conversions', 'Conversions')
-        clicks_col     = headers_map.get('clicks', 'Clicks')
-        ctr_col        = headers_map.get('ctr', 'CTR')
+        date_col     = headers_map.get('date', 'Date (Segment)')
+        campaign_col = headers_map.get('campaign', 'Campaign Name')
+        cost_col     = headers_map.get('cost', 'Cost')
+        conv_col     = headers_map.get('conversions', 'Conversions')
+        clicks_col   = headers_map.get('clicks', 'Clicks')
+        ctr_col      = headers_map.get('ctr', 'CTR')
 
         name = row.get(campaign_col, '').strip()
         if FILTER_KW.upper() not in name.upper():
             continue
 
-        # Filtro de data
         date_str = row.get(date_col, '').strip()
         if (since_dt or until_dt) and date_str:
             try:
-                # Formato DD/MM/YYYY
                 row_dt = datetime.strptime(date_str, '%d/%m/%Y').date()
                 if since_dt and row_dt < since_dt:
                     continue
                 if until_dt and row_dt > until_dt:
                     continue
             except ValueError:
-                pass  # se não parsear data, inclui o registro
+                pass
 
         spend       = parse_num(row.get(cost_col, '0'))
         conversions = parse_num(row.get(conv_col, '0'))
@@ -811,16 +794,17 @@ def api_google_ads_sheets():
         ctr_raw     = parse_num(row.get(ctr_col, '0'))
 
         if name not in campaigns:
-            campaigns[name] = {'campaign_name': name, 'spend': 0, 'conversions': 0, 'clicks': 0, 'ctr_sum': 0, 'days': 0}
-
+            campaigns[name] = {'campaign_name': name, 'spend': 0.0, 'conversions': 0.0,
+                               'clicks': 0, 'ctr_sum': 0.0, 'days': 0}
         campaigns[name]['spend']       += spend
         campaigns[name]['conversions'] += conversions
         campaigns[name]['clicks']      += clicks
         campaigns[name]['ctr_sum']     += ctr_raw
         campaigns[name]['days']        += 1
 
-    # Calcular métricas derivadas
     result = []
+    total_spend = total_conv = 0.0
+    total_clicks = 0
     for c in campaigns.values():
         days = c['days'] or 1
         cpc  = c['spend'] / c['clicks']      if c['clicks'] > 0      else 0
@@ -835,9 +819,210 @@ def api_google_ads_sheets():
             'cpc':           round(cpc, 2),
             'cpa':           round(cpa, 2),
         })
+        total_spend  += c['spend']
+        total_conv   += c['conversions']
+        total_clicks += c['clicks']
 
     result.sort(key=lambda x: x['spend'], reverse=True)
-    return jsonify({'campaigns': result, 'count': len(result), 'filter': FILTER_KW})
+    return {
+        'campaigns': result,
+        'totals': {
+            'spend':       round(total_spend, 2),
+            'conversions': round(total_conv, 2),
+            'clicks':      total_clicks,
+        },
+        'error': None,
+    }
+
+
+@app.route('/api/cruzamento/google-ads-sheets')
+@login_required
+def api_google_ads_sheets():
+    """
+    Busca dados do Google Ads via Google Sheets público (fallback sem API OAuth).
+    Filtra campanhas que contenham 'VINCI' no nome.
+    Query params: since=YYYY-MM-DD, until=YYYY-MM-DD
+    """
+    from datetime import datetime
+
+    since_str = request.args.get('since', '')
+    until_str = request.args.get('until', '')
+    try:
+        since_dt = datetime.strptime(since_str, '%Y-%m-%d').date() if since_str else None
+        until_dt = datetime.strptime(until_str, '%Y-%m-%d').date() if until_str else None
+    except ValueError:
+        since_dt = until_dt = None
+
+    data = _fetch_vinci_sheet(since_dt, until_dt)
+    if data.get('error'):
+        return jsonify({'error': data['error']}), 500
+    return jsonify({'campaigns': data['campaigns'], 'count': len(data['campaigns']), 'filter': 'VINCI'})
+
+
+@app.route('/api/cruzamento/consolidado')
+@login_required
+def api_cruzamento_consolidado():
+    """
+    Aba Consolidado: une gastos Facebook Ads + Google Ads (VINCI Sheet) + MQLs/Wons da planilha.
+
+    Regra de atribuição (crítica — evita double counting):
+      - Fonte única de MQLs e receita: planilha de MQLs/Wons
+      - Segregação por utm_source (normalizado lowercase):
+          'facebook'              → Facebook
+          'adwords' | 'google'    → Google
+          qualquer outro/vazio    → Outros
+      - Spend por fonte:
+          Facebook: soma de 'spend' dos fb_ads (respeita filtros de campanhas excluídas)
+          Google:   soma de 'Cost' na planilha VINCI (apenas campanhas com VINCI no nome)
+
+    Query params: date_preset=last_7_days|this_month|..., since=YYYY-MM-DD, until=YYYY-MM-DD
+    """
+    import concurrent.futures
+    from datetime import datetime as _dt
+    from modules.cruzamento import (
+        AD_ACCOUNT_ID, SPREADSHEET_ID,
+        fetch_fb_insights, fetch_sheets_data,
+        filter_rows_by_date, preset_to_dates,
+        load_excluded_patterns, _matches_excluded, _is_instagram_post,
+        _norm, _parse_valor,
+    )
+
+    token = obter_token()
+    if not token:
+        return jsonify({'success': False, 'error': 'Não autenticado'}), 401
+
+    date_preset = request.args.get('date_preset', 'last_7_days')
+    since       = request.args.get('since')
+    until       = request.args.get('until')
+
+    since_d, until_d = preset_to_dates(date_preset, since, until)
+
+    # Fetch paralelo — 3 fontes independentes
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as ex:
+            fb_fut     = ex.submit(fetch_fb_insights, AD_ACCOUNT_ID, token, date_preset, since, until)
+            sheets_fut = ex.submit(fetch_sheets_data, SPREADSHEET_ID)
+            vinci_fut  = ex.submit(_fetch_vinci_sheet, since_d, until_d)
+
+            fb_ads = fb_fut.result()
+            mqls_all, wons_all = sheets_fut.result()
+            vinci = vinci_fut.result()
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+    # ── 1. Facebook spend (respeita filtro global de campanhas excluídas) ──
+    excluded = load_excluded_patterns()
+    fb_spend = 0.0
+    for ad in fb_ads:
+        cn = ad.get('campaign_name', '')
+        if _matches_excluded(cn, excluded):
+            continue
+        if _is_instagram_post(cn):
+            continue
+        fb_spend += float(ad.get('spend', 0) or 0)
+
+    # ── 2. Google spend (VINCI sheet) ──
+    google_spend = float(vinci['totals']['spend'])
+    google_conversions_sheet = float(vinci['totals']['conversions'])  # apenas exibição, não é MQL
+
+    # ── 3. MQLs/Wons do período ──
+    mqls_rows = filter_rows_by_date(mqls_all, 'Data do preenchimento', since_d, until_d)
+    wons_rows = filter_rows_by_date(wons_all, 'Data de fechamento', since_d, until_d)
+
+    # Index Wons por Deal ID (para join com MQL)
+    wons_idx = {}
+    for row in wons_rows:
+        deal_id = _norm(row.get('Deal ID', ''))
+        if deal_id:
+            wons_idx[deal_id] = {'valor': _parse_valor(row.get('Valor', 0))}
+
+    # Buckets por utm_source
+    def _bucket(utm_src):
+        s = (utm_src or '').strip().lower()
+        if s == 'facebook':
+            return 'facebook'
+        if s in ('adwords', 'google'):
+            return 'google'
+        return 'outros'
+
+    def _empty():
+        return {'mqls': 0, 'wons': 0, 'receita': 0.0}
+
+    buckets = {'facebook': _empty(), 'google': _empty(), 'outros': _empty()}
+
+    # MQLs do período → contagem por bucket
+    for row in mqls_rows:
+        b = _bucket(row.get('utm_source', ''))
+        buckets[b]['mqls'] += 1
+
+    # Wons do período → atribuição pelo utm_source do MQL original (fonte única de verdade).
+    # Se o MQL não estiver na planilha completa (raro), bucket = 'outros'.
+    mqls_all_by_deal = {
+        _norm(row.get('Deal ID', '')): row
+        for row in mqls_all
+        if _norm(row.get('Deal ID', ''))
+    }
+    for row in wons_rows:
+        deal_id = _norm(row.get('Deal ID', ''))
+        valor = _parse_valor(row.get('Valor', 0))
+        mql_row = mqls_all_by_deal.get(deal_id)
+        utm_src = mql_row.get('utm_source', '') if mql_row else ''
+        b = _bucket(utm_src)
+        buckets[b]['wons']    += 1
+        buckets[b]['receita'] += valor
+
+    # ── 4. Métricas derivadas ──
+    def _metrics(bucket, spend):
+        mqls    = bucket['mqls']
+        wons    = bucket['wons']
+        receita = bucket['receita']
+        return {
+            'spend':       round(spend, 2),
+            'mqls':        mqls,
+            'wons':        wons,
+            'receita':     round(receita, 2),
+            'cpm':         round(spend / mqls, 2)   if mqls > 0   else 0.0,   # custo por MQL
+            'cpa':         round(spend / wons, 2)   if wons > 0   else 0.0,   # custo por venda
+            'ticket':      round(receita / wons, 2) if wons > 0   else 0.0,
+            'conv_rate':   round(100 * wons / mqls, 2) if mqls > 0 else 0.0,
+            'roas':        round(receita / spend, 2) if spend > 0 else 0.0,
+        }
+
+    # Outros: spend = 0 (não há canal pago rastreável aqui — orgânico, direct, indicação)
+    per_source = {
+        'facebook': _metrics(buckets['facebook'], fb_spend),
+        'google':   _metrics(buckets['google'],   google_spend),
+        'outros':   _metrics(buckets['outros'],   0.0),
+    }
+
+    total_spend   = fb_spend + google_spend
+    total_mqls    = sum(b['mqls'] for b in buckets.values())
+    total_wons    = sum(b['wons'] for b in buckets.values())
+    total_receita = sum(b['receita'] for b in buckets.values())
+
+    consolidado = {
+        'spend':     round(total_spend, 2),
+        'mqls':      total_mqls,
+        'wons':      total_wons,
+        'receita':   round(total_receita, 2),
+        'cpm':       round(total_spend / total_mqls, 2)     if total_mqls > 0 else 0.0,
+        'cpa':       round(total_spend / total_wons, 2)     if total_wons > 0 else 0.0,
+        'ticket':    round(total_receita / total_wons, 2)   if total_wons > 0 else 0.0,
+        'conv_rate': round(100 * total_wons / total_mqls, 2) if total_mqls > 0 else 0.0,
+        'roas':      round(total_receita / total_spend, 2)  if total_spend > 0 else 0.0,
+    }
+
+    return jsonify({
+        'success':     True,
+        'period':      {'since': str(since_d) if since_d else None,
+                        'until': str(until_d) if until_d else None,
+                        'preset': date_preset},
+        'consolidado': consolidado,
+        'por_fonte':   per_source,
+        'google_conversions_sheet': round(google_conversions_sheet, 2),  # referência (não usado p/ custo/MQL)
+        'vinci_error': vinci.get('error'),
+    })
 
 
 # ======================== GOOGLE DRIVE ========================
