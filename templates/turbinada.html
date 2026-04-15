@@ -502,6 +502,14 @@
         <button id="btn-filter-selected"
             style="padding:5px 12px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--bg-card); color:var(--text-secondary); cursor:pointer; font-size:11px; font-weight:600; transition:all .15s;"
             onclick="toggleFilterSelected()">🔍 Filtrar selecionados</button>
+        <button onclick="downloadTurbinadaMD()" title="Baixar dados como Markdown"
+            style="padding:5px 8px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--bg-card); color:var(--text-secondary); cursor:pointer; font-size:11px; display:inline-flex; align-items:center;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+        </button>
         <span id="filter-token"
             style="display:none; padding:3px 10px; border-radius:12px; background:var(--accent); color:#fff; font-size:10px; font-weight:700; cursor:pointer; user-select:none;"
             onclick="toggleFilterSelected()">✕ Apenas selecionados</span>
@@ -1340,6 +1348,84 @@
             btn.textContent = '✓';
         }
         btn.disabled = false;
+    }
+
+    // ── Download Markdown ────────────────────────────────────────────────────────
+    function downloadTurbinadaMD() {
+        const today    = new Date().toLocaleDateString('pt-BR');
+        const levelMap = { campaign: 'Campanhas', adset: 'Conjuntos', ad: 'Anúncios' };
+        const levelLabel = levelMap[currentLevel] || currentLevel;
+        const periods  = getActivePeriods();
+
+        let md = `# Relatório Turbinada — ${levelLabel}\n`;
+        md += `**Gerado em:** ${today}\n\n`;
+
+        if (!allData || allData.length === 0) {
+            md += '_Nenhum dado disponível no momento._\n';
+        } else {
+            // Filtro de selecionados ativo?
+            let data = [...allData];
+            if (filtrarApenasSelecionados) {
+                const checkedIds = new Set(
+                    Array.from(document.querySelectorAll('.row-cb:checked'))
+                        .map(cb => cb.dataset.id).filter(Boolean)
+                );
+                if (checkedIds.size > 0) data = data.filter(item => checkedIds.has(item.id));
+            }
+
+            // Ordenar igual à tela
+            if (currentSort.key) {
+                data.sort((a, b) => {
+                    const va = getSortValue(a, currentSort.key);
+                    const vb = getSortValue(b, currentSort.key);
+                    return currentSort.asc ? va - vb : vb - va;
+                });
+            }
+
+            const showBudget = currentLevel !== 'ad';
+            const brl = v => (v == null || v === 0) ? '—' : 'R$ ' + Number(v).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
+
+            // Cabeçalho
+            let header = '| Nome |';
+            let sep    = '|---|';
+            if (showBudget) { header += ' Verba/Dia |'; sep += '---:|'; }
+            periods.forEach(p => { header += ` ${p.label} Gasto | ${p.label} Vendas | ${p.label} CAC |`; sep += '---:|---:|---:|'; });
+            md += header + '\n' + sep + '\n';
+
+            // Linhas
+            data.forEach(item => {
+                let row = `| ${item.name || ''} |`;
+                if (showBudget) row += ` ${item.daily_budget != null ? brl(item.daily_budget) : '—'} |`;
+                periods.forEach(p => {
+                    const pd = item[p.key] || { spend: 0, purchases: 0, cac: null };
+                    row += ` ${pd.spend > 0 ? brl(pd.spend) : '—'} |`;
+                    row += ` ${pd.purchases > 0 ? pd.purchases : '—'} |`;
+                    row += ` ${pd.cac !== null ? brl(pd.cac) : '—'} |`;
+                });
+                md += row + '\n';
+            });
+
+            // Rodapé de totais
+            let foot = '| **TOTAL** |';
+            if (showBudget) {
+                const tBudget = data.reduce((s, i) => s + (i.daily_budget || 0), 0);
+                foot += ` **${brl(tBudget)}** |`;
+            }
+            periods.forEach(p => {
+                let tS = 0, tP = 0;
+                data.forEach(item => { const pd = item[p.key]||{}; tS += pd.spend||0; tP += pd.purchases||0; });
+                const tCAC = tP > 0 ? tS / tP : null;
+                foot += ` **${brl(tS)}** | **${tP||'—'}** | **${tCAC !== null ? brl(tCAC) : '—'}** |`;
+            });
+            md += foot + '\n';
+        }
+
+        const filename = `turbinada_${levelLabel.toLowerCase()}_${today.replace(/\//g,'-')}.md`;
+        const blob = new Blob([md], { type: 'text/markdown' });
+        const url  = URL.createObjectURL(blob);
+        const a    = Object.assign(document.createElement('a'), { href: url, download: filename });
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        URL.revokeObjectURL(url);
     }
 
     // ===== Init =====

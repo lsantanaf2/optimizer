@@ -871,6 +871,14 @@
             style="margin-left:auto; background:transparent; border:1px solid var(--border); color:var(--text-secondary); border-radius:8px; padding:6px 10px; cursor:pointer; font-size:14px;">
         ⚙️ Filtros
     </button>
+    <button onclick="downloadCruzamentoMD()" title="Baixar dados como Markdown"
+            style="background:transparent; border:1px solid var(--border); color:var(--text-secondary); border-radius:8px; padding:6px 9px; cursor:pointer; font-size:14px; display:inline-flex; align-items:center;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+    </button>
 </div>
 
 <!-- Tab 1: Principal -->
@@ -2876,6 +2884,72 @@
         if (spendBadge) { spendBadge.style.display = 'none'; }
         renderTimelineChart();
         renderSpendChart();
+    }
+
+    // ── Download Markdown ────────────────────────────────────────────────────────
+    function downloadCruzamentoMD() {
+        const period = document.getElementById('drp-label')?.textContent?.trim() || 'Período';
+        const today  = new Date().toLocaleDateString('pt-BR');
+
+        let md = `# Relatório de Cruzamento\n`;
+        md += `**Período:** ${period}  \n**Gerado em:** ${today}\n\n`;
+
+        // KPIs
+        const kpis = [
+            ['Investimento Total', 'kpi-spend'],
+            ['Receita Total',      'kpi-receita'],
+            ['ROAS',               'kpi-roas'],
+            ['MQL Total',          'kpi-mqls'],
+            ['CPL Total',          'kpi-cpl'],
+        ];
+        const kpiValues = kpis.map(([label, id]) => [label, document.getElementById(id)?.textContent?.trim()]);
+        if (kpiValues.some(([, v]) => v && v !== '—')) {
+            md += `## Resumo Geral\n\n| Métrica | Valor |\n|---|---|\n`;
+            kpiValues.forEach(([label, val]) => { if (val && val !== '—') md += `| ${label} | ${val} |\n`; });
+            md += '\n';
+        }
+
+        // Helper
+        const brl = v => (v == null || v === 0) ? '—' : 'R$ ' + Number(v).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
+        const xfmt = v => (v == null || v === 0) ? '—' : Number(v).toFixed(2) + 'x';
+        const pct  = v => (v == null) ? '—' : Number(v).toFixed(1) + '%';
+
+        // Campanhas
+        if (currentCampaignsData && currentCampaignsData.length > 0) {
+            const filtered = activeFilters.camps ? currentCampaignsData.filter(c => c.ad_status === 'ACTIVE') : currentCampaignsData;
+            const sorted   = [...filtered].sort((a, b) => currentCampSortDesc ? (b[currentCampSortCol]||0) - (a[currentCampSortCol]||0) : (a[currentCampSortCol]||0) - (b[currentCampSortCol]||0));
+            md += `## Campanhas (${sorted.length})\n\n`;
+            md += `| Campanha | Investimento | Receita | ROAS | MQLs | Custo/MQL | NC | %NC | Custo/NC |\n`;
+            md += `|---|---:|---:|---:|---:|---:|---:|---:|---:|\n`;
+            sorted.forEach(c => {
+                md += `| ${c.campaign_name||''} | ${brl(c.spend)} | ${brl(c.receita)} | ${xfmt(c.roas)} | ${c.mqls||'—'} | ${c.mqls > 0 ? brl(c.cpl) : '—'} | ${c.nc||'—'} | ${c.nc > 0 ? pct(c.pct_nc) : '—'} | ${c.nc > 0 ? brl(c.custo_nc) : '—'} |\n`;
+            });
+            let tS=0,tM=0,tN=0,tR=0;
+            filtered.forEach(c => { tS+=c.spend||0; tM+=c.mqls||0; tN+=c.nc||0; tR+=c.receita||0; });
+            md += `| **TOTAL** | **${brl(tS)}** | **${brl(tR)}** | **${xfmt(tS>0&&tR>0?tR/tS:0)}** | **${tM||'—'}** | **${tM>0?brl(tS/tM):'—'}** | **${tN||'—'}** | **${tM>0?pct((tN/tM)*100):'—'}** | **${tN>0?brl(tS/tN):'—'}** |\n\n`;
+        }
+
+        // Conjuntos
+        if (currentAdSetsData && currentAdSetsData.length > 0) {
+            const filtered = activeFilters.adsets ? currentAdSetsData.filter(s => s.ad_status === 'ACTIVE') : currentAdSetsData;
+            const sorted   = [...filtered].sort((a, b) => currentAdSetSortDesc ? (b[currentAdSetSortCol]||0) - (a[currentAdSetSortCol]||0) : (a[currentAdSetSortCol]||0) - (b[currentAdSetSortCol]||0));
+            md += `## Conjuntos de Anúncios (${sorted.length})\n\n`;
+            md += `| Conjunto | Investimento | Receita | ROAS | MQLs | Custo/MQL | NC | %NC | Custo/NC |\n`;
+            md += `|---|---:|---:|---:|---:|---:|---:|---:|---:|\n`;
+            sorted.forEach(s => {
+                md += `| ${s.adset_name||''} | ${brl(s.spend)} | ${brl(s.receita)} | ${xfmt(s.roas)} | ${s.mqls||'—'} | ${s.mqls > 0 ? brl(s.cpl) : '—'} | ${s.nc||'—'} | ${s.nc > 0 ? pct(s.pct_nc) : '—'} | ${s.nc > 0 ? brl(s.custo_nc) : '—'} |\n`;
+            });
+            let tS=0,tM=0,tN=0,tR=0;
+            filtered.forEach(s => { tS+=s.spend||0; tM+=s.mqls||0; tN+=s.nc||0; tR+=s.receita||0; });
+            md += `| **TOTAL** | **${brl(tS)}** | **${brl(tR)}** | **${xfmt(tS>0&&tR>0?tR/tS:0)}** | **${tM||'—'}** | **${tM>0?brl(tS/tM):'—'}** | **${tN||'—'}** | **${tM>0?pct((tN/tM)*100):'—'}** | **${tN>0?brl(tS/tN):'—'}** |\n\n`;
+        }
+
+        const filename = `cruzamento_${period.replace(/\s+/g,'_')}_${today.replace(/\//g,'-')}.md`;
+        const blob = new Blob([md], { type: 'text/markdown' });
+        const url  = URL.createObjectURL(blob);
+        const a    = Object.assign(document.createElement('a'), { href: url, download: filename });
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        URL.revokeObjectURL(url);
     }
 
     // ── Google Ads badge (status visual apenas — conexão via Perfil) ───────────
