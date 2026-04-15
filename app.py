@@ -61,7 +61,7 @@ from modules.account_settings import (
 import atexit
 atexit.register(close_db)
 
-VERSION = "v2.6.0"
+VERSION = "v2.6.1"
 
 @app.before_request
 def ensure_db():
@@ -589,10 +589,12 @@ def google_ads_callback():
     }
     save_google_ads_config(user_id, account_id, config)
 
-    # Redirecionar conforme origem (test page ou cruzamento)
+    # Redirecionar conforme origem (test page, profile ou cruzamento)
     return_to = session.pop('ga_return_to', '') or ''
     if return_to == 'test':
         return redirect('/google-ads/test')
+    if return_to == 'profile':
+        return redirect('/auth/account/profile')
     return redirect('/cruzamento')
 
 

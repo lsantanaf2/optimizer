@@ -312,6 +312,30 @@ def account_profile():
         delta = meta_row['expires_at'].replace(tzinfo=None) - datetime.utcnow()
         meta_expires_days = max(0, delta.days)
 
+    # Dados Google Ads
+    ga_connected = False
+    ga_customer_id = None
+    ga_connected_at = None
+    ga_configured = False
+    try:
+        from modules.google_ads import is_google_ads_configured, get_google_ads_config_from_db
+        ga_configured = is_google_ads_configured()
+        if ga_configured:
+            account_id = session.get('account_id', '')
+            ga_config = get_google_ads_config_from_db(user_id, account_id)
+            if ga_config and ga_config.get('refresh_token'):
+                ga_connected = True
+                ga_customer_id = ga_config.get('customer_id')
+                ga_connected_at = ga_config.get('connected_at')
+                if ga_connected_at:
+                    try:
+                        from datetime import datetime as _dt
+                        ga_connected_at = _dt.fromisoformat(ga_connected_at).strftime('%d/%m/%Y %H:%M')
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+
     return render_template('account/profile.html',
         user_email=user['email'],
         plan=user.get('plan', 'free'),
@@ -322,7 +346,11 @@ def account_profile():
         meta_updated_at=meta_row['updated_at'].strftime('%d/%m/%Y %H:%M') if meta_row and meta_row.get('updated_at') else None,
         meta_expires_at=meta_expires_str,
         meta_expires_days=meta_expires_days,
-        reauth_url=reauth_url
+        reauth_url=reauth_url,
+        ga_configured=ga_configured,
+        ga_connected=ga_connected,
+        ga_customer_id=ga_customer_id,
+        ga_connected_at=ga_connected_at
     )
 
 
