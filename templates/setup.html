@@ -104,33 +104,6 @@
                     objetivo de geração de leads.</div>
             </div>
 
-            <div class="form-group" style="margin-top: 16px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 14px;">
-                <label style="display:flex; align-items:center; gap:8px;">
-                    Transparência dos Anúncios
-                    <span class="badge" style="background:#7c4dff; color:#fff; font-size:0.7em;">TAIWAN / ÁSIA</span>
-                </label>
-                <div class="card-desc" style="margin-bottom:10px; font-size:0.85em;">
-                    Obrigatório para veicular em alguns países (Taiwan, Índia etc.). Preencha o nome do anunciante e pagador conforme aprovado na Meta.
-                </div>
-                <div style="display:flex; gap:10px;">
-                    <div style="flex:1;">
-                        <label style="font-size:0.85em; color:#aaa; margin-bottom:4px; display:block;">Anunciante</label>
-                        <input type="text" id="compliance-advertiser" placeholder="Ex: Nome da Empresa Ltda."
-                               style="width:100%; box-sizing:border-box; background:#1e2235; border:1px solid #333; color:#fff; border-radius:6px; padding:8px 10px;">
-                    </div>
-                    <div style="flex:1;">
-                        <label style="font-size:0.85em; color:#aaa; margin-bottom:4px; display:block;">Pagador (se diferente)</label>
-                        <input type="text" id="compliance-payer" placeholder="Deixe em branco se igual ao anunciante"
-                               style="width:100%; box-sizing:border-box; background:#1e2235; border:1px solid #333; color:#fff; border-radius:6px; padding:8px 10px;">
-                    </div>
-                    <div style="display:flex; align-items:flex-end; padding-bottom:1px;">
-                        <button type="button" onclick="salvarCompliance()"
-                                style="background:#7c4dff; color:#fff; border:none; border-radius:6px; padding:8px 16px; cursor:pointer; white-space:nowrap;">
-                            💾 Salvar
-                        </button>
-                    </div>
-                </div>
-            </div>
         </div>
 
         <!-- ================================================================ -->
@@ -666,28 +639,6 @@
             }
         }
 
-        // Compliance de transparência dos anúncios (anunciante/pagador)
-        async function salvarCompliance() {
-            const advertiser = document.getElementById('compliance-advertiser').value.trim();
-            const payer = document.getElementById('compliance-payer').value.trim();
-            if (!advertiser) { mostrarToast('⚠️ Preencha o nome do Anunciante'); return; }
-            try {
-                const resp = await fetch(`/api/conta/${ACCOUNT_ID}/save-compliance`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ advertiser_name: advertiser, payer_name: payer })
-                });
-                const data = await resp.json();
-                if (data.success) {
-                    _savedAssets.compliance = { advertiser_name: advertiser, payer_name: payer };
-                    mostrarToast('✅ Transparência dos anúncios salva!');
-                } else {
-                    mostrarToast('❌ Erro ao salvar: ' + (data.error || 'desconhecido'));
-                }
-            } catch (e) {
-                mostrarToast('❌ Erro de rede ao salvar compliance');
-            }
-        }
 
         // Estrela nos selects (page, instagram, pixel)
         async function toggleStarSelect(selectId, assetType, keyField) {
@@ -909,14 +860,6 @@
                     document.getElementById('cta').value = _savedAssets.default_cta;
                 }
 
-                // Pré-preencher compliance (transparência dos anúncios)
-                const savedCompliance = _savedAssets.compliance || {};
-                if (savedCompliance.advertiser_name) {
-                    document.getElementById('compliance-advertiser').value = savedCompliance.advertiser_name;
-                }
-                if (savedCompliance.payer_name) {
-                    document.getElementById('compliance-payer').value = savedCompliance.payer_name;
-                }
 
                 _updateStarBtns();
                 atualizarStatusConfig();
@@ -1634,27 +1577,41 @@
 
         // ======================== LOG CONSOLE ========================
         function logConsole(msg, type = '') {
-            const console = document.getElementById('log-console');
+            const consoleEl = document.getElementById('log-console');
             const body = document.getElementById('log-body');
             const dot = document.getElementById('log-dot');
 
-            console.style.display = 'block';
+            consoleEl.style.display = 'block';
             dot.classList.add('active');
 
             // Remove empty placeholder
             const placeholder = body.querySelector('.log-console-empty');
             if (placeholder) placeholder.remove();
 
+            // Detecta marcador de linha inline (sobrescreve a última entrada inline)
+            const INLINE_MARKER = '\x00INLINE\x00';
+            const isInline = msg.startsWith(INLINE_MARKER);
+            const cleanMsg = isInline ? msg.slice(INLINE_MARKER.length) : msg;
+
             const now = new Date();
             const time = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
+            if (isInline) {
+                // Se o último elemento do log for inline, sobrescreve ele (line-in-place)
+                const lastEntry = body.lastElementChild;
+                if (lastEntry && lastEntry.classList.contains('log-inline')) {
+                    lastEntry.innerHTML = `<span class="log-time">[${time}]</span> ${escapeHtml(cleanMsg)}`;
+                    consoleEl.scrollTop = consoleEl.scrollHeight;
+                    return;
+                }
+            }
+
             const entry = document.createElement('div');
-            entry.className = `log-entry ${type}`;
-            entry.innerHTML = `<span class="log-time">[${time}]</span> ${escapeHtml(msg)}`;
+            entry.className = `log-entry ${type}${isInline ? ' log-inline' : ''}`;
+            entry.innerHTML = `<span class="log-time">[${time}]</span> ${escapeHtml(cleanMsg)}`;
             body.appendChild(entry);
 
             // Auto-scroll
-            const consoleEl = document.getElementById('log-console');
             consoleEl.scrollTop = consoleEl.scrollHeight;
         }
 

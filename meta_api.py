@@ -1394,7 +1394,7 @@ class MetaUploader:
                     chunk_data = f.read(chunk_size)
 
                     pct = (start_offset / file_size) * 100
-                    self._log(f"      - Enviando offset {start_offset} até {end_offset} ({pct:.1f}%)...")
+                    self._log(f"\x00INLINE\x00      - Enviando chunks... {pct:.1f}% ({start_offset}–{end_offset} bytes)")
 
                     transfer_data = {
                         'upload_phase': 'transfer',
