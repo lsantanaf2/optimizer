@@ -708,6 +708,138 @@ def api_google_ads_campaigns():
     return jsonify({'customer_id': customer_id, 'campaigns': campaigns, 'count': len(campaigns)})
 
 
+# ======================== GOOGLE ADS — SHEETS FALLBACK ========================
+
+@app.route('/api/cruzamento/google-ads-sheets')
+@login_required
+def api_google_ads_sheets():
+    """
+    Busca dados do Google Ads via Google Sheets público (fallback sem API OAuth).
+    Filtra campanhas que contenham 'VINCI' no nome.
+    Query params: since=YYYY-MM-DD, until=YYYY-MM-DD
+    """
+    import requests as _req
+    import csv
+    import io
+    from datetime import datetime, timedelta
+
+    SHEET_ID  = os.getenv('GOOGLE_ADS_SHEET_ID', '1vhctrrIBQujABaD0VROW8dNHuZIqA-MIX8ESZC77tLg')
+    SHEET_GID = os.getenv('GOOGLE_ADS_SHEET_GID', '2054617579')
+    FILTER_KW = 'VINCI'  # filtro de nome de campanha
+
+    # Parâmetros de data
+    since_str = request.args.get('since', '')
+    until_str = request.args.get('until', '')
+    try:
+        since_dt = datetime.strptime(since_str, '%Y-%m-%d').date() if since_str else None
+        until_dt = datetime.strptime(until_str, '%Y-%m-%d').date() if until_str else None
+    except ValueError:
+        since_dt = until_dt = None
+
+    url = f'https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&gid={SHEET_GID}'
+    try:
+        resp = _req.get(url, timeout=10)
+        resp.raise_for_status()
+    except Exception as e:
+        return jsonify({'error': f'Erro ao buscar Sheets: {str(e)}'}), 500
+
+    # Parse CSV
+    reader = csv.DictReader(io.StringIO(resp.text))
+    campaigns = {}  # campaign_name → {spend, conversions, clicks}
+
+    def parse_num(s):
+        """Converte '1.234,56' ou '1234.56' ou '1,23%' para float."""
+        if not s:
+            return 0.0
+        s = s.strip().replace('%', '')
+        # Formato brasileiro: ponto como milhar, vírgula como decimal
+        if ',' in s and '.' in s:
+            s = s.replace('.', '').replace(',', '.')
+        elif ',' in s:
+            s = s.replace(',', '.')
+        try:
+            return float(s)
+        except ValueError:
+            return 0.0
+
+    headers_map = {}  # mapeia colunas pelo índice (robustez a variações de cabeçalho)
+    for row in reader:
+        # Detectar colunas dinamicamente
+        if not headers_map:
+            for k in row.keys():
+                kl = k.lower()
+                if 'date' in kl or 'data' in kl:
+                    headers_map['date'] = k
+                elif 'campaign' in kl or 'campanha' in kl:
+                    headers_map['campaign'] = k
+                elif 'cost' in kl or 'custo' in kl or 'spend' in kl or 'gasto' in kl:
+                    headers_map['cost'] = k
+                elif 'conversion' in kl or 'conversao' in kl or 'conversão' in kl:
+                    headers_map['conversions'] = k
+                elif 'click' in kl or 'clique' in kl:
+                    headers_map['clicks'] = k
+                elif 'ctr' in kl:
+                    headers_map['ctr'] = k
+
+        date_col       = headers_map.get('date', 'Date (Segment)')
+        campaign_col   = headers_map.get('campaign', 'Campaign Name')
+        cost_col       = headers_map.get('cost', 'Cost')
+        conv_col       = headers_map.get('conversions', 'Conversions')
+        clicks_col     = headers_map.get('clicks', 'Clicks')
+        ctr_col        = headers_map.get('ctr', 'CTR')
+
+        name = row.get(campaign_col, '').strip()
+        if FILTER_KW.upper() not in name.upper():
+            continue
+
+        # Filtro de data
+        date_str = row.get(date_col, '').strip()
+        if (since_dt or until_dt) and date_str:
+            try:
+                # Formato DD/MM/YYYY
+                row_dt = datetime.strptime(date_str, '%d/%m/%Y').date()
+                if since_dt and row_dt < since_dt:
+                    continue
+                if until_dt and row_dt > until_dt:
+                    continue
+            except ValueError:
+                pass  # se não parsear data, inclui o registro
+
+        spend       = parse_num(row.get(cost_col, '0'))
+        conversions = parse_num(row.get(conv_col, '0'))
+        clicks      = int(parse_num(row.get(clicks_col, '0')))
+        ctr_raw     = parse_num(row.get(ctr_col, '0'))
+
+        if name not in campaigns:
+            campaigns[name] = {'campaign_name': name, 'spend': 0, 'conversions': 0, 'clicks': 0, 'ctr_sum': 0, 'days': 0}
+
+        campaigns[name]['spend']       += spend
+        campaigns[name]['conversions'] += conversions
+        campaigns[name]['clicks']      += clicks
+        campaigns[name]['ctr_sum']     += ctr_raw
+        campaigns[name]['days']        += 1
+
+    # Calcular métricas derivadas
+    result = []
+    for c in campaigns.values():
+        days = c['days'] or 1
+        cpc  = c['spend'] / c['clicks']      if c['clicks'] > 0      else 0
+        cpa  = c['spend'] / c['conversions'] if c['conversions'] > 0 else 0
+        ctr  = c['ctr_sum'] / days
+        result.append({
+            'campaign_name': c['campaign_name'],
+            'spend':         round(c['spend'], 2),
+            'conversions':   round(c['conversions'], 2),
+            'clicks':        c['clicks'],
+            'ctr':           round(ctr, 2),
+            'cpc':           round(cpc, 2),
+            'cpa':           round(cpa, 2),
+        })
+
+    result.sort(key=lambda x: x['spend'], reverse=True)
+    return jsonify({'campaigns': result, 'count': len(result), 'filter': FILTER_KW})
+
+
 # ======================== GOOGLE DRIVE ========================
 
 @app.route('/api/drive/list_folder', methods=['POST'])

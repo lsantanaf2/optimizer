@@ -863,7 +863,8 @@
 
 <!-- Tabs -->
 <div class="crz-tabs" id="crz-tabs" style="display:flex; align-items:center;">
-    <button class="crz-tab active" data-tab="tab-principal" onclick="switchTab('tab-principal')">Principal</button>
+    <button class="crz-tab active" data-tab="tab-principal" onclick="switchTab('tab-principal')">Facebook Ads</button>
+    <button class="crz-tab" data-tab="tab-google-ads" onclick="switchTab('tab-google-ads')">Google Ads</button>
     <button class="crz-tab" data-tab="tab-painel-diario" onclick="switchTab('tab-painel-diario')">Painel diário</button>
     <button class="crz-tab" data-tab="tab-criativos" onclick="switchTab('tab-criativos')">Criativos</button>
     <button class="crz-tab" data-tab="tab-fase1" onclick="switchTab('tab-fase1')">Fase 1 — Ganho de seguidores</button>
@@ -1120,6 +1121,68 @@
 
 </div><!-- /tab-principal -->
 
+<!-- Tab: Google Ads (via Google Sheets) -->
+<div id="tab-google-ads" class="crz-tab-content">
+
+    <!-- KPI Bar Google Ads -->
+    <div class="kpi-bar" id="gads-kpi-bar" style="display:none;">
+        <div class="kpi-card">
+            <div class="kpi-label">💸 Investimento</div>
+            <div class="kpi-value accent" id="gads-kpi-spend">—</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">🎯 Conversões</div>
+            <div class="kpi-value" id="gads-kpi-conv">—</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">💰 Custo/Conversão</div>
+            <div class="kpi-value" id="gads-kpi-cpa">—</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">🖱️ Cliques</div>
+            <div class="kpi-value" id="gads-kpi-clicks">—</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">📊 CTR Médio</div>
+            <div class="kpi-value" id="gads-kpi-ctr">—</div>
+        </div>
+    </div>
+
+    <!-- Estado de loading / vazio -->
+    <div id="gads-loading" style="text-align:center; padding:48px 0; color:var(--text-muted); display:none;">
+        <div style="font-size:24px; margin-bottom:8px;">⏳</div>
+        <div>Carregando dados do Google Ads...</div>
+    </div>
+    <div id="gads-empty" style="text-align:center; padding:48px 0; color:var(--text-muted); display:none;">
+        <div style="font-size:24px; margin-bottom:8px;">📭</div>
+        <div>Nenhuma campanha <b>VINCI</b> encontrada para o período selecionado.</div>
+    </div>
+    <div id="gads-error" style="text-align:center; padding:48px 0; color:var(--danger); display:none; font-size:13px;"></div>
+
+    <!-- Tabela de campanhas -->
+    <div id="gads-table-container" style="display:none; overflow-x:auto; margin-top:16px;">
+        <table class="day-table" style="width:100%; border-collapse:collapse;">
+            <thead>
+                <tr>
+                    <th style="text-align:left; width:35%;">Campanha</th>
+                    <th style="text-align:right;">Investimento</th>
+                    <th style="text-align:right;">Conversões</th>
+                    <th style="text-align:right;">Custo/Conv</th>
+                    <th style="text-align:right;">Cliques</th>
+                    <th style="text-align:right;">CPC</th>
+                    <th style="text-align:right;">CTR</th>
+                </tr>
+            </thead>
+            <tbody id="gads-tbody"></tbody>
+            <tfoot id="gads-tfoot" style="font-weight:600; border-top:2px solid var(--border);"></tfoot>
+        </table>
+        <div style="font-size:11px; color:var(--text-muted); margin-top:8px; text-align:right;">
+            Fonte: Google Sheets · Filtro: campanhas com "VINCI" no nome
+        </div>
+    </div>
+
+</div><!-- /tab-google-ads -->
+
 <!-- Tab 2: Painel diário -->
 <div id="tab-painel-diario" class="crz-tab-content">
     <div class="chart-card panel-section" id="crz-panel-container" style="overflow:hidden; padding:0; margin-bottom:14px;">
@@ -1292,6 +1355,11 @@
         if (tabId === 'tab-fase1' && _fase1DataCache && !_fase1Rendered) {
             renderFase1Table(_fase1DataCache);
             _fase1Rendered = true;
+        }
+
+        // Aba Google Ads: carrega dados do Sheets na primeira visita ou ao mudar período
+        if (tabId === 'tab-google-ads') {
+            loadGoogleAdsSheets();
         }
 
         // Aba Criativos: força preset "Últimos 60 dias" e refaz fetch se necessário
@@ -2418,6 +2486,11 @@
         _criativosRendered = false;
         _fase1DataCache = null;
         _fase1Rendered = false;
+
+        // Se aba Google Ads estiver ativa, recarregar com novo período
+        if (document.getElementById('tab-google-ads')?.classList.contains('active')) {
+            loadGoogleAdsSheets();
+        }
         ['kpi-bar','funnel-card','crz-meta','crz-main-grid','crz-timeline-container','crz-spend-container','crz-ads-container','crz-adsets-container','crz-campaigns-container'].forEach(id => {
             const el = document.getElementById(id);
             if (el) { el.style.display = 'none'; el.classList.remove('crz-cascade'); }
@@ -2884,6 +2957,95 @@
         if (spendBadge) { spendBadge.style.display = 'none'; }
         renderTimelineChart();
         renderSpendChart();
+    }
+
+    // ── Google Ads Sheets ─────────────────────────────────────────────────────────
+    async function loadGoogleAdsSheets() {
+        const loading  = document.getElementById('gads-loading');
+        const empty    = document.getElementById('gads-empty');
+        const errEl    = document.getElementById('gads-error');
+        const tableEl  = document.getElementById('gads-table-container');
+        const kpiBar   = document.getElementById('gads-kpi-bar');
+
+        // reset
+        [loading, empty, errEl, tableEl, kpiBar].forEach(el => { if (el) el.style.display = 'none'; });
+        if (loading) loading.style.display = 'block';
+
+        const params = new URLSearchParams();
+        if (appliedSince) params.set('since', dateStr(appliedSince));
+        if (appliedUntil) params.set('until', dateStr(appliedUntil));
+
+        try {
+            const resp = await fetch(`/api/cruzamento/google-ads-sheets?${params}`);
+            const data = await resp.json();
+            if (loading) loading.style.display = 'none';
+
+            if (data.error) {
+                if (errEl) { errEl.textContent = '⚠️ ' + data.error; errEl.style.display = 'block'; }
+                return;
+            }
+
+            const camps = data.campaigns || [];
+            if (camps.length === 0) {
+                if (empty) empty.style.display = 'block';
+                return;
+            }
+
+            renderGoogleAdsTable(camps);
+        } catch (e) {
+            if (loading) loading.style.display = 'none';
+            if (errEl)   { errEl.textContent = '⚠️ Erro ao carregar dados do Google Ads.'; errEl.style.display = 'block'; }
+        }
+    }
+
+    function renderGoogleAdsTable(camps) {
+        const kpiBar  = document.getElementById('gads-kpi-bar');
+        const tableEl = document.getElementById('gads-table-container');
+        const tbody   = document.getElementById('gads-tbody');
+        const tfoot   = document.getElementById('gads-tfoot');
+
+        // Totais
+        let tSpend = 0, tConv = 0, tClicks = 0;
+        camps.forEach(c => { tSpend += c.spend||0; tConv += c.conversions||0; tClicks += c.clicks||0; });
+        const tCPA = tConv > 0 ? tSpend / tConv : 0;
+        const tCPC = tClicks > 0 ? tSpend / tClicks : 0;
+
+        // KPIs
+        document.getElementById('gads-kpi-spend').textContent  = fmtR(tSpend);
+        document.getElementById('gads-kpi-conv').textContent   = tConv > 0 ? tConv.toFixed(1) : '—';
+        document.getElementById('gads-kpi-cpa').textContent    = tCPA > 0 ? fmtR(tCPA) : '—';
+        document.getElementById('gads-kpi-clicks').textContent = tClicks > 0 ? tClicks.toLocaleString('pt-BR') : '—';
+
+        // CTR médio ponderado pelo spend
+        const tCTR = camps.reduce((s, c) => s + (c.ctr||0) * (c.spend||0), 0) / (tSpend || 1);
+        document.getElementById('gads-kpi-ctr').textContent = tCTR > 0 ? tCTR.toFixed(2) + '%' : '—';
+
+        kpiBar.style.display = 'flex';
+
+        // Linhas
+        tbody.innerHTML = camps.map(c => `
+            <tr>
+                <td style="text-align:left; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:280px;" title="${c.campaign_name}">${c.campaign_name}</td>
+                <td style="text-align:right; font-weight:600;">${fmtR(c.spend)}</td>
+                <td style="text-align:right;">${c.conversions > 0 ? c.conversions.toFixed(1) : '—'}</td>
+                <td style="text-align:right;">${c.cpa > 0 ? fmtR(c.cpa) : '—'}</td>
+                <td style="text-align:right;">${c.clicks > 0 ? c.clicks.toLocaleString('pt-BR') : '—'}</td>
+                <td style="text-align:right;">${c.cpc > 0 ? fmtR(c.cpc) : '—'}</td>
+                <td style="text-align:right;">${c.ctr > 0 ? c.ctr.toFixed(2) + '%' : '—'}</td>
+            </tr>`).join('');
+
+        // Rodapé
+        tfoot.innerHTML = `<tr>
+            <td style="text-align:left;">TOTAL (${camps.length} camp)</td>
+            <td style="text-align:right; font-weight:600;">${fmtR(tSpend)}</td>
+            <td style="text-align:right;">${tConv > 0 ? tConv.toFixed(1) : '—'}</td>
+            <td style="text-align:right;">${tCPA > 0 ? fmtR(tCPA) : '—'}</td>
+            <td style="text-align:right;">${tClicks > 0 ? tClicks.toLocaleString('pt-BR') : '—'}</td>
+            <td style="text-align:right;">${tCPC > 0 ? fmtR(tCPC) : '—'}</td>
+            <td style="text-align:right;">—</td>
+        </tr>`;
+
+        tableEl.style.display = 'block';
     }
 
     // ── Download Markdown ────────────────────────────────────────────────────────
