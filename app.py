@@ -36,6 +36,13 @@ if _missing:
 app = Flask(__name__, static_folder='static')
 app.secret_key = os.getenv('FLASK_SECRET_KEY') or os.urandom(32)
 
+# ── Cache-busting para assets estáticos (hot-reload via ?v=VERSION) ────────────
+# Flask por padrão envia Cache-Control: public, max-age=43200 (12h). Isso faz
+# com que navegadores segurem CSS/JS antigos mesmo depois de novo deploy.
+# Setamos max-age=0 para forçar revalidação; combinado com ?v={{ version }} nos
+# templates, cada bump de VERSION invalida o cache imediatamente.
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
+
 from modules.optimization import optimization_bp
 app.register_blueprint(optimization_bp)
 
@@ -61,7 +68,7 @@ from modules.account_settings import (
 import atexit
 atexit.register(close_db)
 
-VERSION = "v2.6.9"
+VERSION = "v2.6.10"
 
 @app.before_request
 def ensure_db():
@@ -71,6 +78,21 @@ def ensure_db():
 @app.context_processor
 def inject_version():
     return dict(version=VERSION)
+
+@app.after_request
+def add_no_cache_headers(response):
+    """
+    Força revalidação de assets estáticos (CSS/JS/imagens) em todo request.
+    Combinado com ?v={{ version }} nos templates, garante hot-reload:
+      - Sem mudança de versão: 304 Not Modified (rápido, usa cache)
+      - Com mudança de versão: URL diferente → download fresco (sem cache)
+    Assim o usuário nunca fica preso em CSS antigo após deploy.
+    """
+    if request.path.startswith('/static/'):
+        response.headers['Cache-Control'] = 'no-cache, must-revalidate, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+    return response
 
 # --- Funções auxiliares para persistência do token ---
 
