@@ -61,7 +61,7 @@ from modules.account_settings import (
 import atexit
 atexit.register(close_db)
 
-VERSION = "v2.6.4"
+VERSION = "v2.6.5"
 
 @app.before_request
 def ensure_db():
@@ -1466,6 +1466,65 @@ def duplicate_adset_route(campaign_id):
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
 
+
+
+# ============================================================
+# UPLOAD HISTORY (sessão Flask, sem persistência em DB)
+# ============================================================
+# Mantém histórico curto (cap 20) dos últimos uploads de ads do
+# usuário atual. Permite ver o que deu certo/errado sem recarregar
+# tudo. Salvo apenas em session (cookie assinado, ~4KB max).
+# ============================================================
+
+UPLOAD_HISTORY_CAP = 20
+UPLOAD_HISTORY_KEY = 'upload_history'
+UPLOAD_HISTORY_ERROR_MAX = 80
+
+
+@app.route('/api/upload-history', methods=['GET'])
+def upload_history_get():
+    """Retorna o histórico de uploads da sessão atual (mais recentes primeiro)."""
+    history = session.get(UPLOAD_HISTORY_KEY, [])
+    return jsonify({'success': True, 'history': history})
+
+
+@app.route('/api/upload-history/add', methods=['POST'])
+def upload_history_add():
+    """Adiciona uma entrada ao histórico. Cap em UPLOAD_HISTORY_CAP entradas."""
+    try:
+        data = request.get_json(silent=True) or {}
+
+        entry = {
+            'ts': data.get('ts') or datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'campaign_id': str(data.get('campaign_id', ''))[:64],
+            'ad_name': str(data.get('ad_name', ''))[:120],
+            'status': 'ok' if data.get('status') == 'ok' else 'erro',
+            'ad_id': str(data.get('ad_id', ''))[:64],
+            'erro': str(data.get('erro', ''))[:UPLOAD_HISTORY_ERROR_MAX],
+            'duracao': str(data.get('duracao', ''))[:16],
+        }
+
+        history = session.get(UPLOAD_HISTORY_KEY, [])
+        # Mais recente no topo
+        history.insert(0, entry)
+        # Cap
+        if len(history) > UPLOAD_HISTORY_CAP:
+            history = history[:UPLOAD_HISTORY_CAP]
+
+        session[UPLOAD_HISTORY_KEY] = history
+        session.modified = True
+
+        return jsonify({'success': True, 'history': history})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/upload-history', methods=['DELETE'])
+def upload_history_clear():
+    """Limpa o histórico de uploads."""
+    session[UPLOAD_HISTORY_KEY] = []
+    session.modified = True
+    return jsonify({'success': True})
 
 
 @app.route('/ping')

@@ -445,6 +445,18 @@
                     <div class="log-console-empty">Aguardando início do upload...</div>
                 </div>
             </div>
+
+            <!-- Histórico de Uploads — sessão (não persistido em DB) -->
+            <div id="upload-history" class="upload-history" style="display:none; margin-top:12px;">
+                <div class="upload-history-header" onclick="toggleHistorico()">
+                    <span>🗂 Histórico de Uploads <small id="upload-history-count" style="color:#888; font-weight:normal;"></small></span>
+                    <div style="display:flex; align-items:center; gap:8px;" onclick="event.stopPropagation();">
+                        <button type="button" onclick="limparHistorico()" class="btn-copy-log" title="Limpar histórico">🗑 Limpar</button>
+                        <span id="upload-history-toggle" style="font-size:14px; color:#888;">▼</span>
+                    </div>
+                </div>
+                <div class="upload-history-body" id="upload-history-body"></div>
+            </div>
         </div>
 
     </div>
@@ -1794,6 +1806,7 @@
                 const leadFormVal = document.getElementById('select-leadform').value;
                 if (leadFormVal) fd.append('lead_gen_form_id', leadFormVal);
 
+                const tStart = Date.now();
                 try {
                     logConsole(`📤 Iniciando upload de "${item.adName}"...`, 'log-info');
                     progressReset();
@@ -1837,12 +1850,29 @@
                         }
                     }
 
+                    const dur = formatDuration(Date.now() - tStart);
                     if (uploadResult && uploadResult.success) {
                         enviados++;
                         logConsole(`✅ "${item.adName}" criado — ID: ${uploadResult.ad_id}`, 'log-success');
+                        registrarHistorico({
+                            campaign_id: CAMPAIGN_ID,
+                            ad_name: item.adName,
+                            status: 'ok',
+                            ad_id: uploadResult.ad_id || '',
+                            erro: '',
+                            duracao: dur,
+                        });
                     } else if (uploadResult) {
                         erros++;
                         logConsole(`❌ "${item.adName}" falhou: ${uploadResult.error}`, 'log-error');
+                        registrarHistorico({
+                            campaign_id: CAMPAIGN_ID,
+                            ad_name: item.adName,
+                            status: 'erro',
+                            ad_id: '',
+                            erro: uploadResult.error || 'Falha desconhecida',
+                            duracao: dur,
+                        });
                     }
 
                     if (i < filaAnuncios.length - 1) {
@@ -1853,7 +1883,16 @@
 
                 } catch (e) {
                     erros++;
+                    const dur = formatDuration(Date.now() - tStart);
                     logConsole(`❌ Erro de rede: ${e.message}`, 'log-error');
+                    registrarHistorico({
+                        campaign_id: CAMPAIGN_ID,
+                        ad_name: item.adName,
+                        status: 'erro',
+                        ad_id: '',
+                        erro: `Erro de rede: ${e.message}`,
+                        duracao: dur,
+                    });
                 }
             } // Fim do Loop For
 
@@ -1929,6 +1968,137 @@
                 mostrarToast('✅ Log copiado!');
             });
         }
+
+        // ======================== UPLOAD HISTORY ========================
+        // Espelho local em memória — atualizado sincronamente para render instantâneo.
+        // Backend mantém a fonte da verdade na sessão (cap 20).
+        let _uploadHistoryCache = [];
+
+        function formatDuration(ms) {
+            if (!ms || ms < 0) return '';
+            const s = Math.round(ms / 1000);
+            if (s < 60) return `${s}s`;
+            const m = Math.floor(s / 60);
+            const r = s % 60;
+            return `${m}m${r > 0 ? r + 's' : ''}`;
+        }
+
+        function escapeHtmlSafe(str) {
+            if (str == null) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        async function registrarHistorico(entry) {
+            // Render imediato no espelho local (otimista)
+            const localEntry = {
+                ts: new Date().toLocaleString('pt-BR'),
+                ...entry,
+                erro: (entry.erro || '').slice(0, 80),
+            };
+            _uploadHistoryCache.unshift(localEntry);
+            if (_uploadHistoryCache.length > 20) _uploadHistoryCache = _uploadHistoryCache.slice(0, 20);
+            renderHistorico();
+
+            // Persiste no backend (sessão)
+            try {
+                const r = await fetch('/api/upload-history/add', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(entry),
+                });
+                const j = await r.json();
+                if (j.success && Array.isArray(j.history)) {
+                    _uploadHistoryCache = j.history;
+                    renderHistorico();
+                }
+            } catch (e) {
+                console.warn('Falha ao persistir histórico:', e);
+                // Render local já aconteceu — não bloqueia o fluxo
+            }
+        }
+
+        async function carregarHistorico() {
+            try {
+                const r = await fetch('/api/upload-history');
+                const j = await r.json();
+                if (j.success && Array.isArray(j.history)) {
+                    _uploadHistoryCache = j.history;
+                    renderHistorico();
+                }
+            } catch (e) {
+                console.warn('Falha ao carregar histórico:', e);
+            }
+        }
+
+        async function limparHistorico() {
+            if (!confirm('Limpar todo o histórico de uploads desta sessão?')) return;
+            try {
+                await fetch('/api/upload-history', { method: 'DELETE' });
+                _uploadHistoryCache = [];
+                renderHistorico();
+                mostrarToast('🗑 Histórico limpo');
+            } catch (e) {
+                mostrarToast('❌ Falha ao limpar histórico');
+            }
+        }
+
+        function toggleHistorico() {
+            const wrap = document.getElementById('upload-history');
+            const toggle = document.getElementById('upload-history-toggle');
+            wrap.classList.toggle('collapsed');
+            toggle.textContent = wrap.classList.contains('collapsed') ? '▶' : '▼';
+        }
+
+        function renderHistorico() {
+            const wrap = document.getElementById('upload-history');
+            const body = document.getElementById('upload-history-body');
+            const count = document.getElementById('upload-history-count');
+            if (!wrap || !body) return;
+
+            if (_uploadHistoryCache.length === 0) {
+                wrap.style.display = 'none';
+                return;
+            }
+
+            wrap.style.display = 'block';
+            const ok = _uploadHistoryCache.filter(e => e.status === 'ok').length;
+            const erro = _uploadHistoryCache.length - ok;
+            count.textContent = `(${_uploadHistoryCache.length} — ${ok} ✅ / ${erro} ❌)`;
+
+            body.innerHTML = _uploadHistoryCache.map(e => {
+                const isOk = e.status === 'ok';
+                const acctNum = (typeof ACCOUNT_ID === 'string' ? ACCOUNT_ID.replace(/^act_/, '') : '');
+                const adLink = e.ad_id
+                    ? `<a class="uh-link" href="https://business.facebook.com/adsmanager/manage/ads?act=${escapeHtmlSafe(acctNum)}&selected_ad_ids=${escapeHtmlSafe(e.ad_id)}" target="_blank" rel="noopener">${escapeHtmlSafe(e.ad_id)}</a>`
+                    : '';
+                const errorLine = !isOk && e.erro
+                    ? `<span class="uh-error" title="${escapeHtmlSafe(e.erro)}">${escapeHtmlSafe(e.erro)}</span>`
+                    : '';
+                const dur = e.duracao ? `<span class="uh-dur">${escapeHtmlSafe(e.duracao)}</span>` : '';
+                return `
+                    <div class="upload-history-entry">
+                        <span class="uh-time">${escapeHtmlSafe(e.ts)}</span>
+                        <span class="uh-name" title="${escapeHtmlSafe(e.ad_name)}">
+                            ${escapeHtmlSafe(e.ad_name)}
+                            ${errorLine}
+                        </span>
+                        <span class="uh-status">
+                            <span class="uh-badge ${isOk ? 'ok' : 'erro'}">${isOk ? 'OK' : 'ERRO'}</span>
+                            ${adLink}
+                            ${dur}
+                        </span>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Carrega histórico ao abrir a página
+        carregarHistorico();
 
     </script>
 {% endblock %}

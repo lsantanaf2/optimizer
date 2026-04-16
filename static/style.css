@@ -1261,6 +1261,130 @@ select {
     font-family: var(--font-sans);
 }
 
+/* ======================== UPLOAD HISTORY ======================== */
+.upload-history {
+    background: #0c0c0e;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    overflow: hidden;
+}
+
+.upload-history-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    user-select: none;
+}
+
+.upload-history-header span {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.upload-history-body {
+    max-height: 280px;
+    overflow-y: auto;
+    padding: 6px 0;
+}
+
+.upload-history.collapsed .upload-history-body {
+    display: none;
+}
+
+.upload-history-entry {
+    display: grid;
+    grid-template-columns: 90px 1fr auto;
+    gap: 12px;
+    align-items: center;
+    padding: 8px 14px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    font-size: 11px;
+    line-height: 1.5;
+}
+
+.upload-history-entry:last-child {
+    border-bottom: none;
+}
+
+.upload-history-entry .uh-time {
+    color: var(--text-muted);
+    font-size: 10px;
+    white-space: nowrap;
+}
+
+.upload-history-entry .uh-name {
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.upload-history-entry .uh-name .uh-error {
+    display: block;
+    color: var(--danger);
+    font-size: 10px;
+    margin-top: 2px;
+    white-space: normal;
+}
+
+.upload-history-entry .uh-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+}
+
+.upload-history-entry .uh-badge {
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.upload-history-entry .uh-badge.ok {
+    background: rgba(16, 185, 129, 0.15);
+    color: var(--success);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.upload-history-entry .uh-badge.erro {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--danger);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.upload-history-entry .uh-link {
+    color: var(--accent);
+    text-decoration: none;
+    font-size: 10px;
+}
+
+.upload-history-entry .uh-link:hover {
+    text-decoration: underline;
+}
+
+.upload-history-entry .uh-dur {
+    color: var(--text-muted);
+    font-size: 10px;
+}
+
+.upload-history-empty {
+    text-align: center;
+    padding: 20px;
+    color: var(--text-muted);
+    font-weight: 300;
+    font-family: var(--font-sans);
+    font-size: 12px;
+}
+
 /* ======================== TOAST ======================== */
 .toast {
     position: fixed;
