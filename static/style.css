@@ -478,6 +478,88 @@ body {
     padding: 0 24px;
 }
 
+/* ======================== LAYOUT 2 COLUNAS (SETUP) ======================== */
+.container.container-2col {
+    max-width: 1400px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 400px;
+    gap: 24px;
+    align-items: start;
+}
+
+.setup-main {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+.setup-sidebar {
+    position: sticky;
+    top: 20px;
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding-right: 4px;
+}
+
+/* Scroll bonito dentro da sidebar */
+.setup-sidebar::-webkit-scrollbar {
+    width: 6px;
+}
+
+.setup-sidebar::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.setup-sidebar::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 3px;
+}
+
+.setup-sidebar::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+/* Dentro da sidebar, log-console e history não precisam de scroll próprio
+   (a própria sidebar já tem scroll). Isso evita scroll aninhado confuso. */
+.setup-sidebar .log-console {
+    max-height: none;
+    margin-top: 0;
+}
+
+.setup-sidebar .upload-history-body {
+    max-height: none;
+}
+
+/* Header fixo da sidebar indicando que é o painel de fila/upload */
+.setup-sidebar-header {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--text-muted);
+    padding: 4px 2px 8px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 4px;
+}
+
+/* Responsivo: abaixo de 1100px vira 1 coluna e sidebar para de grudar */
+@media (max-width: 1100px) {
+    .container.container-2col {
+        grid-template-columns: 1fr;
+        max-width: 920px;
+    }
+
+    .setup-sidebar {
+        position: static;
+        max-height: none;
+        overflow-y: visible;
+    }
+}
+
 /* ======================== MEDIA BADGES ======================== */
 .badge-video,
 .badge-image,

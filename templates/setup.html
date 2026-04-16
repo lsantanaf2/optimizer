@@ -48,7 +48,8 @@
     <datalist id="dl-textos"></datalist>
     <datalist id="dl-titulos"></datalist>
 
-    <div class="container">
+    <div class="container container-2col">
+        <div class="setup-main">
 
         <!-- Header -->
         <div class="card border-accent">
@@ -389,10 +390,14 @@
             </button>
         </div>
 
+        </div><!-- /.setup-main -->
+
         <!-- ================================================================ -->
-        <!--  FILA DE UPLOAD                                                 -->
+        <!--  SIDEBAR: FILA DE UPLOAD + PROGRESSO + LOG + HISTÓRICO          -->
         <!-- ================================================================ -->
-        <div style="margin-bottom: 24px;">
+        <aside class="setup-sidebar">
+            <div class="setup-sidebar-header">🚀 Painel de Upload</div>
+        <div>
             <div class="queue-header">
                 <h3>📋 Fila de Upload</h3>
                 <span class="queue-counter" id="queue-counter">0 anúncios</span>
@@ -458,6 +463,7 @@
                 <div class="upload-history-body" id="upload-history-body"></div>
             </div>
         </div>
+        </aside><!-- /.setup-sidebar -->
 
     </div>
 
