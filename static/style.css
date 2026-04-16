@@ -479,17 +479,18 @@ body {
 }
 
 /* ======================== LAYOUT 2 COLUNAS (SETUP) ======================== */
-/* Usa 100% da .main-content (viewport menos sidebar navegação).
-   Sidebar upload fixa 400px; main cresce livremente. */
+/* Usa 100% da .main-content (viewport menos sidebar navegação de 64px).
+   Sidebar upload fixa em 380px; coluna principal ocupa todo o resto.
+   !important removidos — cache-busting v2.6.12+ garante CSS fresco. */
 .container.container-2col {
-    max-width: none !important;
-    width: 100% !important;
-    margin: 0 !important;
-    padding: 24px 20px !important;
+    max-width: none;
+    width: 100%;
+    margin: 0;
+    padding: 24px 20px;
     box-sizing: border-box;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 400px;
-    gap: 20px;
+    grid-template-columns: minmax(0, 1fr) 380px;
+    gap: 24px;
     align-items: start;
 }
 
@@ -556,8 +557,8 @@ body {
 /* Responsivo: abaixo de 1100px vira 1 coluna e sidebar para de grudar */
 @media (max-width: 1100px) {
     .container.container-2col {
-        grid-template-columns: 1fr !important;
-        padding: 24px !important;
+        grid-template-columns: 1fr;
+        padding: 24px;
     }
 
     .setup-sidebar {
