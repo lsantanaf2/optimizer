@@ -68,7 +68,7 @@ from modules.account_settings import (
 import atexit
 atexit.register(close_db)
 
-VERSION = "v2.6.10"
+VERSION = "v2.6.11"
 
 @app.before_request
 def ensure_db():
@@ -82,16 +82,33 @@ def inject_version():
 @app.after_request
 def add_no_cache_headers(response):
     """
-    Força revalidação de assets estáticos (CSS/JS/imagens) em todo request.
-    Combinado com ?v={{ version }} nos templates, garante hot-reload:
-      - Sem mudança de versão: 304 Not Modified (rápido, usa cache)
-      - Com mudança de versão: URL diferente → download fresco (sem cache)
-    Assim o usuário nunca fica preso em CSS antigo após deploy.
+    Cache-busting em duas frentes:
+
+    1. /static/* (CSS/JS/imagens) → no-cache + must-revalidate
+       O browser sempre revalida com o servidor. Combinado com
+       ?v={{ version }} nos templates, cada bump de VERSION invalida
+       o cache imediatamente.
+
+    2. HTML dinâmico (render_template) → no-cache também.
+       Crítico: se o HTML ficar cacheado, o navegador nunca re-busca
+       a página e continua apontando pra URLs de CSS antigas (sem o
+       ?v= novo). Força HTML sempre fresco.
+
+    Content-Type image/*, font/* e outros binários em /static/ já são
+    cobertos pelo branch 1. Assets servidos por CDN externa (Google
+    Fonts) não passam por aqui.
     """
-    if request.path.startswith('/static/'):
-        response.headers['Cache-Control'] = 'no-cache, must-revalidate, max-age=0'
+    path = request.path or ''
+    ctype = (response.headers.get('Content-Type') or '').lower()
+
+    is_static = path.startswith('/static/')
+    is_html = 'text/html' in ctype
+
+    if is_static or is_html:
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
         response.headers['Pragma'] = 'no-cache'
         response.headers['Expires'] = '0'
+
     return response
 
 # --- Funções auxiliares para persistência do token ---
