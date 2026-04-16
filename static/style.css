@@ -480,10 +480,13 @@ body {
 
 /* ======================== LAYOUT 2 COLUNAS (SETUP) ======================== */
 .container.container-2col {
-    max-width: 1400px;
+    max-width: none;
+    width: calc(100% - 32px);
+    margin: 32px 16px;
+    padding: 0;
     display: grid;
     grid-template-columns: minmax(0, 1fr) 400px;
-    gap: 24px;
+    gap: 20px;
     align-items: start;
 }
 
@@ -546,11 +549,15 @@ body {
     margin-bottom: 4px;
 }
 
+
 /* Responsivo: abaixo de 1100px vira 1 coluna e sidebar para de grudar */
 @media (max-width: 1100px) {
     .container.container-2col {
         grid-template-columns: 1fr;
+        width: auto;
         max-width: 920px;
+        margin: 32px auto;
+        padding: 0 24px;
     }
 
     .setup-sidebar {
