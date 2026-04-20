@@ -1347,8 +1347,17 @@ def api_cruzamento_data():
                     is_google_ads_configured, get_google_ads_config_from_db,
                     fetch_google_ads_insights, _get_valid_token, save_google_ads_config,
                 )
-                user_id = session.get('user_id')
+                user_id    = session.get('user_id')
                 account_id = session.get('account_id', '')
+
+                # Fallback para acesso anônimo (ex: /cruzamento/vinci sem login ativo).
+                # O admin deve configurar CRUZAMENTO_USER_ID e CRUZAMENTO_ACCOUNT_ID no
+                # deploy.sh para que visitantes sem sessão também vejam dados do Google Ads.
+                if not user_id:
+                    user_id = os.environ.get('CRUZAMENTO_USER_ID')
+                if not account_id:
+                    account_id = os.environ.get('CRUZAMENTO_ACCOUNT_ID', '')
+
                 if is_google_ads_configured() and user_id:
                     ga_config = get_google_ads_config_from_db(user_id, account_id)
                     if ga_config:
