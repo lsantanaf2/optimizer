@@ -68,7 +68,7 @@ from modules.account_settings import (
 import atexit
 atexit.register(close_db)
 
-VERSION = "v2.6.14"
+VERSION = "v2.6.15"
 
 @app.before_request
 def ensure_db():
@@ -875,7 +875,6 @@ def _fetch_vinci_sheet(since_dt=None, until_dt=None):
 
 
 @app.route('/api/cruzamento/google-ads-sheets')
-@login_required
 def api_google_ads_sheets():
     """
     Busca dados do Google Ads via Google Sheets público (fallback sem API OAuth).
@@ -899,7 +898,6 @@ def api_google_ads_sheets():
 
 
 @app.route('/api/cruzamento/consolidado')
-@login_required
 def api_cruzamento_consolidado():
     """
     Aba Consolidado: une gastos Facebook Ads + Google Ads (VINCI Sheet) + MQLs/Wons da planilha.
