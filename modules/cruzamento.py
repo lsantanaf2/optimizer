@@ -1440,6 +1440,26 @@ def api_cruzamento_data():
             mqls_rows = filter_rows_by_date(mqls_rows_all, 'Data do preenchimento', since_d, until_d)
             wons_rows = filter_rows_by_date(wons_rows_all, 'Data de fechamento', since_d, until_d)
 
+            # ── Filtro Facebook-only: exclui MQLs e WONs do Google/AdWords ────────
+            # A aba "Facebook Ads" só deve contabilizar leads originados no Meta.
+            # utm_source = 'adwords' ou 'google' indica origem no Google Ads.
+            _GOOGLE_SOURCES = {'adwords', 'google'}
+
+            # Deal IDs de todos os MQLs do Google (histórico completo, não só o período)
+            # para garantir que WONs desse período vindas de leads antigos do Google
+            # também sejam excluídas.
+            _google_deal_ids = {
+                _norm(r.get('Deal ID', ''))
+                for r in mqls_rows_all
+                if _norm(r.get('utm_source', '')) in _GOOGLE_SOURCES
+            }
+
+            mqls_rows = [r for r in mqls_rows
+                         if _norm(r.get('utm_source', '')) not in _GOOGLE_SOURCES]
+            wons_rows = [r for r in wons_rows
+                         if _norm(r.get('Deal ID', '')) not in _google_deal_ids]
+            # ─────────────────────────────────────────────────────────────────────
+
             # Processa em thread separada com heartbeat para manter conexão viva
             _resultado_box = [None, None]  # [resultado, error]
             def _process():
