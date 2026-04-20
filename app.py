@@ -68,7 +68,7 @@ from modules.account_settings import (
 import atexit
 atexit.register(close_db)
 
-VERSION = "v2.6.17"
+VERSION = "v2.6.18"
 
 @app.before_request
 def ensure_db():

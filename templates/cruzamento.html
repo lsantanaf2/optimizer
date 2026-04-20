@@ -3213,7 +3213,7 @@
             google:   { name: 'Google Ads',         icon: '🔍', color: '#4285F4' },
             outros:   { name: 'Outros / Orgânico',  icon: '🌱', color: '#888' },
         };
-        const order = ['facebook', 'google', 'outros'];
+        const order = ['facebook', 'google'];
         const tbody = document.getElementById('cons-source-tbody');
         tbody.innerHTML = order.map(key => {
             const m = pf[key] || {};
