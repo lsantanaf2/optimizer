@@ -931,11 +931,11 @@
 
         <!-- Breakdown por Fonte -->
         <h3 style="margin:24px 0 12px; font-size:15px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px;">📦 Por Fonte (utm_source)</h3>
-        <div class="table-container">
-            <table class="data-table">
+        <div class="crz-table-wrap" style="max-height: none;">
+            <table class="crz-table" style="min-width: 0;">
                 <thead>
                     <tr>
-                        <th>Fonte</th>
+                        <th style="min-width:180px; text-align:left;">Fonte</th>
                         <th>Investimento</th>
                         <th>MQLs</th>
                         <th>Vendas</th>
@@ -950,6 +950,7 @@
                 <tbody id="cons-source-tbody">
                     <!-- populated via JS -->
                 </tbody>
+                <tfoot id="cons-source-tfoot"></tfoot>
             </table>
         </div>
         <div style="margin-top:12px; padding:10px 14px; background:var(--card-bg); border:1px solid var(--border); border-radius:8px; font-size:12px; color:var(--text-secondary);">
@@ -3208,9 +3209,9 @@
 
         // Tabela por fonte
         const labels = {
-            facebook: { name: 'Facebook Ads', icon: '📘', color: '#4267B2' },
-            google:   { name: 'Google Ads',   icon: '🔍', color: '#4285F4' },
-            outros:   { name: 'Outros / Orgânico', icon: '🌱', color: '#888' },
+            facebook: { name: 'Facebook Ads',      icon: '📘', color: '#4267B2' },
+            google:   { name: 'Google Ads',         icon: '🔍', color: '#4285F4' },
+            outros:   { name: 'Outros / Orgânico',  icon: '🌱', color: '#888' },
         };
         const order = ['facebook', 'google', 'outros'];
         const tbody = document.getElementById('cons-source-tbody');
@@ -3220,22 +3221,43 @@
             const hasSpend = (m.spend || 0) > 0;
             return `
                 <tr>
-                    <td style="text-align:left; font-weight:600;">
-                        <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${lbl.color}; margin-right:6px;"></span>
+                    <td style="font-weight:600;">
+                        <span style="display:inline-block; width:8px; height:8px; border-radius:50%;
+                              background:${lbl.color}; margin-right:6px; vertical-align:middle;"></span>
                         ${lbl.icon} ${lbl.name}
                     </td>
-                    <td style="text-align:right; font-weight:600;">${hasSpend ? brl(m.spend) : '—'}</td>
-                    <td style="text-align:right;">${intFmt(m.mqls)}</td>
-                    <td style="text-align:right;">${intFmt(m.wons)}</td>
-                    <td style="text-align:right; color:#7dd87d;">${m.receita > 0 ? brl(m.receita) : '—'}</td>
-                    <td style="text-align:right;">${(hasSpend && m.mqls > 0) ? brl(m.cpm) : '—'}</td>
-                    <td style="text-align:right;">${(hasSpend && m.wons > 0) ? brl(m.cpa) : '—'}</td>
-                    <td style="text-align:right;">${m.wons > 0 ? brl(m.ticket) : '—'}</td>
-                    <td style="text-align:right;">${m.mqls > 0 ? pct(m.conv_rate) : '—'}</td>
-                    <td style="text-align:right;">${hasSpend ? xfmt(m.roas) : '—'}</td>
+                    <td style="font-weight:600;">${hasSpend ? brl(m.spend) : '—'}</td>
+                    <td>${intFmt(m.mqls)}</td>
+                    <td>${intFmt(m.wons)}</td>
+                    <td style="color:#7dd87d;">${m.receita > 0 ? brl(m.receita) : '—'}</td>
+                    <td>${(hasSpend && m.mqls > 0) ? brl(m.cpm) : '—'}</td>
+                    <td>${(hasSpend && m.wons > 0) ? brl(m.cpa) : '—'}</td>
+                    <td>${m.wons > 0 ? brl(m.ticket) : '—'}</td>
+                    <td>${m.mqls > 0 ? pct(m.conv_rate) : '—'}</td>
+                    <td>${hasSpend ? xfmt(m.roas) : '—'}</td>
                 </tr>
             `;
         }).join('');
+
+        // Linha de totais no tfoot
+        const tfoot = document.getElementById('cons-source-tfoot');
+        if (tfoot && c) {
+            const totalTicket = (c.wons > 0 && c.receita > 0) ? c.receita / c.wons : null;
+            tfoot.innerHTML = `
+                <tr>
+                    <td style="text-align:left;">⚡ Total</td>
+                    <td style="font-weight:700;">${brl(c.spend)}</td>
+                    <td>${intFmt(c.mqls)}</td>
+                    <td>${intFmt(c.wons)}</td>
+                    <td style="color:#7dd87d;">${c.receita > 0 ? brl(c.receita) : '—'}</td>
+                    <td>${c.mqls > 0 ? brl(c.cpm) : '—'}</td>
+                    <td>${c.wons > 0 ? brl(c.cpa) : '—'}</td>
+                    <td>${totalTicket ? brl(totalTicket) : '—'}</td>
+                    <td>${c.mqls > 0 ? pct(c.conv_rate) : '—'}</td>
+                    <td>${c.spend > 0 ? xfmt(c.roas) : '—'}</td>
+                </tr>
+            `;
+        }
 
         // Warning se houve erro parcial no VINCI
         if (data.vinci_error) {
