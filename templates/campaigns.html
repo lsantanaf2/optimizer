@@ -44,6 +44,11 @@
 
     <!-- Campaign list -->
     <div class="queue-list" id="campaign-list" style="display:none;"></div>
+
+    <!-- Load more (scroll infinito para pausadas) -->
+    <div id="campaign-load-more" style="display:none; text-align:center; padding:20px;">
+        <div style="font-size:13px; color:var(--text-muted);">⏳ Carregando mais campanhas...</div>
+    </div>
 </div>
 {% endblock %}
 
@@ -51,66 +56,90 @@
 <script>
     const ACCOUNT_ID = "{{ account_id }}";
 
-    async function carregarCampanhas() {
+    // Estado
+    let activeCampaigns = [];      // campanhas ativas (carregadas 1x)
+    let pausedCampaigns = [];      // campanhas pausadas (carregadas sob demanda)
+    let pausedCursor = '';         // cursor para próxima página de pausadas
+    let pausedHasMore = true;      // se há mais pausadas para carregar
+    let pausedLoading = false;     // se está carregando pausadas
+    let pausedLoaded = false;      // se já fez ao menos 1 fetch de pausadas
+
+    function renderCampaignItem(c, idx) {
+        const isActive = c.status === 'ACTIVE';
+        return `
+        <a href="/campanha/${c.id}/setup" style="text-decoration: none; color: inherit;" class="campaign-item"
+            data-name="${(c.name || '').toLowerCase()}" data-status="${c.status}">
+            <div class="queue-item" style="cursor: pointer;">
+                <div class="queue-item-number"
+                    style="background: ${isActive ? 'var(--success)' : 'var(--bg-surface)'}; color: ${isActive ? '#fff' : 'var(--text-muted)'}; font-size: 10px; min-width: 30px; text-align: center;">
+                    ${idx + 1}
+                </div>
+                <div class="queue-item-body">
+                    <div class="queue-item-name"
+                        style="background: transparent; border: none; padding: 0; font-size: 14px;">
+                        ${c.name}
+                    </div>
+                    <div class="queue-item-files">
+                        <span class="queue-file-tag">ID: ${c.id}</span>
+                        <span class="queue-file-tag" style="color: var(--text-muted); border-color: var(--border);">${c.objective || ''}</span>
+                        ${isActive
+                            ? '<span class="config-status active" style="font-size: 11px;">🟢 Ativa</span>'
+                            : '<span class="config-status" style="font-size: 11px; color: var(--text-muted);">⏸️ Pausada</span>'
+                        }
+                    </div>
+                </div>
+                <div class="btn-queue-remove" style="border: none; color: var(--accent); font-size: 18px;">
+                    ⚙️ Setup
+                </div>
+            </div>
+        </a>`;
+    }
+
+    function renderList() {
+        const listEl = document.getElementById('campaign-list');
+        const onlyActive = activeToggle.checked;
+        const term = searchInput.value.toLowerCase();
+
+        let campaigns = onlyActive ? activeCampaigns : [...activeCampaigns, ...pausedCampaigns];
+
+        // Filtrar por texto
+        if (term) {
+            campaigns = campaigns.filter(c => (c.name || '').toLowerCase().includes(term));
+        }
+
+        let html = '';
+        campaigns.forEach((c, i) => { html += renderCampaignItem(c, i); });
+
+        if (campaigns.length === 0) {
+            html = '<div class="queue-empty">Nenhuma campanha encontrada.</div>';
+        }
+
+        listEl.innerHTML = html;
+        countBadge.textContent = `${campaigns.length} Visíveis`;
+
+        // Mostrar "carregar mais" se mostrando pausadas e tem mais
+        const loadMoreEl = document.getElementById('campaign-load-more');
+        loadMoreEl.style.display = (!onlyActive && pausedHasMore) ? 'block' : 'none';
+    }
+
+    async function carregarAtivas() {
         try {
-            const resp = await fetch(`/api/conta/${ACCOUNT_ID}/campanhas`);
+            const resp = await fetch(`/api/conta/${ACCOUNT_ID}/campanhas?status=ACTIVE&limit=200`);
             const data = await resp.json();
 
-            const loading = document.getElementById('campaign-loading');
-            const errorEl = document.getElementById('campaign-error');
-            const listEl = document.getElementById('campaign-list');
-            const countBadge = document.getElementById('campaign-count');
-
             if (data.error) {
-                loading.style.display = 'none';
+                document.getElementById('campaign-loading').style.display = 'none';
+                const errorEl = document.getElementById('campaign-error');
                 errorEl.textContent = '❌ ' + data.error;
                 errorEl.style.display = 'block';
                 return;
             }
 
-            const campaigns = data.campaigns || [];
+            activeCampaigns = data.campaigns || [];
 
-            // Renderizar lista
-            let html = '';
-            campaigns.forEach((c, i) => {
-                const isActive = c.status === 'ACTIVE';
-                html += `
-                <a href="/campanha/${c.id}/setup" style="text-decoration: none; color: inherit;" class="campaign-item"
-                    data-name="${(c.name || '').toLowerCase()}" data-status="${c.status}">
-                    <div class="queue-item" style="cursor: pointer;">
-                        <div class="queue-item-number"
-                            style="background: ${isActive ? 'var(--success)' : 'var(--bg-surface)'}; color: ${isActive ? '#fff' : 'var(--text-muted)'}; font-size: 10px; min-width: 30px; text-align: center;">
-                            ${i + 1}
-                        </div>
-                        <div class="queue-item-body">
-                            <div class="queue-item-name"
-                                style="background: transparent; border: none; padding: 0; font-size: 14px;">
-                                ${c.name}
-                            </div>
-                            <div class="queue-item-files">
-                                <span class="queue-file-tag">ID: ${c.id}</span>
-                                <span class="queue-file-tag" style="color: var(--text-muted); border-color: var(--border);">${c.objective || ''}</span>
-                                ${isActive
-                        ? '<span class="config-status active" style="font-size: 11px;">🟢 Ativa</span>'
-                        : '<span class="config-status" style="font-size: 11px; color: var(--text-muted);">⏸️ Pausada</span>'
-                    }
-                            </div>
-                        </div>
-                        <div class="btn-queue-remove" style="border: none; color: var(--accent); font-size: 18px;">
-                            ⚙️ Setup
-                        </div>
-                    </div>
-                </a>`;
-            });
-
-            if (campaigns.length === 0) {
-                html = '<div class="queue-empty">Nenhuma campanha encontrada nesta conta.</div>';
-            }
-
-            listEl.innerHTML = html;
-            loading.style.display = 'none';
-            listEl.style.display = 'block';
-            filtrarCampanhas();
+            document.getElementById('campaign-loading').style.display = 'none';
+            document.getElementById('campaign-list').style.display = 'block';
+            renderList();
 
         } catch (e) {
             document.getElementById('campaign-loading').style.display = 'none';
@@ -120,38 +149,71 @@
         }
     }
 
+    async function carregarPausadas() {
+        if (pausedLoading || !pausedHasMore) return;
+        pausedLoading = true;
+
+        const loadMoreEl = document.getElementById('campaign-load-more');
+        loadMoreEl.style.display = 'block';
+
+        try {
+            let url = `/api/conta/${ACCOUNT_ID}/campanhas?status=PAUSED&limit=50`;
+            if (pausedCursor) url += `&after=${pausedCursor}`;
+
+            const resp = await fetch(url);
+            const data = await resp.json();
+
+            if (data.error) {
+                console.error('Erro ao carregar pausadas:', data.error);
+                pausedLoading = false;
+                loadMoreEl.style.display = 'none';
+                return;
+            }
+
+            pausedCampaigns = pausedCampaigns.concat(data.campaigns || []);
+            pausedCursor = data.after || '';
+            pausedHasMore = data.has_more || false;
+            pausedLoaded = true;
+            pausedLoading = false;
+
+            renderList();
+
+        } catch (e) {
+            console.error('Erro ao carregar pausadas:', e);
+            pausedLoading = false;
+            loadMoreEl.style.display = 'none';
+        }
+    }
+
     const searchInput = document.getElementById('campaign-search');
     const activeToggle = document.getElementById('filter-active-only');
     const countBadge = document.getElementById('campaign-count');
 
-    function filtrarCampanhas() {
-        const term = searchInput.value.toLowerCase();
-        const onlyActive = activeToggle.checked;
-        const items = document.querySelectorAll('.campaign-item');
-        let visible = 0;
+    searchInput.addEventListener('input', renderList);
 
-        items.forEach(item => {
-            const name = item.getAttribute('data-name');
-            const status = item.getAttribute('data-status');
+    activeToggle.addEventListener('change', () => {
+        if (!activeToggle.checked && !pausedLoaded) {
+            // Primeira vez desmarcando — carrega primeira página de pausadas
+            carregarPausadas();
+        } else {
+            renderList();
+        }
+    });
 
-            const matchesText = !term || name.includes(term);
-            const matchesStatus = !onlyActive || status === 'ACTIVE';
+    // Scroll infinito — carrega mais pausadas ao chegar perto do fim
+    window.addEventListener('scroll', () => {
+        if (activeToggle.checked) return; // só ativas, sem scroll infinito
+        if (!pausedHasMore || pausedLoading) return;
 
-            if (matchesText && matchesStatus) {
-                item.style.display = 'block';
-                visible++;
-            } else {
-                item.style.display = 'none';
-            }
-        });
+        const scrollBottom = window.innerHeight + window.scrollY;
+        const docHeight = document.documentElement.scrollHeight;
 
-        countBadge.textContent = `${visible} Visíveis`;
-    }
+        if (scrollBottom >= docHeight - 300) {
+            carregarPausadas();
+        }
+    });
 
-    searchInput.addEventListener('input', filtrarCampanhas);
-    activeToggle.addEventListener('change', filtrarCampanhas);
-
-    // Carregar campanhas ao entrar na página
-    document.addEventListener('DOMContentLoaded', carregarCampanhas);
+    // Carregar só ativas ao entrar na página
+    document.addEventListener('DOMContentLoaded', carregarAtivas);
 </script>
 {% endblock %}

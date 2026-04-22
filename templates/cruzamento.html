@@ -1208,11 +1208,11 @@
             <div class="kpi-value accent" id="gads-kpi-spend">—</div>
         </div>
         <div class="kpi-card">
-            <div class="kpi-label">🎯 Conversões</div>
+            <div class="kpi-label">🎯 MQLs</div>
             <div class="kpi-value" id="gads-kpi-conv">—</div>
         </div>
         <div class="kpi-card">
-            <div class="kpi-label">💰 Custo/Conversão</div>
+            <div class="kpi-label">💰 Custo/MQL</div>
             <div class="kpi-value" id="gads-kpi-cpa">—</div>
         </div>
         <div class="kpi-card">
@@ -1241,10 +1241,12 @@
         <table class="day-table" style="width:100%; border-collapse:collapse;">
             <thead>
                 <tr>
-                    <th style="text-align:left; width:35%;">Campanha</th>
+                    <th style="text-align:left; width:30%;">Campanha</th>
                     <th style="text-align:right;">Investimento</th>
-                    <th style="text-align:right;">Conversões</th>
-                    <th style="text-align:right;">Custo/Conv</th>
+                    <th style="text-align:right;">MQLs</th>
+                    <th style="text-align:right;">%NC</th>
+                    <th style="text-align:right;">Custo/MQL</th>
+                    <th style="text-align:right;">Custo/NC</th>
                     <th style="text-align:right;">Cliques</th>
                     <th style="text-align:right;">CPC</th>
                     <th style="text-align:right;">CTR</th>
@@ -3100,15 +3102,22 @@
         const tfoot   = document.getElementById('gads-tfoot');
 
         // Totais
-        let tSpend = 0, tConv = 0, tClicks = 0;
-        camps.forEach(c => { tSpend += c.spend||0; tConv += c.conversions||0; tClicks += c.clicks||0; });
-        const tCPA = tConv > 0 ? tSpend / tConv : 0;
-        const tCPC = tClicks > 0 ? tSpend / tClicks : 0;
+        let tSpend = 0, tMqls = 0, tNC = 0, tClicks = 0;
+        camps.forEach(c => {
+            tSpend  += c.spend || 0;
+            tMqls   += c.mqls  || 0;
+            tNC     += c.nc    || 0;
+            tClicks += c.clicks || 0;
+        });
+        const tCustoMql = tMqls   > 0 ? tSpend / tMqls   : 0;
+        const tCustoNC  = tNC     > 0 ? tSpend / tNC     : 0;
+        const tCPC      = tClicks > 0 ? tSpend / tClicks : 0;
+        const tPctNC    = tMqls   > 0 ? (tNC / tMqls) * 100 : 0;
 
         // KPIs
         document.getElementById('gads-kpi-spend').textContent  = fmtR(tSpend);
-        document.getElementById('gads-kpi-conv').textContent   = tConv > 0 ? tConv.toFixed(1) : '—';
-        document.getElementById('gads-kpi-cpa').textContent    = tCPA > 0 ? fmtR(tCPA) : '—';
+        document.getElementById('gads-kpi-conv').textContent   = tMqls > 0 ? tMqls.toLocaleString('pt-BR') : '—';
+        document.getElementById('gads-kpi-cpa').textContent    = tCustoMql > 0 ? fmtR(tCustoMql) : '—';
         document.getElementById('gads-kpi-clicks').textContent = tClicks > 0 ? tClicks.toLocaleString('pt-BR') : '—';
 
         // CTR médio ponderado pelo spend
@@ -3122,8 +3131,10 @@
             <tr>
                 <td style="text-align:left; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:280px;" title="${c.campaign_name}">${c.campaign_name}</td>
                 <td style="text-align:right; font-weight:600;">${fmtR(c.spend)}</td>
-                <td style="text-align:right;">${c.conversions > 0 ? c.conversions.toFixed(1) : '—'}</td>
+                <td style="text-align:right;">${c.mqls > 0 ? c.mqls.toLocaleString('pt-BR') : '—'}</td>
+                <td style="text-align:right;">${c.mqls > 0 ? (c.pct_nc || 0).toFixed(1) + '%' : '—'}</td>
                 <td style="text-align:right;">${c.cpa > 0 ? fmtR(c.cpa) : '—'}</td>
+                <td style="text-align:right;">${c.custo_nc > 0 ? fmtR(c.custo_nc) : '—'}</td>
                 <td style="text-align:right;">${c.clicks > 0 ? c.clicks.toLocaleString('pt-BR') : '—'}</td>
                 <td style="text-align:right;">${c.cpc > 0 ? fmtR(c.cpc) : '—'}</td>
                 <td style="text-align:right;">${c.ctr > 0 ? c.ctr.toFixed(2) + '%' : '—'}</td>
@@ -3133,8 +3144,10 @@
         tfoot.innerHTML = `<tr>
             <td style="text-align:left;">TOTAL (${camps.length} camp)</td>
             <td style="text-align:right; font-weight:600;">${fmtR(tSpend)}</td>
-            <td style="text-align:right;">${tConv > 0 ? tConv.toFixed(1) : '—'}</td>
-            <td style="text-align:right;">${tCPA > 0 ? fmtR(tCPA) : '—'}</td>
+            <td style="text-align:right;">${tMqls > 0 ? tMqls.toLocaleString('pt-BR') : '—'}</td>
+            <td style="text-align:right;">${tMqls > 0 ? tPctNC.toFixed(1) + '%' : '—'}</td>
+            <td style="text-align:right;">${tCustoMql > 0 ? fmtR(tCustoMql) : '—'}</td>
+            <td style="text-align:right;">${tCustoNC > 0 ? fmtR(tCustoNC) : '—'}</td>
             <td style="text-align:right;">${tClicks > 0 ? tClicks.toLocaleString('pt-BR') : '—'}</td>
             <td style="text-align:right;">${tCPC > 0 ? fmtR(tCPC) : '—'}</td>
             <td style="text-align:right;">—</td>

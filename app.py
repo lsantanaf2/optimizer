@@ -68,7 +68,7 @@ from modules.account_settings import (
 import atexit
 atexit.register(close_db)
 
-VERSION = "v2.6.18"
+VERSION = "v2.6.20"
 
 @app.before_request
 def ensure_db():
@@ -879,9 +879,17 @@ def api_google_ads_sheets():
     """
     Busca dados do Google Ads via Google Sheets público (fallback sem API OAuth).
     Filtra campanhas que contenham 'VINCI' no nome.
+
+    Enriquece cada campanha com MQLs/NC da planilha de MQLs (utm_source in {adwords,google}),
+    matching por utm_campaign (normalizado) == campaign_name (normalizado).
+
     Query params: since=YYYY-MM-DD, until=YYYY-MM-DD
     """
     from datetime import datetime
+    from modules.cruzamento import (
+        SPREADSHEET_ID, fetch_sheets_data, filter_rows_by_date,
+        _norm, _is_produto_a,
+    )
 
     since_str = request.args.get('since', '')
     until_str = request.args.get('until', '')
@@ -894,7 +902,55 @@ def api_google_ads_sheets():
     data = _fetch_vinci_sheet(since_dt, until_dt)
     if data.get('error'):
         return jsonify({'error': data['error']}), 500
-    return jsonify({'campaigns': data['campaigns'], 'count': len(data['campaigns']), 'filter': 'VINCI'})
+
+    # ── Enriquecer com MQLs/NC da planilha (utm_source = adwords/google) ──
+    mqls_by_campaign = {}   # norm(utm_campaign) → {'mqls': n, 'nc': n}
+    total_mqls = 0
+    total_nc = 0
+    try:
+        mqls_all, _wons = fetch_sheets_data(SPREADSHEET_ID)
+        mqls_filtered = filter_rows_by_date(mqls_all, 'Data do preenchimento', since_dt, until_dt)
+        GOOGLE_SRC = {'adwords', 'google'}
+        for r in mqls_filtered:
+            if _norm(r.get('utm_source', '')) not in GOOGLE_SRC:
+                continue
+            key = _norm(r.get('utm_campaign', ''))
+            if not key:
+                continue
+            bucket = mqls_by_campaign.setdefault(key, {'mqls': 0, 'nc': 0})
+            bucket['mqls'] += 1
+            total_mqls += 1
+            if _is_produto_a(r.get('Produto indicado', '')):
+                bucket['nc'] += 1
+                total_nc += 1
+    except Exception as e:
+        # Não falha o endpoint se o sheet de MQLs der erro — apenas zera enrichment
+        import traceback; traceback.print_exc()
+
+    # Mescla MQLs/NC em cada campanha do Vinci
+    for c in data['campaigns']:
+        key = _norm(c.get('campaign_name', ''))
+        bucket = mqls_by_campaign.get(key, {'mqls': 0, 'nc': 0})
+        mqls = bucket['mqls']
+        nc   = bucket['nc']
+        spend = c.get('spend', 0.0) or 0.0
+        c['mqls']     = mqls
+        c['nc']       = nc
+        c['pct_nc']   = round((nc / mqls * 100), 1) if mqls > 0 else 0.0
+        c['cpa']      = round(spend / mqls, 2) if mqls > 0 else 0.0   # Custo/MQL (substitui Custo/Conv)
+        c['custo_nc'] = round(spend / nc,   2) if nc   > 0 else 0.0
+
+    # Atualiza totais (substitui 'conversions' do Sheets pelos MQLs do sheet de MQLs)
+    data['totals']['mqls']   = total_mqls
+    data['totals']['nc']     = total_nc
+    data['totals']['pct_nc'] = round((total_nc / total_mqls * 100), 1) if total_mqls > 0 else 0.0
+
+    return jsonify({
+        'campaigns': data['campaigns'],
+        'totals':    data['totals'],
+        'count':     len(data['campaigns']),
+        'filter':    'VINCI',
+    })
 
 
 @app.route('/api/cruzamento/consolidado')

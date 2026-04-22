@@ -518,9 +518,13 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows, mqls_all=None, excluded_p
     # A partir daqui o fluxo principal opera sobre fb_ads filtrado.
     fb_ads = fb_ads_main
 
+    # ── Defesa em profundidade: leads do Google Ads não devem ser atribuídos ao FB ──
+    # O caller já filtra, mas reforçamos aqui para proteger qualquer chamada futura.
+    _GOOGLE_SRC = {'adwords', 'google'}
+    mqls_rows = [r for r in mqls_rows
+                 if _norm(r.get('utm_source', '')) not in _GOOGLE_SRC]
+
     # ── Passo 1: Join Wons → indexar por Deal ID ──────────────────────────────
-    # Mapeamento: deal_id → { produto, valor }
-    # Na aba Wons: colunas 'Deal ID', 'Produto', 'Valor'
     wons_idx = {}
     for row in wons_rows:
         deal_id = _norm(row.get('Deal ID', ''))
@@ -534,15 +538,15 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows, mqls_all=None, excluded_p
     leads_enriquecidos = []
     for row in mqls_rows:
         deal_id = _norm(row.get('Deal ID', ''))
-        produto = _norm(row.get('Produto indicado', ''))  # Aba MQLs
+        produto = _norm(row.get('Produto indicado', ''))
+        produto_label = (row.get('Produto indicado', '') or '').strip() or 'Sem produto'
         won_data = wons_idx.get(deal_id, {})
-
-        # Determinar produto A ou B (flexível: verifica letra/número no nome)
         is_a = _is_produto_a(produto)
-
-        lead = {
+        d_preench = _parse_date_br(row.get('Data do preenchimento', ''))
+        leads_enriquecidos.append({
             'deal_id':       deal_id,
             'produto':       produto,
+            'produto_label': produto_label,
             'is_a':          is_a,
             'utm_campaign':  _norm(row.get('utm_campaign', '')),
             'utm_content':   _norm(row.get('utm_content', '')),
@@ -551,32 +555,32 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows, mqls_all=None, excluded_p
             'utm_term':      _norm(row.get('utm_term', '')),
             'vendeu':        bool(won_data),
             'valor_venda':   won_data.get('valor', 0.0),
-        }
-        leads_enriquecidos.append(lead)
+            'data_preenchimento': d_preench.strftime('%Y-%m-%d') if d_preench else '',
+        })
 
-    # Guarda contagem de MQLs dentro do período (para total_mqls no retorno)
     mqls_in_period_count = len(leads_enriquecidos)
 
     # ── Recuperar wons do período cujo MQL foi criado ANTES do período ─────────
-    # Wons filtradas por "Data de fechamento" podem referenciar um MQL
-    # criado fora do filtro → não aparecem em leads_enriquecidos acima,
-    # mas devem ser atribuídos à sua campanha/adset/ad para consistência.
     if mqls_all:
         leads_ids_in_period = {l['deal_id'] for l in leads_enriquecidos}
         mqls_all_by_deal = {
             _norm(row.get('Deal ID', '')): row
             for row in mqls_all
             if _norm(row.get('Deal ID', ''))
+               and _norm(row.get('utm_source', '')) not in _GOOGLE_SRC
         }
         for deal_id, won_data in wons_idx.items():
             if deal_id not in leads_ids_in_period:
                 mql_row = mqls_all_by_deal.get(deal_id)
                 if mql_row:
                     produto = _norm(mql_row.get('Produto indicado', ''))
+                    produto_label = (mql_row.get('Produto indicado', '') or '').strip() or 'Sem produto'
                     is_a = _is_produto_a(produto)
+                    d_preench = _parse_date_br(mql_row.get('Data do preenchimento', ''))
                     leads_enriquecidos.append({
                         'deal_id':      deal_id,
                         'produto':      produto,
+                        'produto_label': produto_label,
                         'is_a':         is_a,
                         'utm_campaign': _norm(mql_row.get('utm_campaign', '')),
                         'utm_content':  _norm(mql_row.get('utm_content', '')),
@@ -585,44 +589,38 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows, mqls_all=None, excluded_p
                         'utm_term':     _norm(mql_row.get('utm_term', '')),
                         'vendeu':       True,
                         'valor_venda':  won_data['valor'],
+                        'data_preenchimento': d_preench.strftime('%Y-%m-%d') if d_preench else '',
                     })
 
-    # ── Passo 2: Indexar leads ─────────────────
-    leads_by_term = {}
-    leads_by_content = {}
-    leads_by_campaign = {}
+    # ── Passo 2: Consolidar FB Ads/AdSets/Campaigns — TODAS as chaves ESCOPADAS
+    # POR CAMPANHA para evitar colisão cross-campanha (adsets/ads com nomes
+    # idênticos em campanhas diferentes).
+    fb_ads_by_name       = {}   # "camp|||adset|||ad_name" → entry
+    fb_adsets_by_name    = {}   # "camp|||adset"           → entry
+    fb_campaigns_by_name = {}   # "camp"                   → entry
 
-    for lead in leads_enriquecidos:
-        ut = lead['utm_term']
-        if ut and ut != 'null':
-            leads_by_term.setdefault(ut, []).append(lead)
-            
-        uc = lead['utm_content']
-        if uc and uc != 'null':
-            leads_by_content.setdefault(uc, []).append(lead)
-            
-        ucamp = lead['utm_campaign']
-        if ucamp and ucamp != 'null':
-            leads_by_campaign.setdefault(ucamp, []).append(lead)
-
-    # ── Passo 2: Consolidar FB Ads, AdSets e Campaigns ────────────────────────────────
-    # IDs são armazenados para join fallback (UTM pode conter ID em vez de nome)
-    fb_ads_by_name = {}
-    fb_adsets_by_name = {}
-    fb_campaigns_by_name = {}
+    # ID → nome normalizado (para UTMs que vêm com ID em vez do nome)
+    _ad_id_to_name    = {}
+    _adset_id_to_name = {}
+    _camp_id_to_name  = {}
 
     for ad in fb_ads:
         name_norm     = _norm(ad.get('ad_name', ''))
         adset_norm    = _norm(ad.get('adset_name', ''))
         campaign_norm = _norm(ad.get('campaign_name', ''))
 
-        ad_id_raw      = ad.get('ad_id', '')
-        adset_id_raw   = ad.get('adset_id', '')
-        campaign_id_raw= ad.get('campaign_id', '')
+        ad_id_raw       = ad.get('ad_id', '')
+        adset_id_raw    = ad.get('adset_id', '')
+        campaign_id_raw = ad.get('campaign_id', '')
 
-        # Consolidação Ad — chave composta (campaign, adset, nome) para preservar
-        # o mesmo criativo em adsets diferentes como entradas separadas.
-        # O matching de leads continua usando apenas name_norm (utm_term).
+        if ad_id_raw:       _ad_id_to_name[_norm(ad_id_raw)]         = name_norm
+        if adset_id_raw:    _adset_id_to_name[_norm(adset_id_raw)]   = adset_norm
+        if campaign_id_raw: _camp_id_to_name[_norm(campaign_id_raw)] = campaign_norm
+
+        _METRIC_KEYS = ('spend', 'impressions', 'clicks', 'link_clicks',
+                        'landing_page_views', 'typeform_submits')
+
+        # Ad — chave composta (camp, adset, ad_name)
         if name_norm:
             ad_key = f"{campaign_norm}|||{adset_norm}|||{name_norm}"
             if ad_key not in fb_ads_by_name:
@@ -635,250 +633,230 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows, mqls_all=None, excluded_p
                     'ad_status':          ad.get('ad_status', 'UNKNOWN'),
                     'ad_ids':             set(),
                     '_name_norm':         name_norm,
-                    'spend':              0.0,
-                    'impressions':        0,
-                    'clicks':             0,
-                    'link_clicks':        0,
-                    'landing_page_views': 0,
-                    'typeform_submits':   0,
+                    '_adset_norm':        adset_norm,
+                    '_campaign_norm':     campaign_norm,
+                    'spend': 0.0, 'impressions': 0, 'clicks': 0,
+                    'link_clicks': 0, 'landing_page_views': 0, 'typeform_submits': 0,
                 }
             if ad_id_raw:
                 fb_ads_by_name[ad_key]['ad_ids'].add(ad_id_raw)
-            fb_ads_by_name[ad_key]['spend']               += ad.get('spend', 0.0)
-            fb_ads_by_name[ad_key]['impressions']         += ad.get('impressions', 0)
-            fb_ads_by_name[ad_key]['clicks']              += ad.get('clicks', 0)
-            fb_ads_by_name[ad_key]['link_clicks']         += ad.get('link_clicks', 0)
-            fb_ads_by_name[ad_key]['landing_page_views']  += ad.get('landing_page_views', 0)
-            fb_ads_by_name[ad_key]['typeform_submits']    += ad.get('typeform_submits', 0)
+            for _k in _METRIC_KEYS:
+                fb_ads_by_name[ad_key][_k] += ad.get(_k, 0) or 0
 
-        # Consolidação AdSet
+        # AdSet — chave composta (camp, adset) — ESCOPA POR CAMPANHA
         if adset_norm:
-            if adset_norm not in fb_adsets_by_name:
-                fb_adsets_by_name[adset_norm] = {
+            adset_key = f"{campaign_norm}|||{adset_norm}"
+            if adset_key not in fb_adsets_by_name:
+                fb_adsets_by_name[adset_key] = {
                     'adset_name':         ad.get('adset_name', 'Desconhecido'),
                     'campaign_name':      ad.get('campaign_name', ''),
                     'adset_id':           adset_id_raw,
+                    '_adset_norm':        adset_norm,
+                    '_campaign_norm':     campaign_norm,
                     'ad_status':          ad.get('ad_status', 'PAUSED'),
-                    'spend':              0.0,
-                    'impressions':        0,
-                    'clicks':             0,
-                    'link_clicks':        0,
-                    'landing_page_views': 0,
-                    'typeform_submits':   0,
+                    'spend': 0.0, 'impressions': 0, 'clicks': 0,
+                    'link_clicks': 0, 'landing_page_views': 0, 'typeform_submits': 0,
                 }
             if ad.get('ad_status') == 'ACTIVE':
-                fb_adsets_by_name[adset_norm]['ad_status'] = 'ACTIVE'
-            fb_adsets_by_name[adset_norm]['spend']               += ad.get('spend', 0.0)
-            fb_adsets_by_name[adset_norm]['impressions']         += ad.get('impressions', 0)
-            fb_adsets_by_name[adset_norm]['clicks']              += ad.get('clicks', 0)
-            fb_adsets_by_name[adset_norm]['link_clicks']         += ad.get('link_clicks', 0)
-            fb_adsets_by_name[adset_norm]['landing_page_views']  += ad.get('landing_page_views', 0)
-            fb_adsets_by_name[adset_norm]['typeform_submits']    += ad.get('typeform_submits', 0)
+                fb_adsets_by_name[adset_key]['ad_status'] = 'ACTIVE'
+            for _k in _METRIC_KEYS:
+                fb_adsets_by_name[adset_key][_k] += ad.get(_k, 0) or 0
 
-        # Consolidação Campaign
+        # Campaign — chave por camp_norm (único)
         if campaign_norm:
             if campaign_norm not in fb_campaigns_by_name:
                 fb_campaigns_by_name[campaign_norm] = {
                     'campaign_name':      ad.get('campaign_name', 'Desconhecida'),
                     'campaign_id':        campaign_id_raw,
                     'ad_status':          ad.get('ad_status', 'PAUSED'),
-                    'spend':              0.0,
-                    'impressions':        0,
-                    'clicks':             0,
-                    'link_clicks':        0,
-                    'landing_page_views': 0,
-                    'typeform_submits':   0,
+                    'spend': 0.0, 'impressions': 0, 'clicks': 0,
+                    'link_clicks': 0, 'landing_page_views': 0, 'typeform_submits': 0,
                 }
             if ad.get('ad_status') == 'ACTIVE':
                 fb_campaigns_by_name[campaign_norm]['ad_status'] = 'ACTIVE'
-            fb_campaigns_by_name[campaign_norm]['spend']               += ad.get('spend', 0.0)
-            fb_campaigns_by_name[campaign_norm]['impressions']         += ad.get('impressions', 0)
-            fb_campaigns_by_name[campaign_norm]['clicks']              += ad.get('clicks', 0)
-            fb_campaigns_by_name[campaign_norm]['link_clicks']         += ad.get('link_clicks', 0)
-            fb_campaigns_by_name[campaign_norm]['landing_page_views']  += ad.get('landing_page_views', 0)
-            fb_campaigns_by_name[campaign_norm]['typeform_submits']    += ad.get('typeform_submits', 0)
+            for _k in _METRIC_KEYS:
+                fb_campaigns_by_name[campaign_norm][_k] += ad.get(_k, 0) or 0
 
-    def _join_leads(index, name_key, *id_keys):
+    # ── Passo 3: Resolvers — mapeiam UTMs do lead (nome OU id) para entidades FB reais ──
+    def _resolve_camp(lead):
+        """utm_campaign → camp_norm existente (ou '')."""
+        u = lead.get('utm_campaign', '')
+        if not u or u == 'null':
+            return ''
+        if u in fb_campaigns_by_name:
+            return u
+        resolved = _camp_id_to_name.get(u, '')
+        return resolved if resolved in fb_campaigns_by_name else ''
+
+    def _resolve_adset(lead, camp_hint):
         """
-        Junta leads pelo nome e também por IDs alternativos (fallback).
-        Evita duplicatas por deal_id — resolve o caso em que o UTM foi
-        configurado com o ID da entidade em vez do nome.
+        utm_content → (camp, adset) existente em fb_adsets_by_name.
+        Com camp_hint: exige que o adset pertença àquela campanha.
+        Sem camp_hint: só resolve se o nome for único em UMA campanha (sem ambiguidade).
+        Retorna ('','') se não resolver com segurança.
         """
-        combined = list(index.get(name_key, []))
-        seen = {l['deal_id'] for l in combined}
-        for ik in id_keys:
-            if ik:
-                for l in index.get(ik, []):
-                    if l['deal_id'] not in seen:
-                        combined.append(l)
-                        seen.add(l['deal_id'])
-        return combined
+        u = lead.get('utm_content', '')
+        if not u or u == 'null':
+            return ('', '')
+        # Candidatos por nome exato
+        cands = [k for k in fb_adsets_by_name if k.endswith(f"|||{u}")]
+        # Candidatos via ID → nome
+        resolved_by_id = _adset_id_to_name.get(u, '')
+        if resolved_by_id:
+            cands += [k for k in fb_adsets_by_name
+                      if k.endswith(f"|||{resolved_by_id}") and k not in cands]
+        if camp_hint:
+            for k in cands:
+                if k.startswith(f"{camp_hint}|||"):
+                    return (camp_hint, k.split('|||', 1)[1])
+            return ('', '')
+        # Sem camp_hint: só resolve se for inequívoco (uma única campanha)
+        if len(cands) == 1:
+            camp, adset = cands[0].split('|||', 1)
+            return (camp, adset)
+        return ('', '')
 
-    # ── Passo 3: Cruzar FB com Leads ───────────────────────────
-    ads_consolidated       = []
-    adsets_consolidated    = []
-    campaigns_consolidated = []
-    matched_deal_ids_ads       = set()
-    matched_deal_ids_adsets    = set()
-    matched_deal_ids_campaigns = set()
+    def _resolve_ad(lead, camp_hint, adset_hint):
+        """
+        utm_term → ad_name_norm existente. Exige camp+adset já resolvidos para evitar
+        cross-adset/cross-campanha. Retorna ('','','') se não resolver.
+        """
+        u = lead.get('utm_term', '')
+        if not u or u == 'null':
+            return ('', '', '')
+        if not (camp_hint and adset_hint):
+            return ('', '', '')
+        key_name = f"{camp_hint}|||{adset_hint}|||{u}"
+        if key_name in fb_ads_by_name:
+            return (camp_hint, adset_hint, u)
+        resolved = _ad_id_to_name.get(u, '')
+        if resolved:
+            key_id = f"{camp_hint}|||{adset_hint}|||{resolved}"
+            if key_id in fb_ads_by_name:
+                return (camp_hint, adset_hint, resolved)
+        return ('', '', '')
 
-    # ── 3.1: Cruzar Ads ──────────────────────────────────────────────────────
-    # Match primário: utm_term ↔ ad_name (ou ad_id)
-    # Fallback: utm_content ↔ adset_name → distribui para ads do adset
-    from collections import defaultdict as _defaultdict
+    # ── Atribuição por lead ──
+    _ad_leads       = {k: [] for k in fb_ads_by_name}
+    _adset_leads    = {k: [] for k in fb_adsets_by_name}
+    _campaign_leads = {k: [] for k in fb_campaigns_by_name}
 
-    # Índice: adset_norm → lista de ad entries (para fallback)
-    _ads_by_adset_norm = _defaultdict(list)
+    # Buckets para matches parciais (viram linhas "⚠️ indeterminado" na UI)
+    _adset_indet_ads   = {}  # adset_key → [leads]  (chegou no adset, ad não bateu)
+    _camp_indet_ads    = {}  # camp_norm → [leads]  (só camp, ad indeterminado)
+    _camp_indet_adsets = {}  # camp_norm → [leads]  (só camp, adset indeterminado)
 
-    _ads_by_name_norm = _defaultdict(list)
-    for _ak, _ad in fb_ads_by_name.items():
-        _ads_by_name_norm[_ad['_name_norm']].append(_ad)
-        _as_norm = _norm(_ad.get('adset_name', ''))
-        if _as_norm:
-            _ads_by_adset_norm[_as_norm].append(_ad)
+    organicos_ads       = []
+    organicos_adsets    = []
+    organicos_campaigns = []
 
-    # Fase A: match por utm_term (primário)
-    _entry_leads_map = {}  # id(entry) → [leads]
-    for _ak, _ad in fb_ads_by_name.items():
-        _entry_leads_map[id(_ad)] = []
+    for lead in leads_enriquecidos:
+        camp = _resolve_camp(lead)
+        adset_camp, adset = _resolve_adset(lead, camp)
+        # Se veio adset sem camp explícito, adota a camp do adset
+        if adset and not camp:
+            camp = adset_camp
+        # Se camp conflita com a do adset, descarta o adset (cross-campanha suspeito)
+        if adset and adset_camp and adset_camp != camp:
+            adset = ''
+            adset_camp = ''
+        _, _, ad = _resolve_ad(lead, camp, adset)
 
-    for _nn, _entries in _ads_by_name_norm.items():
-        _all_ids = set()
-        for _e in _entries:
-            _all_ids.update(_e['ad_ids'])
-        _all_leads = _join_leads(leads_by_term, _nn, *_all_ids)
+        # ── Ads-level ──
+        if camp and adset and ad:
+            _ad_leads[f"{camp}|||{adset}|||{ad}"].append(lead)
+        elif camp and adset and f"{camp}|||{adset}" in fb_adsets_by_name:
+            _adset_indet_ads.setdefault(f"{camp}|||{adset}", []).append(lead)
+        elif camp and camp in fb_campaigns_by_name:
+            _camp_indet_ads.setdefault(camp, []).append(lead)
+        else:
+            organicos_ads.append(lead)
 
-        # Sub-fase 1: atribui leads com utm_content === adset_norm
-        _assigned = set()
-        for _e in _entries:
-            _as_norm = _norm(_e.get('adset_name', ''))
-            for _l in _all_leads:
-                if _l['deal_id'] not in _assigned and _l.get('utm_content', '') == _as_norm:
-                    _entry_leads_map[id(_e)].append(_l)
-                    _assigned.add(_l['deal_id'])
+        # ── AdSet-level ──
+        if camp and adset and f"{camp}|||{adset}" in fb_adsets_by_name:
+            _adset_leads[f"{camp}|||{adset}"].append(lead)
+        elif camp and camp in fb_campaigns_by_name:
+            _camp_indet_adsets.setdefault(camp, []).append(lead)
+        else:
+            organicos_adsets.append(lead)
 
-        # Sub-fase 2: leads sem utm_content matchando → entry de maior spend
-        _unassigned = [_l for _l in _all_leads if _l['deal_id'] not in _assigned]
-        if _unassigned:
-            _best = max(_entries, key=lambda e: e.get('spend', 0))
-            _entry_leads_map[id(_best)].extend(_unassigned)
-            _assigned.update(_l['deal_id'] for _l in _unassigned)
+        # ── Campaign-level ──
+        if camp and camp in fb_campaigns_by_name:
+            _campaign_leads[camp].append(lead)
+        else:
+            organicos_campaigns.append(lead)
 
-        for _l in _all_leads:
-            matched_deal_ids_ads.add(_l['deal_id'])
-
-    # Fase B: fallback por utm_content → distribui leads não-matchados para ads do adset
-    # Leads que bateram no nível adset (utm_content) mas NÃO no nível ad (utm_term)
-    for _adset_norm, _adset_entries in _ads_by_adset_norm.items():
-        _content_leads = leads_by_content.get(_adset_norm, [])
-        _unmatched = [_l for _l in _content_leads if _l['deal_id'] not in matched_deal_ids_ads]
-        if not _unmatched:
-            continue
-        # Distribui para o ad de maior spend neste adset
-        _best_ad = max(_adset_entries, key=lambda e: e.get('spend', 0))
-        _entry_leads_map[id(_best_ad)].extend(_unmatched)
-        for _l in _unmatched:
-            matched_deal_ids_ads.add(_l['deal_id'])
-
-    # Fase C: fallback por utm_campaign → distribui leads que só matcharam campanha
-    # Leads com utm_campaign mas sem utm_content/utm_term matchando
-    _ads_by_camp_norm = _defaultdict(list)
-    for _ak, _ad in fb_ads_by_name.items():
-        _cn = _norm(_ad.get('campaign_name', ''))
-        if _cn:
-            _ads_by_camp_norm[_cn].append(_ad)
-
-    for _camp_norm, _camp_entries in _ads_by_camp_norm.items():
-        # Busca por nome normalizado E campaign_id (mesmo padrão do _join_leads)
-        _camp_fb = fb_campaigns_by_name.get(_camp_norm, {})
-        _camp_id = _camp_fb.get('campaign_id', '')
-        _camp_leads = _join_leads(leads_by_campaign, _camp_norm, _camp_id)
-        _unmatched = [_l for _l in _camp_leads if _l['deal_id'] not in matched_deal_ids_ads]
-        if not _unmatched:
-            continue
-        _best_ad = max(_camp_entries, key=lambda e: e.get('spend', 0))
-        _entry_leads_map[id(_best_ad)].extend(_unmatched)
-        for _l in _unmatched:
-            matched_deal_ids_ads.add(_l['deal_id'])
-
-    # Fase D: consolida cada entry
-    for _ak, _ad in fb_ads_by_name.items():
-        _my_leads = _entry_leads_map[id(_ad)]
-        metrics = _calc_metrics(_ad, _my_leads)
+    # ── Consolidar Ads ──
+    ads_consolidated = []
+    for ad_key, ad_entry in fb_ads_by_name.items():
+        metrics = _calc_metrics(ad_entry, _ad_leads[ad_key])
         ads_consolidated.append({
-            'ad_name':       _ad['ad_name'],
-            'campaign_name': _ad['campaign_name'],
-            'campaign_status': _ad.get('campaign_status', 'UNKNOWN'),
-            'adset_name':    _ad['adset_name'],
-            'adset_status':  _ad.get('adset_status', 'UNKNOWN'),
-            'ad_status':     _ad['ad_status'],
+            'ad_name':         ad_entry['ad_name'],
+            'campaign_name':   ad_entry['campaign_name'],
+            'campaign_status': ad_entry.get('campaign_status', 'UNKNOWN'),
+            'adset_name':      ad_entry['adset_name'],
+            'adset_status':    ad_entry.get('adset_status', 'UNKNOWN'),
+            'ad_status':       ad_entry['ad_status'],
+            **metrics
+        })
+    # Linhas "⚠️ Ad indeterminado (sem utm_term válido)" por adset
+    for adset_key, ileads in _adset_indet_ads.items():
+        adset_entry = fb_adsets_by_name[adset_key]
+        metrics = _calc_metrics(_empty_metrics(), ileads)
+        ads_consolidated.append({
+            'ad_name':         '⚠️ Ad indeterminado (sem utm_term)',
+            'campaign_name':   adset_entry['campaign_name'],
+            'campaign_status': 'UNKNOWN',
+            'adset_name':      adset_entry['adset_name'],
+            'adset_status':    'UNKNOWN',
+            'ad_status':       'INDETERMINATE',
+            **metrics
+        })
+    # Linhas "⚠️ Ad+AdSet indeterminados" por campanha
+    for camp_norm, ileads in _camp_indet_ads.items():
+        camp_entry = fb_campaigns_by_name[camp_norm]
+        metrics = _calc_metrics(_empty_metrics(), ileads)
+        ads_consolidated.append({
+            'ad_name':         '⚠️ Ad indeterminado (sem utm_content/term)',
+            'campaign_name':   camp_entry['campaign_name'],
+            'campaign_status': 'UNKNOWN',
+            'adset_name':      '⚠️ AdSet indeterminado',
+            'adset_status':    'UNKNOWN',
+            'ad_status':       'INDETERMINATE',
             **metrics
         })
 
-    # ── 3.2: Cruzar AdSets ─────────────────────────────────────────────────────
-    # Match primário: utm_content ↔ adset_name (ou adset_id)
-    # Fallback: utm_campaign ↔ campaign_name → distribui para adsets da campanha
-
-    # Índice: campaign_norm → lista de adset entries (para fallback)
-    _adsets_by_camp_norm = _defaultdict(list)
-    _adset_leads_map = {}  # name_norm → [leads]
-
-    for name_norm, adset_data in fb_adsets_by_name.items():
-        camp_norm = _norm(adset_data.get('campaign_name', ''))
-        if camp_norm:
-            _adsets_by_camp_norm[camp_norm].append((name_norm, adset_data))
-
-    # Fase A: match primário por utm_content
-    for name_norm, adset_data in fb_adsets_by_name.items():
-        m_leads = _join_leads(leads_by_content, name_norm, adset_data.get('adset_id', ''))
-        _adset_leads_map[name_norm] = m_leads
-        for lead in m_leads:
-            matched_deal_ids_adsets.add(lead['deal_id'])
-
-    # Fase B: fallback por utm_campaign → distribui leads não-matchados para adsets da campanha
-    # Usa mesma lógica do _join_leads: busca por nome normalizado E campaign_id
-    for camp_norm, adset_entries in _adsets_by_camp_norm.items():
-        # Busca campaign_id do fb_campaigns_by_name para lookup completo
-        camp_fb = fb_campaigns_by_name.get(camp_norm, {})
-        camp_id = camp_fb.get('campaign_id', '')
-        camp_leads = _join_leads(leads_by_campaign, camp_norm, camp_id)
-        unmatched = [l for l in camp_leads if l['deal_id'] not in matched_deal_ids_adsets]
-        if not unmatched:
-            continue
-        # Distribui para o adset de maior spend nesta campanha
-        best_nn, best_data = max(adset_entries, key=lambda x: x[1].get('spend', 0))
-        _adset_leads_map.setdefault(best_nn, []).extend(unmatched)
-        for l in unmatched:
-            matched_deal_ids_adsets.add(l['deal_id'])
-
-    # Fase C: consolida
-    for name_norm, adset_data in fb_adsets_by_name.items():
-        m_leads = _adset_leads_map.get(name_norm, [])
-        metrics = _calc_metrics(adset_data, m_leads)
+    # ── Consolidar AdSets ──
+    adsets_consolidated = []
+    for adset_key, adset_entry in fb_adsets_by_name.items():
+        metrics = _calc_metrics(adset_entry, _adset_leads[adset_key])
         adsets_consolidated.append({
-            'adset_name':    adset_data['adset_name'],
-            'campaign_name': adset_data['campaign_name'],
-            'ad_status':     adset_data['ad_status'],
+            'adset_name':    adset_entry['adset_name'],
+            'campaign_name': adset_entry['campaign_name'],
+            'ad_status':     adset_entry['ad_status'],
+            **metrics
+        })
+    for camp_norm, ileads in _camp_indet_adsets.items():
+        camp_entry = fb_campaigns_by_name[camp_norm]
+        metrics = _calc_metrics(_empty_metrics(), ileads)
+        adsets_consolidated.append({
+            'adset_name':    '⚠️ AdSet indeterminado (sem utm_content)',
+            'campaign_name': camp_entry['campaign_name'],
+            'ad_status':     'INDETERMINATE',
             **metrics
         })
 
-    # ── 3.3: Cruzar Campaigns (utm_campaign ↔ campaign_name ou campaign_id)
-    for name_norm, camp_data in fb_campaigns_by_name.items():
-        m_leads = _join_leads(leads_by_campaign, name_norm, camp_data.get('campaign_id', ''))
-        metrics = _calc_metrics(camp_data, m_leads)
+    # ── Consolidar Campaigns ──
+    campaigns_consolidated = []
+    for camp_norm, camp_entry in fb_campaigns_by_name.items():
+        metrics = _calc_metrics(camp_entry, _campaign_leads[camp_norm])
         campaigns_consolidated.append({
-            'campaign_name': camp_data['campaign_name'],
-            'ad_status':     camp_data['ad_status'],
+            'campaign_name': camp_entry['campaign_name'],
+            'ad_status':     camp_entry['ad_status'],
             **metrics
         })
-        for lead in m_leads:
-            matched_deal_ids_campaigns.add(lead['deal_id'])
 
-    organicos_ads = [l for l in leads_enriquecidos if l['deal_id'] not in matched_deal_ids_ads]
-    organicos_adsets = [l for l in leads_enriquecidos if l['deal_id'] not in matched_deal_ids_adsets]
-    organicos_campaigns = [l for l in leads_enriquecidos if l['deal_id'] not in matched_deal_ids_campaigns]
-    
-    organico_metrics = _calc_organic_metrics(organicos_ads) # Keep backward compatibility
+    organico_metrics = _calc_organic_metrics(organicos_ads)  # backward compatibility
 
     # ── Adiciona os Não-Encontrados nas Tabelas ─────────────────────
     
@@ -1018,7 +996,12 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows, mqls_all=None, excluded_p
             'taxa_mql':      round(mql / tf  * 100, 2) if tf  > 0 else None,
         })
 
-    # ── Breakdown diário por entidade (pré-indexado O(n)) ──────────────────────
+    # ── Breakdown diário por entidade ────────────────────────────────────────
+    # IMPORTANTE: para garantir que MQLs/Wons sejam contabilizados no MESMO
+    # escopo (campanha/adset/ad) já resolvido acima, os MQLs por data são
+    # derivados diretamente das listas de leads atribuídos (_ad_leads,
+    # _adset_leads, _campaign_leads). Isso elimina cross-campanha por
+    # colisão de nomes de adset/ad entre campanhas diferentes.
     def _build_entity_series(spend_map, mqls_map, prods_map=None):
         all_keys = sorted(set(list(spend_map.keys()) + list(mqls_map.keys())))
         result = []
@@ -1036,97 +1019,94 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows, mqls_all=None, excluded_p
             result.append(entry)
         return result
 
-    # Pré-indexar fb_ads por (campaign, date), (adset, date), (ad+adset, date) — O(n) único
-    _spend_by_camp_date = {}
-    _spend_by_adset_date = {}
-    _spend_by_ad_adset_date = {}
+    def _mqls_by_date_from_leads(lead_list):
+        """Agrega MQLs + produtos por data a partir de uma lista de leads já atribuídos."""
+        m_by_d = {}
+        p_by_d = {}
+        for l in lead_list:
+            dk = l.get('data_preenchimento', '')
+            if not dk:
+                continue
+            m_by_d[dk] = m_by_d.get(dk, 0) + 1
+            prod = l.get('produto_label', 'Sem produto')
+            pd = p_by_d.setdefault(dk, {})
+            pd[prod] = pd.get(prod, 0) + 1
+        return m_by_d, p_by_d
+
+    # Pré-indexar fb_ads spend por chave composta (campanha|||adset|||ad, date) — O(n)
+    _spend_by_campkey_date  = {}  # camp_norm                    → {date: spend}
+    _spend_by_adsetkey_date = {}  # "camp|||adset"               → {date: spend}
+    _spend_by_adkey_date    = {}  # "camp|||adset|||ad"          → {date: spend}
     for ad in fb_ads:
         d = ad.get('date_start', '')
         if not d:
             continue
-        sp = ad.get('spend', 0.0)
+        sp = ad.get('spend', 0.0) or 0.0
         cn = _norm(ad.get('campaign_name', ''))
         an = _norm(ad.get('adset_name', ''))
         adn = _norm(ad.get('ad_name', ''))
+        if cn:
+            _spend_by_campkey_date.setdefault(cn, {})
+            _spend_by_campkey_date[cn][d] = _spend_by_campkey_date[cn].get(d, 0.0) + sp
+        if cn and an:
+            k = f"{cn}|||{an}"
+            _spend_by_adsetkey_date.setdefault(k, {})
+            _spend_by_adsetkey_date[k][d] = _spend_by_adsetkey_date[k].get(d, 0.0) + sp
+        if cn and an and adn:
+            k = f"{cn}|||{an}|||{adn}"
+            _spend_by_adkey_date.setdefault(k, {})
+            _spend_by_adkey_date[k][d] = _spend_by_adkey_date[k].get(d, 0.0) + sp
 
-        k1 = (cn, d)
-        _spend_by_camp_date[k1] = _spend_by_camp_date.get(k1, 0.0) + sp
-        k2 = (an, d)
-        _spend_by_adset_date[k2] = _spend_by_adset_date.get(k2, 0.0) + sp
-        k3 = (adn, an, d)
-        _spend_by_ad_adset_date[k3] = _spend_by_ad_adset_date.get(k3, 0.0) + sp
-
-    # Pré-indexar mqls por utm_campaign/content/term → date — O(n) único
-    # Inclui breakdown por produto para o gráfico de timeline filtrado
-    _mqls_by_camp_date = {}
-    _mqls_by_content_date = {}
-    _mqls_by_term_date = {}
-    _prods_by_camp_date = {}
-    _prods_by_content_date = {}
-    _prods_by_term_date = {}
-    for row in mqls_rows:
-        d = _parse_date_br(row.get('Data do preenchimento', ''))
-        if not d:
-            continue
-        dk = d.strftime('%Y-%m-%d')
-        prod = row.get('Produto indicado', '').strip() or 'Sem produto'
-        uc = _norm(row.get('utm_campaign', ''))
-        if uc:
-            k = (uc, dk)
-            _mqls_by_camp_date[k] = _mqls_by_camp_date.get(k, 0) + 1
-            pd = _prods_by_camp_date.setdefault(k, {})
-            pd[prod] = pd.get(prod, 0) + 1
-        ucont = _norm(row.get('utm_content', ''))
-        if ucont:
-            k = (ucont, dk)
-            _mqls_by_content_date[k] = _mqls_by_content_date.get(k, 0) + 1
-            pd = _prods_by_content_date.setdefault(k, {})
-            pd[prod] = pd.get(prod, 0) + 1
-        ut = _norm(row.get('utm_term', ''))
-        if ut:
-            k = (ut, dk)
-            _mqls_by_term_date[k] = _mqls_by_term_date.get(k, 0) + 1
-            pd = _prods_by_term_date.setdefault(k, {})
-            pd[prod] = pd.get(prod, 0) + 1
-
-    # Helpers para extrair séries de datas dos índices pré-construídos
-    def _extract_spend_2key(idx, key_prefix):
-        return {d: v for (k, d), v in idx.items() if k == key_prefix}
-
-    def _extract_spend_3key(idx, k1, k2):
-        return {d: v for (a, b, d), v in idx.items() if a == k1 and b == k2}
-
-    def _extract_mqls_2key(idx, key_prefix):
-        return {d: v for (k, d), v in idx.items() if k == key_prefix}
-
-    def _extract_prods_2key(idx, key_prefix):
-        return {d: v for (k, d), v in idx.items() if k == key_prefix}
-
-    # Por campanha — O(campaigns)
+    # Por campanha — chave de saída = campaign_name (único por camp_norm)
     by_date_per_campaign = {}
     for camp_norm, camp_data in fb_campaigns_by_name.items():
-        ds = _extract_spend_2key(_spend_by_camp_date, camp_norm)
-        dm = _extract_mqls_2key(_mqls_by_camp_date, camp_norm)
-        dp = _extract_prods_2key(_prods_by_camp_date, camp_norm)
+        ds = _spend_by_campkey_date.get(camp_norm, {})
+        dm, dp = _mqls_by_date_from_leads(_campaign_leads.get(camp_norm, []))
         by_date_per_campaign[camp_data['campaign_name']] = _build_entity_series(ds, dm, dp)
 
-    # Por conjunto — O(adsets)
-    by_date_per_adset = {}
-    for adset_norm, adset_data in fb_adsets_by_name.items():
-        ds = _extract_spend_2key(_spend_by_adset_date, adset_norm)
-        dm = _extract_mqls_2key(_mqls_by_content_date, adset_norm)
-        dp = _extract_prods_2key(_prods_by_content_date, adset_norm)
-        by_date_per_adset[adset_data['adset_name']] = _build_entity_series(ds, dm, dp)
+    # Por conjunto — chave de saída = adset_name (pode haver colisão cross-camp,
+    # mas cada entrada aqui corresponde ao par (camp, adset); em colisão mescla
+    # as séries via merge por data — o frontend filtra primeiro por campanha
+    # então a visualização permanece coerente).
+    def _merge_series(a, b):
+        by_date = {}
+        for e in a + b:
+            dk = e['date']
+            slot = by_date.setdefault(dk, {'date': dk, 'mqls': 0, 'spend': 0.0, 'produtos': {}})
+            slot['mqls']  += e.get('mqls', 0)
+            slot['spend'] += e.get('spend', 0.0)
+            for p, v in (e.get('produtos') or {}).items():
+                slot['produtos'][p] = slot['produtos'].get(p, 0) + v
+        out = []
+        for dk in sorted(by_date.keys()):
+            s = by_date[dk]
+            s['spend'] = round(s['spend'], 2)
+            s['cpl'] = round(s['spend'] / s['mqls'], 2) if s['mqls'] > 0 and s['spend'] > 0 else None
+            out.append(s)
+        return out
 
-    # Por anúncio — O(ads)
+    by_date_per_adset = {}
+    for adset_key, adset_data in fb_adsets_by_name.items():
+        ds = _spend_by_adsetkey_date.get(adset_key, {})
+        dm, dp = _mqls_by_date_from_leads(_adset_leads.get(adset_key, []))
+        series = _build_entity_series(ds, dm, dp)
+        display_name = adset_data['adset_name']
+        if display_name in by_date_per_adset:
+            by_date_per_adset[display_name] = _merge_series(by_date_per_adset[display_name], series)
+        else:
+            by_date_per_adset[display_name] = series
+
+    # Por anúncio — chave de saída = ad_name (mesmo tratamento de colisão)
     by_date_per_ad = {}
-    for _ad_key, ad_data_item in fb_ads_by_name.items():
-        ad_name_norm = ad_data_item['_name_norm']
-        adset_name_item = _norm(ad_data_item.get('adset_name', ''))
-        ds = _extract_spend_3key(_spend_by_ad_adset_date, ad_name_norm, adset_name_item)
-        dm = _extract_mqls_2key(_mqls_by_term_date, ad_name_norm)
-        dp = _extract_prods_2key(_prods_by_term_date, ad_name_norm)
-        by_date_per_ad[ad_data_item['ad_name']] = _build_entity_series(ds, dm, dp)
+    for ad_key, ad_data_item in fb_ads_by_name.items():
+        ds = _spend_by_adkey_date.get(ad_key, {})
+        dm, dp = _mqls_by_date_from_leads(_ad_leads.get(ad_key, []))
+        series = _build_entity_series(ds, dm, dp)
+        display_name = ad_data_item['ad_name']
+        if display_name in by_date_per_ad:
+            by_date_per_ad[display_name] = _merge_series(by_date_per_ad[display_name], series)
+        else:
+            by_date_per_ad[display_name] = series
 
     # ── Funil de Conversão (agregado de todos os fb_ads do período) ──────────────
     _f_imp  = sum(ad.get('impressions', 0)        for ad in fb_ads)
