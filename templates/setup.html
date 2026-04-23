@@ -2189,10 +2189,47 @@
         async function subirTodos() {
             if (filaAnuncios.length === 0) return;
 
+            // ===== Backfill: itens da conta/campanha ATUAL recebem os valores da UI atual
+            // para campos vazios. Isso permite adicionar mídias antes de preencher URL/estratégia/página
+            // (workflow clássico). Itens de OUTRAS contas mantém seu context original intacto.
+            const uiNow = snapshotContext();
+            for (const it of filaAnuncios) {
+                if (!it.context) { it.context = { ...uiNow }; continue; }
+                const ctx = it.context;
+                const mesmaConta = ctx.accountId === ACCOUNT_ID && ctx.campaignId === CAMPAIGN_ID;
+                if (!mesmaConta) continue;
+                // Backfill campo-a-campo (só se vazio no context do item)
+                const keys = ['estrategia','destino','adsetExistente','adsetModelo','adsetModeloNovo',
+                              'adsetModeloGarimpo','adsetNewName','adsetNewNameNovo','pageId','igId',
+                              'pixelId','leadFormId','url','utms','cta','excludedCountries','campaignName'];
+                for (const k of keys) {
+                    if ((ctx[k] === '' || ctx[k] == null) && uiNow[k]) ctx[k] = uiNow[k];
+                }
+                // Arrays: só backfill se vazio
+                if ((!Array.isArray(ctx.textos) || ctx.textos.length === 0) && Array.isArray(uiNow.textos) && uiNow.textos.length > 0) {
+                    ctx.textos = uiNow.textos.slice();
+                }
+                if ((!Array.isArray(ctx.titulos) || ctx.titulos.length === 0) && Array.isArray(uiNow.titulos) && uiNow.titulos.length > 0) {
+                    ctx.titulos = uiNow.titulos.slice();
+                }
+            }
+            saveQueueToStorage();
+
             // ===== Validação: cada item precisa ter contexto válido =====
             const itemsSemCtx = filaAnuncios.filter(i => !i.context || !i.context.url || !i.context.estrategia || !i.context.pageId);
             if (itemsSemCtx.length > 0) {
-                mostrarToast(`❌ ${itemsSemCtx.length} item(ns) na fila sem contexto válido (URL, estratégia ou página). Remova e readicione.`);
+                // Mensagem detalhada: aponta o que falta por item
+                const detalhes = itemsSemCtx.slice(0, 3).map((i, idx) => {
+                    const c = i.context || {};
+                    const falta = [];
+                    if (!c.url) falta.push('URL');
+                    if (!c.estrategia) falta.push('estratégia');
+                    if (!c.pageId) falta.push('página');
+                    const origem = (c.accountId === ACCOUNT_ID && c.campaignId === CAMPAIGN_ID) ? 'conta atual' : `conta ${c.accountId || '?'}`;
+                    return `• ${i.adName || 'item'} (${origem}): falta ${falta.join(', ')}`;
+                }).join('\n');
+                const extra = itemsSemCtx.length > 3 ? `\n(+${itemsSemCtx.length - 3} outros)` : '';
+                mostrarToast(`❌ ${itemsSemCtx.length} item(ns) sem contexto:\n${detalhes}${extra}\n\nPara itens da conta atual: preencha URL, estratégia e página aqui na tela.\nPara outras contas: volte à tela daquela conta para reconfigurar.`);
                 return;
             }
 
