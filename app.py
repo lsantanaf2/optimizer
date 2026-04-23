@@ -68,7 +68,7 @@ from modules.account_settings import (
 import atexit
 atexit.register(close_db)
 
-VERSION = "v2.6.20"
+VERSION = "v2.7.1"
 
 @app.before_request
 def ensure_db():
@@ -1289,7 +1289,10 @@ def upload_single(campaign_id):
         return jsonify({'success': False, 'error': 'Não autenticado'}), 401
 
     # Extrair todos os dados do request ANTES da thread (contexto de request não é thread-safe)
-    account_id = session.get('account_id', '')
+    # v2.7.1: Fila multi-conta — cada item envia seu próprio account_id (fallback para session)
+    account_id = (request.form.get('account_id') or session.get('account_id', '') or '').strip()
+    if account_id and not account_id.startswith('act_'):
+        account_id = f'act_{account_id}'
     user_id = session.get('user_id')
     page_id = request.form.get('page_id')
     instagram_actor_id = request.form.get('instagram_actor_id') or None
@@ -1310,6 +1313,7 @@ def upload_single(campaign_id):
     lead_gen_form_id = request.form.get('lead_gen_form_id') or None
     url_feed_remote = request.form.get('url_feed_remote') or None
     url_stories_remote = request.form.get('url_stories_remote') or None
+    tipo_criativo = (request.form.get('tipo_criativo') or 'single').lower()
     # Países a excluir da segmentação (geo-compliance bypass)
     excluded_countries_raw = request.form.get('excluded_countries', '')
     excluded_countries = [c.strip().upper() for c in excluded_countries_raw.split(',') if c.strip()] or None
@@ -1319,24 +1323,51 @@ def upload_single(campaign_id):
     feed_path = None
     stories_path = None
 
-    if 'arquivo_feed' in request.files:
-        f = request.files['arquivo_feed']
-        if f.filename:
-            safe_name = os.path.basename(f.filename)
-            feed_path = os.path.join(temp_dir, safe_name)
-            f.save(feed_path)
-            print(f"📁 [UPLOAD LOCAL] Feed salvo: {feed_path} ({os.path.getsize(feed_path) / 1024:.0f} KB)")
+    # ====== CARROSSEL: parse cards ordenados ======
+    carousel_cards = []  # lista de dicts: {local_path, url_remote, link}
+    if tipo_criativo == 'carousel':
+        try:
+            card_count = int(request.form.get('card_count', '0') or 0)
+        except ValueError:
+            card_count = 0
+        if card_count < 2:
+            return jsonify({'success': False, 'error': 'Carrossel exige no mínimo 2 cards.'}), 400
+        if card_count > 10:
+            return jsonify({'success': False, 'error': 'Carrossel aceita no máximo 10 cards.'}), 400
+        for i in range(card_count):
+            c_url = request.form.get(f'card_{i}_url_remote') or None
+            c_link = request.form.get(f'card_{i}_link') or None
+            c_path = None
+            fkey = f'card_{i}_arquivo'
+            if fkey in request.files:
+                f = request.files[fkey]
+                if f.filename:
+                    safe_name = f"card{i}_" + os.path.basename(f.filename)
+                    c_path = os.path.join(temp_dir, safe_name)
+                    f.save(c_path)
+                    print(f"📁 [UPLOAD CARROSSEL] Card {i+1}: {c_path} ({os.path.getsize(c_path) / 1024:.0f} KB)")
+            if not c_path and not c_url:
+                return jsonify({'success': False, 'error': f'Card {i+1} sem mídia (arquivo ou link).'}), 400
+            carousel_cards.append({'local_path': c_path, 'url_remote': c_url, 'link': c_link})
+    else:
+        if 'arquivo_feed' in request.files:
+            f = request.files['arquivo_feed']
+            if f.filename:
+                safe_name = os.path.basename(f.filename)
+                feed_path = os.path.join(temp_dir, safe_name)
+                f.save(feed_path)
+                print(f"📁 [UPLOAD LOCAL] Feed salvo: {feed_path} ({os.path.getsize(feed_path) / 1024:.0f} KB)")
 
-    if 'arquivo_stories' in request.files:
-        f = request.files['arquivo_stories']
-        if f.filename:
-            safe_name = os.path.basename(f.filename)
-            stories_path = os.path.join(temp_dir, safe_name)
-            f.save(stories_path)
-            print(f"📁 [UPLOAD LOCAL] Stories salvo: {stories_path} ({os.path.getsize(stories_path) / 1024:.0f} KB)")
+        if 'arquivo_stories' in request.files:
+            f = request.files['arquivo_stories']
+            if f.filename:
+                safe_name = os.path.basename(f.filename)
+                stories_path = os.path.join(temp_dir, safe_name)
+                f.save(stories_path)
+                print(f"📁 [UPLOAD LOCAL] Stories salvo: {stories_path} ({os.path.getsize(stories_path) / 1024:.0f} KB)")
 
-    if not feed_path and not stories_path and not url_feed_remote and not url_stories_remote:
-        return jsonify({'success': False, 'error': 'Nenhuma mídia (arquivo ou link) enviada'}), 400
+        if not feed_path and not stories_path and not url_feed_remote and not url_stories_remote:
+            return jsonify({'success': False, 'error': 'Nenhuma mídia (arquivo ou link) enviada'}), 400
 
     msg_queue = queue.Queue()
 
@@ -1349,35 +1380,49 @@ def upload_single(campaign_id):
             uploader = MetaUploader(account_id, access_token, APP_ID, APP_SECRET)
             uploader.set_callback(lambda msg: _evt('log', message=msg))
 
-            _evt('progress', percent=10, stage='upload_feed',
-                 message='📤 Enviando mídia feed para Meta...')
-
-            feed_media = None
-            stories_media = None
-
-            if url_feed_remote:
-                feed_media = uploader.upload_media(url=url_feed_remote)
-                uploader.smart_delay()
-            elif feed_path:
-                feed_media = uploader.upload_media(file_path=feed_path)
-                uploader.smart_delay()
-
-            has_stories = url_stories_remote or stories_path
-            if has_stories:
-                _evt('progress', percent=30, stage='upload_stories',
-                     message='📤 Enviando mídia stories para Meta...')
-                if url_stories_remote:
-                    stories_media = uploader.upload_media(url=url_stories_remote)
-                    uploader.smart_delay()
-                elif stories_path:
-                    stories_media = uploader.upload_media(file_path=stories_path)
-                    uploader.smart_delay()
-
             target_adset_id = adset_existente or adset_modelo
             if not target_adset_id:
                 raise ValueError('Nenhum Ad Set selecionado')
             if not page_id:
                 raise ValueError('Página do Facebook Obrigatória')
+
+            carousel_media = []  # ordered list of media dicts (para carrossel)
+            feed_media = None
+            stories_media = None
+
+            if tipo_criativo == 'carousel':
+                total_cards = len(carousel_cards)
+                for idx, c in enumerate(carousel_cards):
+                    pct = 10 + int((idx / max(1, total_cards)) * 35)
+                    _evt('progress', percent=pct, stage=f'upload_card_{idx}',
+                         message=f'📤 Enviando card {idx+1}/{total_cards} para Meta...')
+                    if c.get('url_remote'):
+                        m = uploader.upload_media(url=c['url_remote'])
+                    else:
+                        m = uploader.upload_media(file_path=c['local_path'])
+                    carousel_media.append({'media': m, 'link': c.get('link')})
+                    uploader.smart_delay()
+            else:
+                _evt('progress', percent=10, stage='upload_feed',
+                     message='📤 Enviando mídia feed para Meta...')
+
+                if url_feed_remote:
+                    feed_media = uploader.upload_media(url=url_feed_remote)
+                    uploader.smart_delay()
+                elif feed_path:
+                    feed_media = uploader.upload_media(file_path=feed_path)
+                    uploader.smart_delay()
+
+                has_stories = url_stories_remote or stories_path
+                if has_stories:
+                    _evt('progress', percent=30, stage='upload_stories',
+                         message='📤 Enviando mídia stories para Meta...')
+                    if url_stories_remote:
+                        stories_media = uploader.upload_media(url=url_stories_remote)
+                        uploader.smart_delay()
+                    elif stories_path:
+                        stories_media = uploader.upload_media(file_path=stories_path)
+                        uploader.smart_delay()
 
             actual_adset_id = target_adset_id
             if destino == 'duplicar' and estrategia == 'agrupado':
@@ -1395,34 +1440,55 @@ def upload_single(campaign_id):
                 uploader.smart_delay()
 
             # Aguardar processamento de vídeos
-            if feed_media and feed_media.get('type') == 'video' and feed_media.get('id'):
-                _evt('progress', percent=45, stage='meta_processing',
-                     message='⏳ Meta processando vídeo do feed...', polling=True)
-                uploader.wait_for_video_ready(feed_media['id'])
-                _evt('progress', percent=60, stage='meta_processing_done',
-                     message='✅ Vídeo feed pronto.')
+            if tipo_criativo == 'carousel':
+                for idx, entry in enumerate(carousel_media):
+                    m = entry['media']
+                    if m and m.get('type') == 'video' and m.get('id'):
+                        _evt('progress', percent=50 + idx, stage=f'meta_processing_card_{idx}',
+                             message=f'⏳ Meta processando vídeo do card {idx+1}...', polling=True)
+                        uploader.wait_for_video_ready(m['id'])
+            else:
+                if feed_media and feed_media.get('type') == 'video' and feed_media.get('id'):
+                    _evt('progress', percent=45, stage='meta_processing',
+                         message='⏳ Meta processando vídeo do feed...', polling=True)
+                    uploader.wait_for_video_ready(feed_media['id'])
+                    _evt('progress', percent=60, stage='meta_processing_done',
+                         message='✅ Vídeo feed pronto.')
 
-            if stories_media and stories_media.get('type') == 'video' and stories_media.get('id'):
-                _evt('progress', percent=65, stage='meta_processing_stories',
-                     message='⏳ Meta processando vídeo stories...', polling=True)
-                uploader.wait_for_video_ready(stories_media['id'])
-                _evt('progress', percent=75, stage='meta_processing_stories_done',
-                     message='✅ Vídeo stories pronto.')
+                if stories_media and stories_media.get('type') == 'video' and stories_media.get('id'):
+                    _evt('progress', percent=65, stage='meta_processing_stories',
+                         message='⏳ Meta processando vídeo stories...', polling=True)
+                    uploader.wait_for_video_ready(stories_media['id'])
+                    _evt('progress', percent=75, stage='meta_processing_stories_done',
+                         message='✅ Vídeo stories pronto.')
 
             _evt('progress', percent=82, stage='create_creative',
                  message='🎨 Criando criativo...')
-            creative_id = uploader.create_creative_with_placements(
-                page_id=page_id,
-                feed_media=feed_media,
-                stories_media=stories_media,
-                link_url=url_destino,
-                primary_texts=textos,
-                headlines=titulos,
-                cta_type=cta,
-                instagram_user_id=instagram_actor_id,
-                url_tags=utm_pattern,
-                lead_gen_form_id=lead_gen_form_id,
-            )
+            if tipo_criativo == 'carousel':
+                creative_id = uploader.create_carousel_creative(
+                    page_id=page_id,
+                    cards=carousel_media,
+                    link_url_fallback=url_destino,
+                    primary_texts=textos,
+                    headlines=titulos,
+                    cta_type=cta,
+                    instagram_user_id=instagram_actor_id,
+                    url_tags=utm_pattern,
+                    lead_gen_form_id=lead_gen_form_id,
+                )
+            else:
+                creative_id = uploader.create_creative_with_placements(
+                    page_id=page_id,
+                    feed_media=feed_media,
+                    stories_media=stories_media,
+                    link_url=url_destino,
+                    primary_texts=textos,
+                    headlines=titulos,
+                    cta_type=cta,
+                    instagram_user_id=instagram_actor_id,
+                    url_tags=utm_pattern,
+                    lead_gen_form_id=lead_gen_form_id,
+                )
             uploader.smart_delay()
 
             _evt('progress', percent=92, stage='create_ad',
@@ -1436,6 +1502,11 @@ def upload_single(campaign_id):
                     os.remove(feed_path)
                 if stories_path and os.path.exists(stories_path):
                     os.remove(stories_path)
+                for c in carousel_cards:
+                    cp = c.get('local_path')
+                    if cp and os.path.exists(cp):
+                        try: os.remove(cp)
+                        except OSError: pass
                 os.rmdir(temp_dir)
             except OSError:
                 pass
@@ -1520,7 +1591,10 @@ def duplicate_adset_route(campaign_id):
         return jsonify({'success': False, 'error': 'Não autenticado'}), 401
 
     try:
-        account_id = session.get('account_id', '')
+        # v2.7.1: Fila multi-conta — aceita account_id do form (fallback para session)
+        account_id = (request.form.get('account_id') or session.get('account_id', '') or '').strip()
+        if account_id and not account_id.startswith('act_'):
+            account_id = f'act_{account_id}'
         adset_modelo = request.form.get('adset_modelo', '')
         adset_name = request.form.get('adset_name', '')
         adset_status = request.form.get('adset_status', 'PAUSED').upper()

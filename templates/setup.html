@@ -301,6 +301,28 @@
             <div class="card-desc">Selecione as mídias (Feed + Stories). Configurações globais são herdadas no momento
                 do envio.</div>
 
+            <!-- TOGGLE: Ad Único vs Carrossel -->
+            <div class="form-group" style="background:#1a1a1a; border:1px solid #333; border-radius:10px; padding:12px; margin-bottom:14px;">
+                <label style="font-weight:600; color:#e0e0e0;">🎯 Tipo de Anúncio</label>
+                <div style="display:flex; gap:10px; margin-top:8px;">
+                    <label style="flex:1; cursor:pointer; background:#232323; border:2px solid #4f9cf9; border-radius:8px; padding:10px; text-align:center;" id="lbl-tipo-single">
+                        <input type="radio" name="tipo_criativo_ui" value="single" checked onchange="alterarTipoCriativo()" style="margin-right:6px;">
+                        <strong>📄 Ad Único</strong>
+                        <div class="card-desc" style="margin:4px 0 0; font-size:0.75em;">Feed + Stories (1 mídia cada)</div>
+                    </label>
+                    <label style="flex:1; cursor:pointer; background:#232323; border:2px solid #333; border-radius:8px; padding:10px; text-align:center;" id="lbl-tipo-carousel">
+                        <input type="radio" name="tipo_criativo_ui" value="carousel" onchange="alterarTipoCriativo()" style="margin-right:6px;">
+                        <strong>🎠 Carrossel</strong>
+                        <div class="card-desc" style="margin:4px 0 0; font-size:0.75em;">2 a 10 cards (ordem manual)</div>
+                    </label>
+                </div>
+                <div class="card-desc" style="margin-top:8px; font-size:0.8em; color:#888;">
+                    <b>Carrossel:</b> otimizações desativadas (sem "melhor card na frente"). A ordem que você definir será respeitada exatamente.
+                </div>
+            </div>
+
+            <!-- ============ MODO SINGLE ============ -->
+            <div id="modo-single-wrap">
             <!-- Importação via Pasta do Drive -->
             <div class="drive-folder-import">
                 <div class="form-group">
@@ -388,6 +410,62 @@
             <button type="button" class="btn-add-to-queue" onclick="adicionarNaFila()">
                 📥 Adicionar à Fila
             </button>
+            </div><!-- /#modo-single-wrap -->
+
+            <!-- ============ MODO CARROSSEL ============ -->
+            <div id="modo-carousel-wrap" style="display:none;">
+                <div style="background:#1a1a1a; border:1px dashed #444; border-radius:10px; padding:14px; margin-bottom:12px;">
+                    <div style="font-weight:600; color:#e0e0e0; margin-bottom:8px;">📂 Escolha as mídias do carrossel</div>
+
+                    <div class="form-group">
+                        <label>📁 Selecionar arquivos locais (múltiplos)</label>
+                        <input type="file" id="carousel-files-input" accept="image/*,video/*" multiple onchange="carouselAddFiles(this)">
+                        <div class="card-desc" style="font-size:0.78em;">Selecione todos os arquivos de uma vez. Depois, clique neles na ordem que deseja exibir.</div>
+                    </div>
+
+                    <div class="form-group" style="margin-top:8px;">
+                        <label>🔗 OU links do Google Drive (um por linha)</label>
+                        <textarea id="carousel-drive-urls" rows="3" placeholder="https://drive.google.com/file/d/.../view&#10;https://drive.google.com/file/d/.../view" style="width:100%; padding:8px; border-radius:6px; background:#0f0f0f; color:#e0e0e0; border:1px solid #333;"></textarea>
+                        <button type="button" class="btn-history" style="margin-top:6px;" onclick="carouselAddDriveUrls()">➕ Adicionar Links</button>
+                    </div>
+
+                    <div class="form-group" style="margin-top:8px;">
+                        <label>🔗 OU importar Pasta do Google Drive</label>
+                        <div style="display:flex; gap:8px;">
+                            <input type="url" id="carousel-drive-folder" placeholder="https://drive.google.com/drive/folders/..." style="flex:1;">
+                            <button type="button" class="btn-history" onclick="carouselImportarPastaDrive()">📥 Capturar Pasta</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Instruções -->
+                <div style="background:#1a2332; border-left:3px solid #4f9cf9; padding:10px 12px; border-radius:6px; margin-bottom:12px; font-size:0.85em; color:#cfd8e0;">
+                    👆 <b>Clique nas mídias abaixo na ordem que quer no carrossel.</b> A borda azul + número (#1, #2, ...) mostra a posição. Clique de novo para desmarcar.
+                </div>
+
+                <!-- Grid de mídias disponíveis -->
+                <div id="carousel-media-grid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); gap:10px; margin-bottom:12px;"></div>
+
+                <div id="carousel-empty" style="padding:20px; text-align:center; color:#888; border:1px dashed #333; border-radius:8px; margin-bottom:12px;">
+                    Nenhuma mídia adicionada ainda. Use os campos acima.
+                </div>
+
+                <!-- Preview da ordem selecionada -->
+                <div id="carousel-order-preview" style="display:none; background:#1a1a1a; border:1px solid #333; border-radius:10px; padding:12px; margin-bottom:12px;">
+                    <div style="font-weight:600; color:#e0e0e0; margin-bottom:8px;">🎠 Ordem do carrossel (<span id="carousel-order-count">0</span> cards):</div>
+                    <div id="carousel-order-list" style="display:flex; gap:8px; overflow-x:auto; padding-bottom:4px;"></div>
+                </div>
+
+                <!-- Nome do carrossel -->
+                <div class="form-group">
+                    <label>📛 Nome do anúncio (carrossel)</label>
+                    <input type="text" id="carousel-ad-name" placeholder="Ex: Carrossel_Promo_Out" style="width:100%;">
+                </div>
+
+                <button type="button" class="btn-add-to-queue" onclick="adicionarCarrosselNaFila()">
+                    📥 Adicionar Carrossel à Fila
+                </button>
+            </div>
         </div>
 
         </div><!-- /.setup-main -->
@@ -536,8 +614,93 @@
     <script>
         const CAMPAIGN_ID = "{{ campaign_id }}";
         const ACCOUNT_ID = "{{ account_id }}";
+        const CAMPAIGN_NAME = {{ campaign_name|tojson|safe if campaign_name is defined else '""' }};
         const filaAnuncios = [];
         let uploadCancelado = false;
+
+        // ======================== QUEUE PERSISTENCE (multi-conta) ========================
+        const QUEUE_STORAGE_KEY = 'optimizer_queue_v1';
+
+        /**
+         * Captura um snapshot completo do contexto atual da UI.
+         * Cada item da fila carrega seu próprio contexto — o upload usa o context do item,
+         * nunca o estado atual da UI. Isso permite configurar outra conta/campanha e adicionar
+         * novos itens sem corromper os anteriores.
+         */
+        function snapshotContext() {
+            const cfg = lerConfigGlobal();
+            const estrategiaEl = document.querySelector('input[name="estrategia"]:checked');
+            const destinoEl = document.querySelector('input[name="destino_conjunto"]:checked');
+            const excluded = document.getElementById('excluded_countries')?.value || '';
+            return {
+                accountId:           ACCOUNT_ID,
+                campaignId:          CAMPAIGN_ID,
+                campaignName:        CAMPAIGN_NAME || CAMPAIGN_ID,
+                estrategia:          estrategiaEl?.value || '',
+                destino:             destinoEl?.value || '',
+                adsetExistente:      document.getElementById('adset_existente')?.value || '',
+                adsetModelo:         document.getElementById('adset_modelo')?.value || '',
+                adsetModeloNovo:     document.getElementById('adset_modelo_novo')?.value || '',
+                adsetModeloGarimpo:  document.getElementById('adset_modelo_garimpo')?.value || '',
+                adsetNewName:        document.getElementById('adset_new_name')?.value || '',
+                adsetNewNameNovo:    document.getElementById('adset_new_name_novo')?.value || '',
+                pageId:              document.getElementById('select-page')?.value || '',
+                igId:                document.getElementById('select-instagram')?.value || '',
+                pixelId:              document.getElementById('select-pixel')?.value || '',
+                leadFormId:          document.getElementById('select-leadform')?.value || '',
+                url:                 cfg.url,
+                utms:                cfg.utms,
+                cta:                 cfg.cta,
+                textos:              cfg.textos,
+                titulos:             cfg.titulos,
+                excludedCountries:   excluded,
+            };
+        }
+
+        /** Item é serializável (sem File blobs)? Só esses vão para localStorage. */
+        function itemIsSerializable(item) {
+            if (item.feedFile || item.storiesFile) return false;
+            if (Array.isArray(item.cards) && item.cards.some(c => c.file)) return false;
+            return true;
+        }
+
+        /** Persiste só os itens que NÃO têm File blobs (Drive/URL remoto sobrevive navegação). */
+        function saveQueueToStorage() {
+            try {
+                const serial = filaAnuncios
+                    .filter(itemIsSerializable)
+                    .map(item => {
+                        // Remove thumbUrls de blobs (eles morrem na navegação de qualquer forma)
+                        if (Array.isArray(item.cards)) {
+                            return {
+                                ...item,
+                                cards: item.cards.map(c => ({ ...c, file: null, thumbUrl: null }))
+                            };
+                        }
+                        return { ...item, feedFile: null, storiesFile: null };
+                    });
+                localStorage.setItem(QUEUE_STORAGE_KEY, JSON.stringify(serial));
+            } catch (e) {
+                console.warn('⚠️ Falha ao persistir fila:', e);
+            }
+        }
+
+        function loadQueueFromStorage() {
+            try {
+                const raw = localStorage.getItem(QUEUE_STORAGE_KEY);
+                if (!raw) return;
+                const arr = JSON.parse(raw);
+                if (!Array.isArray(arr)) return;
+                arr.forEach(item => filaAnuncios.push(item));
+            } catch (e) {
+                console.warn('⚠️ Falha ao restaurar fila:', e);
+            }
+        }
+
+        /** Verdade: "esta fila tem algum item com arquivo local (não-serializável)?" */
+        function filaTemArquivosLocais() {
+            return filaAnuncios.some(item => !itemIsSerializable(item));
+        }
 
         function pararUpload() {
             uploadCancelado = true;
@@ -995,6 +1158,27 @@
         // Call on load
         window.addEventListener('DOMContentLoaded', carregarIdentidade);
 
+        // Restaura fila multi-conta de localStorage (itens com File são descartados)
+        window.addEventListener('DOMContentLoaded', function() {
+            try {
+                loadQueueFromStorage();
+                if (typeof renderizarFila === 'function') renderizarFila();
+            } catch (e) {
+                console.warn('Falha ao restaurar fila:', e);
+            }
+        });
+
+        // Avisa antes de sair se houver arquivos locais na fila (File blobs não persistem)
+        window.addEventListener('beforeunload', function(e) {
+            try {
+                if (typeof filaTemArquivosLocais === 'function' && filaTemArquivosLocais()) {
+                    e.preventDefault();
+                    e.returnValue = 'Há itens com arquivos locais na fila que serão perdidos ao sair desta página.';
+                    return e.returnValue;
+                }
+            } catch (_) {}
+        });
+
         // ======================== STRATEGY ========================
         function selecionarEstrategia(tipo) {
             document.querySelectorAll('.radio-option').forEach(el => el.classList.remove('selected'));
@@ -1243,20 +1427,24 @@
                     return;
                 }
 
+                const ctx = snapshotContext();  // mesmo contexto para todos os pares desta pasta
                 pares.forEach(p => {
                     const item = {
                         id: Date.now() + Math.random(),
                         adName: p.nome,
+                        tipo: 'single',
                         feedFile: null,
                         storiesFile: null,
                         feedFileName: p.feed_name || 'Link Remoto',
                         storiesFileName: p.reels_name || 'Link Remoto',
                         urlFeed: p.feed_url,
                         urlStories: p.reels_url,
+                        context: ctx,
                     };
                     filaAnuncios.push(item);
                 });
 
+                saveQueueToStorage();
                 renderizarFila();
                 logConsole(`✅ ${pares.length} pares capturados com sucesso!`, 'log-success');
                 mostrarToast(`🎉 ${pares.length} criativos adicionados à fila!`);
@@ -1266,6 +1454,268 @@
                 console.error('❌ Erro drive:', e);
                 logConsole(`❌ Erro de conexão ao capturar pasta.`, 'log-error');
             }
+        }
+
+        // ======================== CARROSSEL ========================
+        // Pool de mídias disponíveis: {uid, file, url, name, type, thumbUrl}
+        const carouselPool = [];
+        // Ordem selecionada: array de uids (em ordem de clique)
+        const carouselOrder = [];
+
+        function alterarTipoCriativo() {
+            const tipo = document.querySelector('input[name="tipo_criativo_ui"]:checked').value;
+            document.getElementById('modo-single-wrap').style.display = tipo === 'single' ? 'block' : 'none';
+            document.getElementById('modo-carousel-wrap').style.display = tipo === 'carousel' ? 'block' : 'none';
+            // Atualiza borda dos labels
+            document.getElementById('lbl-tipo-single').style.borderColor = tipo === 'single' ? '#4f9cf9' : '#333';
+            document.getElementById('lbl-tipo-carousel').style.borderColor = tipo === 'carousel' ? '#4f9cf9' : '#333';
+        }
+
+        function carouselAddFiles(input) {
+            const files = Array.from(input.files);
+            files.forEach(f => {
+                const uid = 'c_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+                const type = f.type.startsWith('video') ? 'video' : 'image';
+                const thumbUrl = URL.createObjectURL(f);
+                carouselPool.push({ uid, file: f, url: null, name: f.name, type, thumbUrl });
+            });
+            input.value = '';
+            renderCarouselGrid();
+        }
+
+        function carouselAddDriveUrls() {
+            const raw = document.getElementById('carousel-drive-urls').value.trim();
+            if (!raw) { mostrarToast('❌ Cole ao menos um link'); return; }
+            const urls = raw.split('\n').map(s => s.trim()).filter(Boolean);
+            urls.forEach((u, i) => {
+                const uid = 'c_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+                // Tenta extrair ID para um nome curto
+                let nome = `Drive_${i + 1}`;
+                if (u.includes('/d/')) {
+                    const id = u.split('/d/')[1].split('/')[0];
+                    nome = `Drive_${id.substring(0, 8)}`;
+                } else if (u.includes('id=')) {
+                    const id = u.split('id=')[1].split('&')[0];
+                    nome = `Drive_${id.substring(0, 8)}`;
+                }
+                // Heurística de tipo pela extensão
+                const ext = (u.split('?')[0].split('.').pop() || '').toLowerCase();
+                const videoExts = ['mp4', 'mov', 'avi', 'mkv', 'webm', 'm4v'];
+                const type = videoExts.includes(ext) ? 'video' : 'image';
+                carouselPool.push({ uid, file: null, url: u, name: nome, type, thumbUrl: null });
+            });
+            document.getElementById('carousel-drive-urls').value = '';
+            renderCarouselGrid();
+        }
+
+        async function carouselImportarPastaDrive() {
+            const url = document.getElementById('carousel-drive-folder').value.trim();
+            if (!url || !url.includes('drive.google.com')) {
+                mostrarToast('❌ Link de pasta inválido');
+                return;
+            }
+            mostrarToast('⏳ Escaneando pasta...');
+            try {
+                const resp = await fetch('/api/drive/list_folder', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url })
+                });
+                const data = await resp.json();
+                if (data.error) { mostrarToast('⚠️ ' + data.error); return; }
+                // Pega tanto pares quanto arquivos soltos (_FEED e _REELS viram cards separados se tiver)
+                const pares = data.pares || [];
+                let count = 0;
+                pares.forEach(p => {
+                    if (p.feed_url) {
+                        const uid = 'c_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+                        carouselPool.push({
+                            uid, file: null, url: p.feed_url,
+                            name: p.feed_name || p.nome, type: 'image', thumbUrl: null
+                        });
+                        count++;
+                    }
+                });
+                renderCarouselGrid();
+                mostrarToast(`✅ ${count} mídia(s) adicionadas à pool do carrossel`);
+                document.getElementById('carousel-drive-folder').value = '';
+            } catch (e) {
+                mostrarToast('❌ Erro ao capturar pasta');
+            }
+        }
+
+        function carouselTogglePick(uid) {
+            const idx = carouselOrder.indexOf(uid);
+            if (idx >= 0) {
+                // Já selecionado → remove (e renumera os seguintes)
+                carouselOrder.splice(idx, 1);
+            } else {
+                if (carouselOrder.length >= 10) {
+                    mostrarToast('⚠️ Carrossel permite no máximo 10 cards');
+                    return;
+                }
+                carouselOrder.push(uid);
+            }
+            renderCarouselGrid();
+            renderCarouselOrderPreview();
+        }
+
+        function carouselRemoverDoPool(uid) {
+            const i = carouselPool.findIndex(p => p.uid === uid);
+            if (i >= 0) {
+                const item = carouselPool[i];
+                if (item.thumbUrl) { try { URL.revokeObjectURL(item.thumbUrl); } catch(e){} }
+                carouselPool.splice(i, 1);
+            }
+            const oi = carouselOrder.indexOf(uid);
+            if (oi >= 0) carouselOrder.splice(oi, 1);
+            renderCarouselGrid();
+            renderCarouselOrderPreview();
+        }
+
+        function renderCarouselGrid() {
+            const grid = document.getElementById('carousel-media-grid');
+            const empty = document.getElementById('carousel-empty');
+            grid.innerHTML = '';
+            if (carouselPool.length === 0) {
+                empty.style.display = 'block';
+                return;
+            }
+            empty.style.display = 'none';
+
+            carouselPool.forEach(item => {
+                const orderIdx = carouselOrder.indexOf(item.uid);
+                const isPicked = orderIdx >= 0;
+                const card = document.createElement('div');
+                card.style.cssText = `
+                    position:relative; background:#0f0f0f; border:3px solid ${isPicked ? '#4f9cf9' : '#2a2a2a'};
+                    border-radius:10px; overflow:hidden; cursor:pointer; transition:transform .1s, border-color .15s;
+                    ${isPicked ? 'box-shadow:0 0 14px rgba(79,156,249,0.45);' : ''}
+                `;
+                card.onclick = (e) => {
+                    if (e.target.classList.contains('btn-remove-pool')) return;
+                    carouselTogglePick(item.uid);
+                };
+                card.onmouseenter = () => card.style.transform = 'scale(1.03)';
+                card.onmouseleave = () => card.style.transform = 'scale(1)';
+
+                // Thumb
+                let thumbHTML = '';
+                if (item.thumbUrl && item.type === 'image') {
+                    thumbHTML = `<img src="${item.thumbUrl}" style="width:100%; height:120px; object-fit:cover; display:block;">`;
+                } else if (item.thumbUrl && item.type === 'video') {
+                    thumbHTML = `<video src="${item.thumbUrl}" muted style="width:100%; height:120px; object-fit:cover; display:block;"></video>`;
+                } else {
+                    const icon = item.type === 'video' ? '🎬' : '🖼️';
+                    thumbHTML = `<div style="width:100%; height:120px; display:flex; align-items:center; justify-content:center; background:#1a1a1a; font-size:2.5em;">${icon}</div>`;
+                }
+
+                const typeBadge = item.type === 'video' ? '🎬 VÍDEO' : '🖼️ IMG';
+                const sourceBadge = item.url ? '🔗 Drive' : '💻 Local';
+
+                card.innerHTML = `
+                    ${thumbHTML}
+                    ${isPicked ? `<div style="position:absolute; top:6px; left:6px; background:#4f9cf9; color:#fff; width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:14px; box-shadow:0 2px 8px rgba(0,0,0,0.5);">#${orderIdx + 1}</div>` : ''}
+                    <button type="button" class="btn-remove-pool" onclick="event.stopPropagation(); carouselRemoverDoPool('${item.uid}')" style="position:absolute; top:6px; right:6px; background:rgba(239,68,68,0.9); color:#fff; border:none; width:24px; height:24px; border-radius:50%; cursor:pointer; font-size:12px; display:flex; align-items:center; justify-content:center;" title="Remover da pool">✕</button>
+                    <div style="padding:8px;">
+                        <div style="font-size:0.72em; color:#888; margin-bottom:3px;">${typeBadge} · ${sourceBadge}</div>
+                        <div style="font-size:0.78em; color:#e0e0e0; word-break:break-all; line-height:1.2; max-height:2.4em; overflow:hidden;" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</div>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        function renderCarouselOrderPreview() {
+            const wrap = document.getElementById('carousel-order-preview');
+            const list = document.getElementById('carousel-order-list');
+            const count = document.getElementById('carousel-order-count');
+            count.textContent = carouselOrder.length;
+            if (carouselOrder.length === 0) {
+                wrap.style.display = 'none';
+                return;
+            }
+            wrap.style.display = 'block';
+            list.innerHTML = '';
+            carouselOrder.forEach((uid, idx) => {
+                const item = carouselPool.find(p => p.uid === uid);
+                if (!item) return;
+                const mini = document.createElement('div');
+                mini.style.cssText = 'flex:0 0 auto; position:relative; width:90px; text-align:center;';
+                let thumb = '';
+                if (item.thumbUrl && item.type === 'image') {
+                    thumb = `<img src="${item.thumbUrl}" style="width:90px; height:90px; object-fit:cover; border-radius:6px; border:2px solid #4f9cf9;">`;
+                } else if (item.thumbUrl && item.type === 'video') {
+                    thumb = `<video src="${item.thumbUrl}" muted style="width:90px; height:90px; object-fit:cover; border-radius:6px; border:2px solid #4f9cf9;"></video>`;
+                } else {
+                    const icon = item.type === 'video' ? '🎬' : '🖼️';
+                    thumb = `<div style="width:90px; height:90px; display:flex; align-items:center; justify-content:center; background:#1a1a1a; border:2px solid #4f9cf9; border-radius:6px; font-size:2em;">${icon}</div>`;
+                }
+                mini.innerHTML = `
+                    ${thumb}
+                    <div style="position:absolute; top:-6px; left:-6px; background:#4f9cf9; color:#fff; width:24px; height:24px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:12px;">#${idx + 1}</div>
+                    <div style="font-size:0.7em; color:#aaa; margin-top:4px; word-break:break-all; line-height:1.1; max-height:2.2em; overflow:hidden;" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</div>
+                `;
+                list.appendChild(mini);
+            });
+        }
+
+        function adicionarCarrosselNaFila() {
+            if (carouselOrder.length < 2) {
+                mostrarToast('❌ Selecione no mínimo 2 mídias (na ordem desejada)');
+                return;
+            }
+            if (carouselOrder.length > 10) {
+                mostrarToast('❌ Carrossel aceita no máximo 10 cards');
+                return;
+            }
+            const nomeInput = document.getElementById('carousel-ad-name');
+            let adName = (nomeInput.value || '').trim();
+            if (!adName) {
+                adName = `Carrossel_${carouselOrder.length}cards_${filaAnuncios.length + 1}`;
+            }
+
+            // Monta lista de cards na ordem selecionada
+            const cards = carouselOrder.map(uid => {
+                const p = carouselPool.find(x => x.uid === uid);
+                return {
+                    file: p.file,
+                    url: p.url,
+                    name: p.name,
+                    type: p.type,
+                    thumbUrl: p.thumbUrl,
+                };
+            });
+
+            const item = {
+                id: Date.now(),
+                adName,
+                tipo: 'carousel',
+                mediaType: 'carousel',
+                cards,
+                // Campos padrão pra renderizarFila não quebrar
+                feedFile: null,
+                storiesFile: null,
+                feedFileName: null,
+                storiesFileName: null,
+                urlFeed: '',
+                urlStories: '',
+                context: snapshotContext(),  // v2.7.1 snapshot de conta/campanha/adset/etc
+            };
+            filaAnuncios.unshift(item);
+            saveQueueToStorage();
+            renderizarFila();
+
+            // Limpa seleção (mas mantém pool? melhor limpar tudo pra não confundir)
+            carouselOrder.length = 0;
+            // Libera thumbs
+            carouselPool.forEach(p => { if (p.thumbUrl) { try { URL.revokeObjectURL(p.thumbUrl); } catch(e){} } });
+            carouselPool.length = 0;
+            nomeInput.value = '';
+            renderCarouselGrid();
+            renderCarouselOrderPreview();
+
+            mostrarToast(`✅ "${adName}" (${cards.length} cards) adicionado à fila`);
         }
 
         // ======================== LOCAL FOLDER IMPORT ========================
@@ -1317,6 +1767,7 @@
                     prefixMap[prefix].push(file);
                 });
 
+                const ctx1 = snapshotContext();
                 Object.entries(prefixMap).forEach(([prefix, groupFiles]) => {
                     const feedFile = groupFiles.find(f => /[_\- ]?FEED\b/i.test(f.name.replace(/\.[^/.]+$/, '')));
                     const igFile = groupFiles.find(f => /[_\- ]?(IG|REELS|STORY|STORIES)\b/i.test(f.name.replace(/\.[^/.]+$/, '')));
@@ -1324,6 +1775,7 @@
                     const item = {
                         id: Date.now() + Math.random(),
                         adName: prefix || `Anúncio ${filaAnuncios.length + 1}`,
+                        tipo: 'single',
                         mediaType: feedFile ? (feedFile.type.startsWith('video') ? 'video' : 'image') : (igFile?.type.startsWith('video') ? 'video' : 'image'),
                         feedFile: feedFile || null,
                         storiesFile: igFile || null,
@@ -1331,12 +1783,14 @@
                         storiesFileName: igFile?.name || null,
                         urlFeed: '',
                         urlStories: '',
+                        context: ctx1,
                     };
                     filaAnuncios.push(item);
                     pares++;
                 });
             } else {
                 // Processa cada subpasta
+                const ctx2 = snapshotContext();
                 folderNames.forEach(folderName => {
                     const groupFiles = folders[folderName];
 
@@ -1351,6 +1805,7 @@
                     const item = {
                         id: Date.now() + Math.random(),
                         adName: folderName,
+                        tipo: 'single',
                         mediaType: feedFile ? (feedFile.type.startsWith('video') ? 'video' : 'image') : (igFile?.type.startsWith('video') ? 'video' : 'image'),
                         feedFile: feedFile || null,
                         storiesFile: igFile || null,
@@ -1358,12 +1813,14 @@
                         storiesFileName: igFile?.name || null,
                         urlFeed: '',
                         urlStories: '',
+                        context: ctx2,
                     };
                     filaAnuncios.push(item);
                     pares++;
                 });
             }
 
+            saveQueueToStorage();
             renderizarFila();
             input.value = ''; // reset para poder re-selecionar
 
@@ -1472,6 +1929,7 @@
             const item = {
                 id: Date.now(),
                 adName,
+                tipo: 'single',
                 mediaType,
                 feedFile: feedInput.files[0] || null,
                 storiesFile: storiesInput.files[0] || null,
@@ -1479,9 +1937,11 @@
                 storiesFileName: storiesInput.files[0]?.name || null,
                 urlFeed: urlFeedRemote,
                 urlStories: urlStoriesRemote,
+                context: snapshotContext(),  // v2.7.1 snapshot de conta/campanha/adset/etc
             };
 
             filaAnuncios.unshift(item); // Novo item vai para o TOPO da fila
+            saveQueueToStorage();
             renderizarFila();
 
             feedInput.value = '';
@@ -1502,6 +1962,7 @@
             if (idx > -1) {
                 const nome = filaAnuncios[idx].adName;
                 filaAnuncios.splice(idx, 1);
+                saveQueueToStorage();
                 renderizarFila();
                 mostrarToast(`🗑️ "${nome}" removido`);
             }
@@ -1509,7 +1970,16 @@
 
         function atualizarNomeFila(id, novo) {
             const item = filaAnuncios.find(i => i.id === id);
-            if (item) item.adName = novo;
+            if (item) { item.adName = novo; saveQueueToStorage(); }
+        }
+
+        function limparFila() {
+            if (filaAnuncios.length === 0) return;
+            if (!confirm(`Limpar ${filaAnuncios.length} item(ns) da fila?`)) return;
+            filaAnuncios.length = 0;
+            saveQueueToStorage();
+            renderizarFila();
+            mostrarToast('🗑️ Fila limpa');
         }
 
         function renderizarFila() {
@@ -1519,7 +1989,7 @@
             const counter = document.getElementById('queue-counter');
 
             counter.textContent = `${filaAnuncios.length} anúncio${filaAnuncios.length !== 1 ? 's' : ''}`;
-            list.querySelectorAll('.queue-item').forEach(el => el.remove());
+            list.querySelectorAll('.queue-item, .queue-group-header, .queue-warning-local').forEach(el => el.remove());
 
             if (filaAnuncios.length === 0) {
                 empty.style.display = 'block';
@@ -1530,10 +2000,77 @@
             empty.style.display = 'none';
             actions.style.display = 'block';
 
+            // Aviso se há arquivos locais (não sobrevivem navegação)
+            if (filaTemArquivosLocais()) {
+                const warn = document.createElement('div');
+                warn.className = 'queue-warning-local';
+                warn.style.cssText = 'background:#3a2a1a; border-left:3px solid #f59e0b; padding:8px 10px; border-radius:6px; margin-bottom:10px; font-size:0.78em; color:#fcd34d;';
+                warn.innerHTML = '⚠️ Há itens com <b>arquivos locais</b> na fila. Eles <b>não sobrevivem navegação</b>. Itens com links do Drive/URL remoto persistem entre contas.';
+                list.appendChild(warn);
+            }
+
+            // Agrupa por (accountId|campaignId) para header visual quando multi-conta
+            let lastGroupKey = null;
+            const uniqueGroups = new Set(filaAnuncios.map(i => `${i.context?.accountId || '?'}|${i.context?.campaignId || '?'}`));
+            const showGroupHeaders = uniqueGroups.size > 1;
+
             filaAnuncios.forEach((item, idx) => {
+                const ctx = item.context || {};
+                const groupKey = `${ctx.accountId || '?'}|${ctx.campaignId || '?'}`;
+                if (showGroupHeaders && groupKey !== lastGroupKey) {
+                    const header = document.createElement('div');
+                    header.className = 'queue-group-header';
+                    const acctDisplay = ctx.accountId || '(sem conta)';
+                    const campDisplay = ctx.campaignName || ctx.campaignId || '(sem campanha)';
+                    const isCurrent = ctx.accountId === ACCOUNT_ID && ctx.campaignId === CAMPAIGN_ID;
+                    header.style.cssText = `background:${isCurrent ? '#1a3a2a' : '#2a1a2a'}; border-left:3px solid ${isCurrent ? '#10b981' : '#a855f7'}; padding:8px 12px; border-radius:6px; margin:12px 0 6px 0; font-size:0.82em; color:#e0e0e0; font-weight:600;`;
+                    header.innerHTML = `🏢 <code style="color:#aaa;">${escapeHtml(acctDisplay)}</code> · 📣 ${escapeHtml(campDisplay)}${isCurrent ? ' <span style="background:#10b981;color:#000;padding:1px 6px;border-radius:4px;font-size:0.85em;margin-left:4px;">ATUAL</span>' : ''}`;
+                    list.appendChild(header);
+                    lastGroupKey = groupKey;
+                }
+
+                const div = document.createElement('div');
+                div.className = 'queue-item';
                 const div = document.createElement('div');
                 div.className = 'queue-item';
 
+                // ---- CARROSSEL ----
+                if (item.tipo === 'carousel' && Array.isArray(item.cards)) {
+                    const firstCard = item.cards[0];
+                    let thumbHTML = '';
+                    if (firstCard && firstCard.thumbUrl && firstCard.type === 'image') {
+                        thumbHTML = `<div class="queue-thumb"><img src="${firstCard.thumbUrl}" alt="preview"></div>`;
+                    } else if (firstCard && firstCard.thumbUrl && firstCard.type === 'video') {
+                        thumbHTML = `<div class="queue-thumb"><video src="${firstCard.thumbUrl}" muted preload="metadata"></video></div>`;
+                    } else {
+                        thumbHTML = `<div class="queue-thumb" style="display:flex;align-items:center;justify-content:center;background:#1a1a1a;font-size:1.8em;">🎠</div>`;
+                    }
+                    const cardsList = item.cards.map((c, i) =>
+                        `<span class="queue-file-tag" title="${escapeHtml(c.name)}">#${i+1} ${c.type === 'video' ? '🎬' : '🖼️'} ${escapeHtml(c.name.length > 28 ? c.name.substring(0,25)+'...' : c.name)}</span>`
+                    ).join('');
+                    const estratBadge = ctx.estrategia ? `<span class="queue-file-tag" style="background:#1a2a3a;color:#93c5fd;">⚙️ ${escapeHtml(ctx.estrategia)}${ctx.destino ? '·'+escapeHtml(ctx.destino) : ''}</span>` : '';
+                    div.innerHTML = `
+                        <div class="queue-item-number">${idx + 1}</div>
+                        ${thumbHTML}
+                        <div class="queue-item-body">
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <span class="badge-video" style="background:#7f5af0;">🎠 CARROSSEL · ${item.cards.length} cards</span>
+                                <input class="queue-item-name" type="text" value="${escapeHtml(item.adName)}"
+                                    onchange="atualizarNomeFila(${item.id}, this.value)"
+                                    title="Edite o nome do anúncio">
+                            </div>
+                            <div class="queue-item-files" style="flex-wrap:wrap;">
+                                ${estratBadge}
+                                ${cardsList}
+                            </div>
+                        </div>
+                        <button class="btn-queue-remove" onclick="removerDaFila(${item.id})">✕</button>
+                    `;
+                    list.appendChild(div);
+                    return;
+                }
+
+                // ---- SINGLE (original) ----
                 const thumbFile = item.feedFile || item.storiesFile;
                 const thumbHTML = criarThumbnailHTML(thumbFile);
 
@@ -1541,6 +2078,7 @@
                     item.mediaType === 'drive' ? '<span class="badge-drive">📁 DRIVE</span>' :
                         '<span class="badge-image">🖼️ IMAGEM</span>';
 
+                const estratBadge = ctx.estrategia ? `<span class="queue-file-tag" style="background:#1a2a3a;color:#93c5fd;">⚙️ ${escapeHtml(ctx.estrategia)}${ctx.destino ? '·'+escapeHtml(ctx.destino) : ''}</span>` : '';
                 div.innerHTML = `
                     <div class="queue-item-number">${idx + 1}</div>
                     ${thumbHTML}
@@ -1551,7 +2089,8 @@
                                 onchange="atualizarNomeFila(${item.id}, this.value)"
                                 title="Edite o nome do anúncio">
                         </div>
-                        <div class="queue-item-files">
+                        <div class="queue-item-files" style="flex-wrap:wrap;">
+                            ${estratBadge}
                             ${item.feedFileName ? `<span class="queue-file-tag">🖼️ ${item.feedFileName}</span>` : ''}
                             ${item.urlFeed ? '<span class="badge-link">🔗 FEED LINK</span>' : ''}
                             ${item.storiesFileName ? `<span class="queue-file-tag">📱 ${item.storiesFileName}</span>` : ''}
@@ -1646,14 +2185,18 @@
         }
 
         // ======================== SUBMIT ALL ========================
+        // v2.7.1 — fila multi-conta: cada item carrega seu próprio contexto (accountId, campaignId,
+        // adset, page, texts, URL...). O upload usa o context do item, nunca a UI atual.
+        // A pré-duplicação agrupa por (accountId|campaignId|adsetModelo) — um dup por grupo.
         async function subirTodos() {
             if (filaAnuncios.length === 0) return;
 
-            const cfg = lerConfigGlobal();
-            if (!cfg.url) { mostrarToast('❌ Preencha a URL de destino antes de subir'); return; }
-
-            const estrategia = document.querySelector('input[name="estrategia"]:checked');
-            if (!estrategia) { mostrarToast('❌ Selecione uma estratégia de estruturação'); return; }
+            // ===== Validação: cada item precisa ter contexto válido =====
+            const itemsSemCtx = filaAnuncios.filter(i => !i.context || !i.context.url || !i.context.estrategia || !i.context.pageId);
+            if (itemsSemCtx.length > 0) {
+                mostrarToast(`❌ ${itemsSemCtx.length} item(ns) na fila sem contexto válido (URL, estratégia ou página). Remova e readicione.`);
+                return;
+            }
 
             const btn = document.getElementById('btn-submit-all');
             const btnStop = document.getElementById('btn-stop-upload');
@@ -1663,103 +2206,118 @@
             btnStop.textContent = '⏹ Parar Upload';
             uploadCancelado = false;
 
-            const destino = document.querySelector('input[name="destino_conjunto"]:checked')?.value;
-            const adsetExistente = document.getElementById('adset_existente')?.value;
-            const adsetModelo = document.getElementById('adset_modelo')?.value;
-            const adsetModeloNovo = document.getElementById('adset_modelo_novo')?.value;
-            const adsetModeloGarimpo = document.getElementById('adset_modelo_garimpo')?.value;
-            const adsetNewName = document.getElementById('adset_new_name')?.value || '';
-            const adsetNewNameNovo = document.getElementById('adset_new_name_novo')?.value || '';
-
             // Status fixo: todos os ads e conjuntos são criados como PAUSADOS
-            const adAtivo = 'PAUSED';
-            const adsetAtivoDuplicar = 'PAUSED';
-            const adsetAtivoNovo = 'PAUSED';
-            const adsetAtivoGarimpo = 'PAUSED';
+            const adStatus = 'PAUSED';
+            const adsetStatus = 'PAUSED';
 
             // Start log console e barra de progresso
             progressShow();
             progressReset();
             logConsole(`🚀 Lote iniciado — ${filaAnuncios.length} anúncio(s) na fila`, 'log-info');
 
-            // ===== DUPLICAÇÃO PRÉ-LOOP: para Agrupado+Duplicar OU Novo Conjunto =====
-            let duplicatedAdsetId = null;
-            const needsPreDup = (estrategia.value === 'agrupado' && destino === 'duplicar') || estrategia.value === 'novo';
-            if (needsPreDup) {
-                const modelo = estrategia.value === 'novo' ? adsetModeloNovo : adsetModelo;
-                const nome = estrategia.value === 'novo' ? adsetNewNameNovo : adsetNewName;
-                if (!modelo) { mostrarToast('❌ Selecione um conjunto modelo para duplicar'); btn.disabled = false; return; }
+            // ===== PRÉ-DUPLICAÇÃO POR GRUPO =====
+            // Chave: "accountId|campaignId|adsetModelo|estrategia|adsetNewName"
+            // Para estratégias que exigem pré-dup (agrupado+duplicar ou novo), duplica UMA vez por grupo único.
+            const preDupMap = {}; // groupKey → duplicatedAdsetId
 
-                logConsole('📋 Duplicando conjunto de anúncios (1x para todo o lote)...', 'log-info');
+            function _preDupKey(ctx) {
+                const modelo = ctx.estrategia === 'novo' ? ctx.adsetModeloNovo : ctx.adsetModelo;
+                const nome = ctx.estrategia === 'novo' ? ctx.adsetNewNameNovo : ctx.adsetNewName;
+                return `${ctx.accountId}|${ctx.campaignId}|${modelo}|${ctx.estrategia}|${nome}`;
+            }
+
+            function _precisaPreDup(ctx) {
+                return (ctx.estrategia === 'agrupado' && ctx.destino === 'duplicar') || ctx.estrategia === 'novo';
+            }
+
+            // Roda pré-duplicação uma vez para cada grupo único ANTES do loop
+            const gruposPreDup = [];
+            const seen = new Set();
+            for (const item of filaAnuncios) {
+                const ctx = item.context;
+                if (!_precisaPreDup(ctx)) continue;
+                const key = _preDupKey(ctx);
+                if (seen.has(key)) continue;
+                seen.add(key);
+                gruposPreDup.push({ key, ctx });
+            }
+
+            for (const g of gruposPreDup) {
+                if (uploadCancelado) break;
+                const ctx = g.ctx;
+                const modelo = ctx.estrategia === 'novo' ? ctx.adsetModeloNovo : ctx.adsetModelo;
+                const nome = ctx.estrategia === 'novo' ? ctx.adsetNewNameNovo : ctx.adsetNewName;
+                if (!modelo) {
+                    logConsole(`❌ Grupo ${ctx.accountId}/${ctx.campaignName || ctx.campaignId}: conjunto modelo não informado — itens deste grupo serão pulados`, 'log-error');
+                    preDupMap[g.key] = null;
+                    continue;
+                }
+
+                logConsole(`📋 Duplicando conjunto para grupo 🏢 ${ctx.accountId} · 📣 ${ctx.campaignName || ctx.campaignId}...`, 'log-info');
                 try {
                     const dupFd = new FormData();
+                    dupFd.append('account_id', ctx.accountId);
                     dupFd.append('adset_modelo', modelo);
-                    dupFd.append('adset_name', nome);
-                    const adsetStatusPreLoop = estrategia.value === 'novo' ? adsetAtivoNovo : adsetAtivoDuplicar;
-                    dupFd.append('adset_status', adsetStatusPreLoop);
-                    const dupResp = await fetch(`/campanha/${CAMPAIGN_ID}/duplicate-adset`, { method: 'POST', body: dupFd });
+                    dupFd.append('adset_name', nome || '');
+                    dupFd.append('adset_status', adsetStatus);
+                    if (ctx.excludedCountries) dupFd.append('excluded_countries', ctx.excludedCountries);
+                    const dupResp = await fetch(`/campanha/${ctx.campaignId}/duplicate-adset`, { method: 'POST', body: dupFd });
                     const dupResult = await dupResp.json();
 
                     if (dupResult.success && dupResult.adset_id) {
-                        duplicatedAdsetId = dupResult.adset_id;
-                        logConsole(`✅ Conjunto duplicado: ${duplicatedAdsetId}${nome ? ' — "' + nome + '"' : ''}`, 'log-success');
-                        if (dupResult.logs) dupResult.logs.forEach(l => logConsole(`   ${l}`, 'log-info'));
+                        preDupMap[g.key] = dupResult.adset_id;
+                        logConsole(`✅ Conjunto duplicado: ${dupResult.adset_id}${nome ? ' — "' + nome + '"' : ''}`, 'log-success');
                     } else {
-                        logConsole(`❌ Falha ao duplicar conjunto: ${dupResult.error}`, 'log-error');
-                        btn.disabled = false;
-                        btn.textContent = '🚀 Subir Todos os Anúncios';
-                        return;
+                        preDupMap[g.key] = null;
+                        logConsole(`❌ Falha ao duplicar grupo: ${dupResult.error}`, 'log-error');
                     }
                 } catch (e) {
-                    logConsole(`❌ Erro de rede ao duplicar conjunto: ${e.message}`, 'log-error');
-                    btn.disabled = false;
-                    btn.textContent = '🚀 Subir Todos os Anúncios';
-                    return;
+                    preDupMap[g.key] = null;
+                    logConsole(`❌ Erro de rede ao duplicar grupo: ${e.message}`, 'log-error');
                 }
-            }
-
-            // Validação Garimpo: precisa de modelo
-            if (estrategia.value === 'garimpo') {
-                const modelo = adsetModeloGarimpo;
-                if (!modelo) { mostrarToast('❌ Selecione um conjunto modelo para garimpo'); btn.disabled = false; return; }
             }
 
             let enviados = 0, erros = 0;
 
             for (let i = 0; i < filaAnuncios.length; i++) {
-                // Check cancelamento
                 if (uploadCancelado) {
                     logConsole(`⏹ Upload cancelado pelo usuário. ${enviados} enviado(s), ${filaAnuncios.length - i} restante(s).`, 'log-warning');
                     break;
                 }
 
                 const item = filaAnuncios[i];
+                const ctx = item.context;
                 btn.textContent = `⏳ Enviando ${i + 1}/${filaAnuncios.length}...`;
 
-                logConsole(`📦 Processando ${i + 1}/${filaAnuncios.length}: "${item.adName}"`, 'log-info');
+                logConsole(`📦 Processando ${i + 1}/${filaAnuncios.length}: "${item.adName}" · 🏢 ${ctx.accountId} · 📣 ${ctx.campaignName || ctx.campaignId}`, 'log-info');
 
-                // ===== GARIMPO: Duplicar conjunto POR CRIATIVO =====
+                // ===== GARIMPO: Duplicar conjunto POR CRIATIVO (usando context do item) =====
                 let adsetIdParaEsteAnuncio = null;
-                if (estrategia.value === 'garimpo') {
-                    const modelo = adsetModeloGarimpo;
-                    const nomeConjunto = item.adName; // Nome do anúncio = nome do conjunto!
-
-                    logConsole(`📋 Duplicando conjunto para "${nomeConjunto}"...`, 'log-info');
+                if (ctx.estrategia === 'garimpo') {
+                    const modelo = ctx.adsetModeloGarimpo;
+                    if (!modelo) {
+                        logConsole(`❌ "${item.adName}": conjunto modelo de garimpo não definido`, 'log-error');
+                        erros++;
+                        continue;
+                    }
+                    const nomeConjunto = item.adName;
+                    logConsole(`📋 Duplicando conjunto garimpo para "${nomeConjunto}"...`, 'log-info');
                     try {
                         const dupFd = new FormData();
+                        dupFd.append('account_id', ctx.accountId);
                         dupFd.append('adset_modelo', modelo);
                         dupFd.append('adset_name', nomeConjunto);
-                        dupFd.append('adset_status', adsetAtivoGarimpo);
-                        const dupResp = await fetch(`/campanha/${CAMPAIGN_ID}/duplicate-adset`, { method: 'POST', body: dupFd });
+                        dupFd.append('adset_status', adsetStatus);
+                        if (ctx.excludedCountries) dupFd.append('excluded_countries', ctx.excludedCountries);
+                        const dupResp = await fetch(`/campanha/${ctx.campaignId}/duplicate-adset`, { method: 'POST', body: dupFd });
                         const dupResult = await dupResp.json();
-
                         if (dupResult.success && dupResult.adset_id) {
                             adsetIdParaEsteAnuncio = dupResult.adset_id;
                             logConsole(`✅ Conjunto "${nomeConjunto}" criado: ${adsetIdParaEsteAnuncio}`, 'log-success');
                         } else {
                             logConsole(`❌ Falha ao duplicar para "${nomeConjunto}": ${dupResult.error}`, 'log-error');
                             erros++;
-                            continue; // Pula este anúncio
+                            continue;
                         }
                     } catch (e) {
                         logConsole(`❌ Erro de rede ao duplicar para "${nomeConjunto}": ${e.message}`, 'log-error');
@@ -1768,49 +2326,65 @@
                     }
                 }
 
+                // ===== Monta o FormData usando o CONTEXTO DO ITEM =====
                 const fd = new FormData();
-                fd.append('estrategia', estrategia.value);
+                fd.append('account_id', ctx.accountId);
+                fd.append('estrategia', ctx.estrategia);
 
-                // Determinar adsetId a usar
                 if (adsetIdParaEsteAnuncio) {
-                    // Garimpo: cada anúncio tem seu próprio conjunto
                     fd.append('destino_conjunto', 'existente');
                     fd.append('adset_existente', adsetIdParaEsteAnuncio);
                     fd.append('adset_modelo', '');
-                } else if (duplicatedAdsetId) {
-                    // Agrupado+Duplicar: todos no mesmo conjunto duplicado
+                } else if (_precisaPreDup(ctx)) {
+                    const dupId = preDupMap[_preDupKey(ctx)];
+                    if (!dupId) {
+                        logConsole(`❌ "${item.adName}": pré-duplicação do grupo falhou — pulando`, 'log-error');
+                        erros++;
+                        continue;
+                    }
                     fd.append('destino_conjunto', 'existente');
-                    fd.append('adset_existente', duplicatedAdsetId);
+                    fd.append('adset_existente', dupId);
                     fd.append('adset_modelo', '');
                 } else {
-                    fd.append('destino_conjunto', destino || '');
-                    fd.append('adset_existente', adsetExistente || '');
-                    fd.append('adset_modelo', adsetModelo || adsetModeloGarimpo || '');
+                    fd.append('destino_conjunto', ctx.destino || '');
+                    fd.append('adset_existente', ctx.adsetExistente || '');
+                    fd.append('adset_modelo', ctx.adsetModelo || '');
                 }
 
                 fd.append('ad_name', item.adName);
-                fd.append('ad_status', adAtivo);
-                fd.append('url_destino', cfg.url);
-                fd.append('utm_pattern', cfg.utms);
-                fd.append('cta', cfg.cta);
-                cfg.textos.forEach(t => fd.append('primary_text[]', t));
-                cfg.titulos.forEach(t => fd.append('headline[]', t));
+                fd.append('ad_status', adStatus);
+                fd.append('url_destino', ctx.url);
+                fd.append('utm_pattern', ctx.utms || '');
+                fd.append('cta', ctx.cta);
+                (ctx.textos || []).forEach(t => fd.append('primary_text[]', t));
+                (ctx.titulos || []).forEach(t => fd.append('headline[]', t));
+                if (ctx.excludedCountries) fd.append('excluded_countries', ctx.excludedCountries);
 
-                if (item.feedFile) fd.append('arquivo_feed', item.feedFile);
-                if (item.storiesFile) fd.append('arquivo_stories', item.storiesFile);
-                if (item.urlFeed) fd.append('url_feed_remote', item.urlFeed);
-                if (item.urlStories) fd.append('url_stories_remote', item.urlStories);
+                if (item.tipo === 'carousel' && Array.isArray(item.cards)) {
+                    fd.append('tipo_criativo', 'carousel');
+                    fd.append('card_count', String(item.cards.length));
+                    item.cards.forEach((c, ci) => {
+                        if (c.file) fd.append(`card_${ci}_arquivo`, c.file);
+                        if (c.url) fd.append(`card_${ci}_url_remote`, c.url);
+                    });
+                } else {
+                    fd.append('tipo_criativo', 'single');
+                    if (item.feedFile) fd.append('arquivo_feed', item.feedFile);
+                    if (item.storiesFile) fd.append('arquivo_stories', item.storiesFile);
+                    if (item.urlFeed) fd.append('url_feed_remote', item.urlFeed);
+                    if (item.urlStories) fd.append('url_stories_remote', item.urlStories);
+                }
 
-                // Identity & Tracking
-                const pageId = document.getElementById('select-page').value;
-                if (!pageId) { mostrarToast('❌ Selecione a Página do Facebook!'); return; }
-                fd.append('page_id', pageId);
-                const igVal = document.getElementById('select-instagram').value;
-                if (igVal) fd.append('instagram_actor_id', igVal);
-                const pixelVal = document.getElementById('select-pixel').value;
-                if (pixelVal) fd.append('pixel_id', pixelVal);
-                const leadFormVal = document.getElementById('select-leadform').value;
-                if (leadFormVal) fd.append('lead_gen_form_id', leadFormVal);
+                // Identity & Tracking — vêm do CONTEXTO DO ITEM
+                if (!ctx.pageId) {
+                    logConsole(`❌ "${item.adName}": sem page_id no contexto — pulando`, 'log-error');
+                    erros++;
+                    continue;
+                }
+                fd.append('page_id', ctx.pageId);
+                if (ctx.igId) fd.append('instagram_actor_id', ctx.igId);
+                if (ctx.pixelId) fd.append('pixel_id', ctx.pixelId);
+                if (ctx.leadFormId) fd.append('lead_gen_form_id', ctx.leadFormId);
 
                 const tStart = Date.now();
                 try {
@@ -1818,7 +2392,7 @@
                     progressReset();
                     progressUpdate(5, `Enviando "${item.adName}"...`, `${i + 1} de ${filaAnuncios.length}`, false);
 
-                    const r = await fetch(`/campanha/${CAMPAIGN_ID}/upload`, { method: 'POST', body: fd });
+                    const r = await fetch(`/campanha/${ctx.campaignId}/upload`, { method: 'POST', body: fd });
                     if (!r.ok || !r.body) {
                         throw new Error(`Resposta inválida do servidor (${r.status})`);
                     }

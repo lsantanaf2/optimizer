@@ -1948,6 +1948,150 @@ class MetaUploader:
 
         return payload
 
+    # ======================== CREATIVE CARROSSEL (CHILD ATTACHMENTS) ========================
+
+    def create_carousel_creative(self, page_id, cards, link_url_fallback,
+                                  primary_texts, headlines, cta_type,
+                                  instagram_user_id=None, url_tags='',
+                                  lead_gen_form_id=None):
+        """
+        Cria AdCreative de Carrossel (link_data.child_attachments).
+
+        cards: lista ordenada de dicts:
+            [{'media': {...upload_media result...}, 'link': 'url opcional'}]
+          A ORDEM da lista É a ordem final dos cards no anúncio.
+
+        IMPORTANTE: Todos os aprimoramentos de carrossel ficam DESATIVADOS por padrão:
+          - multi_share_optimized: False  → desliga "melhor card primeiro"
+          - multi_share_end_card: False   → desliga o card automático do Facebook no final
+          - text_optimizations / enhance_cta: OPT_OUT
+        """
+        import json
+
+        if not cards:
+            raise ValueError("Carrossel precisa de pelo menos 1 card.")
+        if len(cards) < 2:
+            raise ValueError("Carrossel exige no mínimo 2 cards.")
+        if len(cards) > 10:
+            raise ValueError("Carrossel aceita no máximo 10 cards (Meta limit).")
+
+        self._log(f"🎠 Criando AdCreative de Carrossel ({len(cards)} cards, ordem preservada)...")
+
+        # Normalizar textos globais (herdados)
+        body_text = primary_texts[0] if primary_texts else "Check this out!"
+        if isinstance(body_text, dict):
+            body_text = body_text.get('text', ' ')
+        headline_text = headlines[0] if headlines else "Limited Offer"
+        if isinstance(headline_text, dict):
+            headline_text = headline_text.get('text', ' ')
+
+        # Montar child_attachments na ORDEM RECEBIDA
+        child_attachments = []
+        for idx, card in enumerate(cards):
+            media = card.get('media') or {}
+            card_link = card.get('link') or link_url_fallback
+            if not card_link:
+                raise ValueError(f"Card #{idx+1} sem link (nem global nem por card).")
+
+            att = {
+                'link': card_link,
+                'name': headline_text,  # herda do global; Meta exige algum texto no name
+            }
+
+            m_type = media.get('type')
+            if m_type == 'image':
+                if not media.get('hash'):
+                    raise ValueError(f"Card #{idx+1} (imagem) sem image_hash após upload.")
+                att['image_hash'] = media['hash']
+            elif m_type == 'video':
+                if not media.get('id'):
+                    raise ValueError(f"Card #{idx+1} (vídeo) sem video_id após upload.")
+                att['video_id'] = media['id']
+                # Vídeo precisa de thumbnail — usa a extraída localmente se houver
+                if media.get('thumb_hash'):
+                    att['image_hash'] = media['thumb_hash']
+            else:
+                raise ValueError(f"Card #{idx+1} com tipo de mídia desconhecido: {m_type}")
+
+            child_attachments.append(att)
+
+        # CTA aplicado ao anúncio (nível link_data, não por card — comportamento padrão quando não se sobreescreve por card)
+        cta_payload = {
+            'type': cta_type,
+            'value': ({'lead_gen_form_id': lead_gen_form_id}
+                      if lead_gen_form_id else {'link': link_url_fallback})
+        }
+
+        link_data = {
+            'link': link_url_fallback,
+            'message': body_text,
+            'name': headline_text,
+            'child_attachments': child_attachments,
+            'call_to_action': cta_payload,
+            # ⬇️⬇️ DESLIGA OS APRIMORAMENTOS DE CARROSSEL ⬇️⬇️
+            'multi_share_optimized': False,   # ordem fixa, sem "melhor card primeiro"
+            'multi_share_end_card': False,    # sem card automático do Facebook no final
+        }
+
+        object_story_spec = {
+            'page_id': page_id,
+            'link_data': link_data,
+        }
+        if instagram_user_id:
+            object_story_spec['instagram_user_id'] = instagram_user_id
+
+        payload = {
+            'object_story_spec': object_story_spec,
+            # Opt-out das "Melhorias criativas" automáticas da Meta
+            'degrees_of_freedom_spec': {
+                'creative_features_spec': {
+                    'text_optimizations': {'enroll_status': 'OPT_OUT'},
+                    'enhance_cta': {'enroll_status': 'OPT_OUT'},
+                },
+            },
+        }
+        if url_tags:
+            payload['url_tags'] = url_tags
+
+        # POST → /adcreatives
+        api_url = f"https://graph.facebook.com/v22.0/{self.account_id}/adcreatives"
+
+        def _do():
+            # Aguardar mídias ficarem prontas (todas)
+            for att in child_attachments:
+                if att.get('video_id'):
+                    self.wait_for_video_ready(att['video_id'])
+                if att.get('image_hash'):
+                    self.wait_for_image_ready(att['image_hash'])
+
+            post_data = {'access_token': self.access_token}
+            for k, v in payload.items():
+                post_data[k] = json.dumps(v) if isinstance(v, (dict, list)) else v
+
+            resp = requests.post(api_url, data=post_data)
+            result = resp.json()
+
+            if 'error' in result:
+                error = result['error']
+                error_detail = (
+                    f"Code: {error.get('code')}, "
+                    f"SubCode: {error.get('error_subcode', 'N/A')}, "
+                    f"Message: {error.get('message', '?')}, "
+                    f"UserMsg: {error.get('error_user_msg', 'N/A')}"
+                )
+                print(f"❌ [carousel] API Error: {json.dumps(result, indent=2, ensure_ascii=False)}")
+                self._log(f"❌ [carousel] Falha: {error.get('message', '?')} ({error.get('error_user_msg', 'N/A')})")
+                raise Exception(f"Criação de carrossel falhou: {error_detail}")
+
+            cid = result.get('id')
+            if not cid:
+                raise Exception(f"Carrossel criado mas sem ID retornado: {result}")
+            return cid
+
+        creative_id = self._with_retry("Criar AdCreative Carrossel", _do)
+        self._log(f"✅ AdCreative Carrossel criado (ID: {creative_id}, {len(cards)} cards ordenados)")
+        return creative_id
+
     # ======================== CRIAR AD (PAUSADO) ========================
 
     def create_ad(self, adset_id, creative_id, ad_name, pixel_id=None, ad_status='PAUSED'):
