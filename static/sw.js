@@ -12,14 +12,16 @@
  * - Registra histórico ao final (/api/upload-history/add)
  */
 
-const SW_VERSION = 'v2.8.0';
+const SW_VERSION = 'v2.9.0';
 const DB_NAME = 'optimizer-uploads';
 const DB_VERSION = 1;
 const STORE_JOBS = 'jobs';
 const CHANNEL_NAME = 'optimizer-uploads';
 
 // ==================== IndexedDB helpers ====================
+let _dbConn = null; // Cache de conexão para lifetime do SW (fix H1: evita 500+ aberturas por upload)
 function openDb() {
+    if (_dbConn) return Promise.resolve(_dbConn);
     return new Promise((resolve, reject) => {
         const req = indexedDB.open(DB_NAME, DB_VERSION);
         req.onupgradeneeded = (e) => {
@@ -28,19 +30,27 @@ function openDb() {
                 db.createObjectStore(STORE_JOBS, { keyPath: 'id' });
             }
         };
-        req.onsuccess = () => resolve(req.result);
+        req.onsuccess = () => { _dbConn = req.result; resolve(_dbConn); };
         req.onerror = () => reject(req.error);
     });
 }
 
 async function idbPut(job) {
-    const db = await openDb();
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction(STORE_JOBS, 'readwrite');
-        tx.objectStore(STORE_JOBS).put(job);
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-    });
+    try {
+        const db = await openDb();
+        return await new Promise((resolve, reject) => {
+            const tx = db.transaction(STORE_JOBS, 'readwrite');
+            tx.objectStore(STORE_JOBS).put(job);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+        });
+    } catch (e) {
+        // Fix M7: IDB quota excedida (Safari/iOS ~50MB) — falha graciosamente
+        if (e && e.name === 'QuotaExceededError') {
+            broadcast('quota-exceeded', { jobId: job.id, label: job.label });
+        }
+        throw e;
+    }
 }
 
 async function idbGet(id) {
@@ -77,6 +87,17 @@ async function idbDelete(id) {
 const channel = new BroadcastChannel(CHANNEL_NAME);
 function broadcast(type, payload) {
     try { channel.postMessage({ type, ...payload }); } catch (_) {}
+}
+
+// Fix H2: debounce de broadcasts no loop SSE — evita spam de payloads crescentes
+const _broadcastDebounce = new Map();
+function broadcastDebounced(jobId, job, delayMs) {
+    delayMs = delayMs || 200;
+    if (_broadcastDebounce.has(jobId)) clearTimeout(_broadcastDebounce.get(jobId));
+    _broadcastDebounce.set(jobId, setTimeout(() => {
+        _broadcastDebounce.delete(jobId);
+        broadcast('job-update', { job });
+    }, delayMs));
 }
 
 // ==================== Queue state ====================
@@ -252,6 +273,11 @@ async function uploadItem(job, item, preDupMap, index) {
     let uploadResult = null;
     try {
         const r = await fetch(`/campanha/${ctx.campaignId}/upload`, { method: 'POST', body: fd, credentials: 'include' });
+        // Fix M6: sessão expirada — broadcast específico para re-login modal
+        if (r.status === 401) {
+            broadcast('auth-expired', { jobId: job.id });
+            throw new Error('Sessão expirada — faça login novamente');
+        }
         if (!r.ok || !r.body) throw new Error(`HTTP ${r.status}`);
 
         const reader = r.body.getReader();
@@ -287,7 +313,7 @@ async function uploadItem(job, item, preDupMap, index) {
                     appendLog(job, `❌ "${item.adName}": ${evt.message}`, 'error');
                 }
                 await idbPut(job);
-                broadcast('job-update', { job });
+                broadcastDebounced(job.id, job); // Fix H2: debounce evita spam no loop SSE
             }
         }
     } catch (e) {
@@ -349,8 +375,10 @@ async function processJob(jobId) {
     let enviados = 0, erros = 0;
     for (let i = 0; i < job.items.length; i++) {
         job = await idbGet(jobId);
-        if (!job || job.status === 'cancelled') {
+        if (!job) break; // Fix C1: job deletado externamente durante loop — TypeError seguro
+        if (job.status === 'cancelled') {
             appendLog(job, `⏹ Cancelado. ${enviados} OK, ${job.items.length - i} restante(s)`, 'warning');
+            await idbPut(job);
             break;
         }
 

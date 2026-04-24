@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 
 {% block title %}Setup de Anúncios — {{ campaign_name }}{% endblock %}
 
@@ -617,6 +617,7 @@
         const CAMPAIGN_NAME = {{ campaign_name|tojson|safe if campaign_name is defined else '""' }};
         const filaAnuncios = [];
         let uploadCancelado = false;
+        let currentJobId = null; // Fix C3: guarda jobId ativo para cancelamento via SW
 
         // ======================== QUEUE PERSISTENCE (multi-conta) ========================
         const QUEUE_STORAGE_KEY = 'optimizer_queue_v1';
@@ -703,10 +704,15 @@
         }
 
         function pararUpload() {
-            uploadCancelado = true;
-            document.getElementById('btn-stop-upload').textContent = '⏳ Parando...';
-            document.getElementById('btn-stop-upload').disabled = true;
-            logConsole('⏹ Upload será interrompido após o anúncio atual...', 'log-warning');
+            // Fix C3: cancela via SW (não mais variável local que o SW não lê)
+            const btnStop = document.getElementById('btn-stop-upload');
+            if (currentJobId) {
+                UploadManager.cancelJob(currentJobId);
+                currentJobId = null;
+            }
+            uploadCancelado = true; // mantido para compatibilidade
+            if (btnStop) { btnStop.textContent = '⏳ Parando...'; btnStop.disabled = true; }
+            logConsole('⏹ Cancelamento solicitado — aguardando fim do anúncio atual...', 'log-warning');
         }
         let historicoCarregado = false;
 
@@ -1167,6 +1173,19 @@
                 console.warn('Falha ao restaurar fila:', e);
             }
         });
+
+        // Fix C3: esconde botão Parar quando o job ativo terminar/cancelar
+        if (typeof UploadManager !== 'undefined') {
+            UploadManager.onEvent(function(msg) {
+                if (msg.type === 'job-finished' || msg.type === 'job-deleted') {
+                    if (msg.job && msg.job.id === currentJobId) {
+                        currentJobId = null;
+                        const btnStop = document.getElementById('btn-stop-upload');
+                        if (btnStop) btnStop.style.display = 'none';
+                    }
+                }
+            });
+        }
 
         // Avisa antes de sair se houver arquivos locais na fila (File blobs não persistem)
         window.addEventListener('beforeunload', function(e) {
@@ -2264,6 +2283,12 @@
             const primeiroCtx = jobItems[0].context;
             const label = `${primeiroCtx.campaignName || primeiroCtx.campaignId} · ${jobItems.length} ad(s) (${primeiroCtx.accountId})`;
 
+            // Fix M2/M4: feedback visual + proteção contra double-click durante enqueue
+            const btn = document.getElementById('btn-submit-all');
+            const btnStop = document.getElementById('btn-stop-upload');
+            btn.disabled = true;
+            btn.textContent = '⏳ Enfileirando...';
+
             try {
                 const jobId = await UploadManager.enqueue({
                     label,
@@ -2271,315 +2296,32 @@
                     campaignId: primeiroCtx.campaignId,
                     items: jobItems,
                 });
-                mostrarToast(`🚀 Lote de ${jobItems.length} ad(s) enviado para background. Pode trocar de conta à vontade.`);
+
+                // Fix C3: salva jobId ativo e exibe botão Parar funcional
+                currentJobId = jobId;
+                if (btnStop) {
+                    btnStop.style.display = 'inline-block';
+                    btnStop.disabled = false;
+                    btnStop.textContent = '⏹ Parar Upload';
+                }
+
+                mostrarToast(`🚀 ${jobItems.length} ad(s) enviados para background. Pode trocar de conta à vontade.`);
+
                 // Limpa fila local — agora vive no SW
                 filaAnuncios.length = 0;
                 saveQueueToStorage();
                 renderizarFila();
+
+                btn.textContent = `✅ ${jobItems.length} na fila!`;
+                setTimeout(() => {
+                    btn.disabled = false;
+                    btn.textContent = '🚀 Subir Todos os Anúncios';
+                }, 3000);
             } catch (e) {
+                btn.disabled = false;
+                btn.textContent = '🚀 Subir Todos os Anúncios';
                 mostrarToast(`❌ Falha ao enfileirar no SW: ${e.message}`);
                 return;
-            }
-
-            // Saída antecipada — o resto do código abaixo é legacy e não executa mais.
-            return;
-
-            const btn = document.getElementById('btn-submit-all');
-            const btnStop = document.getElementById('btn-stop-upload');
-            btn.disabled = true;
-            btnStop.style.display = 'inline-block';
-            btnStop.disabled = false;
-            btnStop.textContent = '⏹ Parar Upload';
-            uploadCancelado = false;
-
-            // Status fixo: todos os ads e conjuntos são criados como PAUSADOS
-            const adStatus = 'PAUSED';
-            const adsetStatus = 'PAUSED';
-
-            // Start log console e barra de progresso
-            progressShow();
-            progressReset();
-            logConsole(`🚀 Lote iniciado — ${filaAnuncios.length} anúncio(s) na fila`, 'log-info');
-
-            // ===== PRÉ-DUPLICAÇÃO POR GRUPO =====
-            // Chave: "accountId|campaignId|adsetModelo|estrategia|adsetNewName"
-            // Para estratégias que exigem pré-dup (agrupado+duplicar ou novo), duplica UMA vez por grupo único.
-            const preDupMap = {}; // groupKey → duplicatedAdsetId
-
-            function _preDupKey(ctx) {
-                const modelo = ctx.estrategia === 'novo' ? ctx.adsetModeloNovo : ctx.adsetModelo;
-                const nome = ctx.estrategia === 'novo' ? ctx.adsetNewNameNovo : ctx.adsetNewName;
-                return `${ctx.accountId}|${ctx.campaignId}|${modelo}|${ctx.estrategia}|${nome}`;
-            }
-
-            function _precisaPreDup(ctx) {
-                return (ctx.estrategia === 'agrupado' && ctx.destino === 'duplicar') || ctx.estrategia === 'novo';
-            }
-
-            // Roda pré-duplicação uma vez para cada grupo único ANTES do loop
-            const gruposPreDup = [];
-            const seen = new Set();
-            for (const item of filaAnuncios) {
-                const ctx = item.context;
-                if (!_precisaPreDup(ctx)) continue;
-                const key = _preDupKey(ctx);
-                if (seen.has(key)) continue;
-                seen.add(key);
-                gruposPreDup.push({ key, ctx });
-            }
-
-            for (const g of gruposPreDup) {
-                if (uploadCancelado) break;
-                const ctx = g.ctx;
-                const modelo = ctx.estrategia === 'novo' ? ctx.adsetModeloNovo : ctx.adsetModelo;
-                const nome = ctx.estrategia === 'novo' ? ctx.adsetNewNameNovo : ctx.adsetNewName;
-                if (!modelo) {
-                    logConsole(`❌ Grupo ${ctx.accountId}/${ctx.campaignName || ctx.campaignId}: conjunto modelo não informado — itens deste grupo serão pulados`, 'log-error');
-                    preDupMap[g.key] = null;
-                    continue;
-                }
-
-                logConsole(`📋 Duplicando conjunto para grupo 🏢 ${ctx.accountId} · 📣 ${ctx.campaignName || ctx.campaignId}...`, 'log-info');
-                try {
-                    const dupFd = new FormData();
-                    dupFd.append('account_id', ctx.accountId);
-                    dupFd.append('adset_modelo', modelo);
-                    dupFd.append('adset_name', nome || '');
-                    dupFd.append('adset_status', adsetStatus);
-                    if (ctx.excludedCountries) dupFd.append('excluded_countries', ctx.excludedCountries);
-                    const dupResp = await fetch(`/campanha/${ctx.campaignId}/duplicate-adset`, { method: 'POST', body: dupFd });
-                    const dupResult = await dupResp.json();
-
-                    if (dupResult.success && dupResult.adset_id) {
-                        preDupMap[g.key] = dupResult.adset_id;
-                        logConsole(`✅ Conjunto duplicado: ${dupResult.adset_id}${nome ? ' — "' + nome + '"' : ''}`, 'log-success');
-                    } else {
-                        preDupMap[g.key] = null;
-                        logConsole(`❌ Falha ao duplicar grupo: ${dupResult.error}`, 'log-error');
-                    }
-                } catch (e) {
-                    preDupMap[g.key] = null;
-                    logConsole(`❌ Erro de rede ao duplicar grupo: ${e.message}`, 'log-error');
-                }
-            }
-
-            let enviados = 0, erros = 0;
-
-            for (let i = 0; i < filaAnuncios.length; i++) {
-                if (uploadCancelado) {
-                    logConsole(`⏹ Upload cancelado pelo usuário. ${enviados} enviado(s), ${filaAnuncios.length - i} restante(s).`, 'log-warning');
-                    break;
-                }
-
-                const item = filaAnuncios[i];
-                const ctx = item.context;
-                btn.textContent = `⏳ Enviando ${i + 1}/${filaAnuncios.length}...`;
-
-                logConsole(`📦 Processando ${i + 1}/${filaAnuncios.length}: "${item.adName}" · 🏢 ${ctx.accountId} · 📣 ${ctx.campaignName || ctx.campaignId}`, 'log-info');
-
-                // ===== GARIMPO: Duplicar conjunto POR CRIATIVO (usando context do item) =====
-                let adsetIdParaEsteAnuncio = null;
-                if (ctx.estrategia === 'garimpo') {
-                    const modelo = ctx.adsetModeloGarimpo;
-                    if (!modelo) {
-                        logConsole(`❌ "${item.adName}": conjunto modelo de garimpo não definido`, 'log-error');
-                        erros++;
-                        continue;
-                    }
-                    const nomeConjunto = item.adName;
-                    logConsole(`📋 Duplicando conjunto garimpo para "${nomeConjunto}"...`, 'log-info');
-                    try {
-                        const dupFd = new FormData();
-                        dupFd.append('account_id', ctx.accountId);
-                        dupFd.append('adset_modelo', modelo);
-                        dupFd.append('adset_name', nomeConjunto);
-                        dupFd.append('adset_status', adsetStatus);
-                        if (ctx.excludedCountries) dupFd.append('excluded_countries', ctx.excludedCountries);
-                        const dupResp = await fetch(`/campanha/${ctx.campaignId}/duplicate-adset`, { method: 'POST', body: dupFd });
-                        const dupResult = await dupResp.json();
-                        if (dupResult.success && dupResult.adset_id) {
-                            adsetIdParaEsteAnuncio = dupResult.adset_id;
-                            logConsole(`✅ Conjunto "${nomeConjunto}" criado: ${adsetIdParaEsteAnuncio}`, 'log-success');
-                        } else {
-                            logConsole(`❌ Falha ao duplicar para "${nomeConjunto}": ${dupResult.error}`, 'log-error');
-                            erros++;
-                            continue;
-                        }
-                    } catch (e) {
-                        logConsole(`❌ Erro de rede ao duplicar para "${nomeConjunto}": ${e.message}`, 'log-error');
-                        erros++;
-                        continue;
-                    }
-                }
-
-                // ===== Monta o FormData usando o CONTEXTO DO ITEM =====
-                const fd = new FormData();
-                fd.append('account_id', ctx.accountId);
-                fd.append('estrategia', ctx.estrategia);
-
-                if (adsetIdParaEsteAnuncio) {
-                    fd.append('destino_conjunto', 'existente');
-                    fd.append('adset_existente', adsetIdParaEsteAnuncio);
-                    fd.append('adset_modelo', '');
-                } else if (_precisaPreDup(ctx)) {
-                    const dupId = preDupMap[_preDupKey(ctx)];
-                    if (!dupId) {
-                        logConsole(`❌ "${item.adName}": pré-duplicação do grupo falhou — pulando`, 'log-error');
-                        erros++;
-                        continue;
-                    }
-                    fd.append('destino_conjunto', 'existente');
-                    fd.append('adset_existente', dupId);
-                    fd.append('adset_modelo', '');
-                } else {
-                    fd.append('destino_conjunto', ctx.destino || '');
-                    fd.append('adset_existente', ctx.adsetExistente || '');
-                    fd.append('adset_modelo', ctx.adsetModelo || '');
-                }
-
-                fd.append('ad_name', item.adName);
-                fd.append('ad_status', adStatus);
-                fd.append('url_destino', ctx.url);
-                fd.append('utm_pattern', ctx.utms || '');
-                fd.append('cta', ctx.cta);
-                (ctx.textos || []).forEach(t => fd.append('primary_text[]', t));
-                (ctx.titulos || []).forEach(t => fd.append('headline[]', t));
-                if (ctx.excludedCountries) fd.append('excluded_countries', ctx.excludedCountries);
-
-                if (item.tipo === 'carousel' && Array.isArray(item.cards)) {
-                    fd.append('tipo_criativo', 'carousel');
-                    fd.append('card_count', String(item.cards.length));
-                    item.cards.forEach((c, ci) => {
-                        if (c.file) fd.append(`card_${ci}_arquivo`, c.file);
-                        if (c.url) fd.append(`card_${ci}_url_remote`, c.url);
-                    });
-                } else {
-                    fd.append('tipo_criativo', 'single');
-                    if (item.feedFile) fd.append('arquivo_feed', item.feedFile);
-                    if (item.storiesFile) fd.append('arquivo_stories', item.storiesFile);
-                    if (item.urlFeed) fd.append('url_feed_remote', item.urlFeed);
-                    if (item.urlStories) fd.append('url_stories_remote', item.urlStories);
-                }
-
-                // Identity & Tracking — vêm do CONTEXTO DO ITEM
-                if (!ctx.pageId) {
-                    logConsole(`❌ "${item.adName}": sem page_id no contexto — pulando`, 'log-error');
-                    erros++;
-                    continue;
-                }
-                fd.append('page_id', ctx.pageId);
-                if (ctx.igId) fd.append('instagram_actor_id', ctx.igId);
-                if (ctx.pixelId) fd.append('pixel_id', ctx.pixelId);
-                if (ctx.leadFormId) fd.append('lead_gen_form_id', ctx.leadFormId);
-
-                const tStart = Date.now();
-                try {
-                    logConsole(`📤 Iniciando upload de "${item.adName}"...`, 'log-info');
-                    progressReset();
-                    progressUpdate(5, `Enviando "${item.adName}"...`, `${i + 1} de ${filaAnuncios.length}`, false);
-
-                    const r = await fetch(`/campanha/${ctx.campaignId}/upload`, { method: 'POST', body: fd });
-                    if (!r.ok || !r.body) {
-                        throw new Error(`Resposta inválida do servidor (${r.status})`);
-                    }
-
-                    // Ler SSE stream
-                    const reader = r.body.getReader();
-                    const decoder = new TextDecoder();
-                    let buffer = '';
-                    let uploadResult = null;
-
-                    while (true) {
-                        const { done, value } = await reader.read();
-                        if (done) break;
-                        buffer += decoder.decode(value, { stream: true });
-                        const blocks = buffer.split('\n\n');
-                        buffer = blocks.pop();
-                        for (const block of blocks) {
-                            const line = block.split('\n').find(l => l.startsWith('data: '));
-                            if (!line) continue;
-                            let evt;
-                            try { evt = JSON.parse(line.slice(6)); } catch { continue; }
-
-                            if (evt.type === 'progress') {
-                                progressUpdate(evt.percent, evt.message, `${i + 1} de ${filaAnuncios.length}`, evt.polling);
-                            } else if (evt.type === 'log') {
-                                logConsole(evt.message, classifyLog(evt.message));
-                            } else if (evt.type === 'done') {
-                                progressUpdate(100, '✅ Concluído!', `${i + 1} de ${filaAnuncios.length}`, false);
-                                uploadResult = evt;
-                                if (evt.logs) evt.logs.forEach(l => logConsole(l, classifyLog(l)));
-                            } else if (evt.type === 'error') {
-                                uploadResult = { success: false, error: evt.message };
-                                if (evt.logs) evt.logs.forEach(l => logConsole(l, classifyLog(l)));
-                            }
-                        }
-                    }
-
-                    const dur = formatDuration(Date.now() - tStart);
-                    if (uploadResult && uploadResult.success) {
-                        enviados++;
-                        logConsole(`✅ "${item.adName}" criado — ID: ${uploadResult.ad_id}`, 'log-success');
-                        registrarHistorico({
-                            campaign_id: CAMPAIGN_ID,
-                            ad_name: item.adName,
-                            status: 'ok',
-                            ad_id: uploadResult.ad_id || '',
-                            erro: '',
-                            duracao: dur,
-                        });
-                    } else if (uploadResult) {
-                        erros++;
-                        logConsole(`❌ "${item.adName}" falhou: ${uploadResult.error}`, 'log-error');
-                        registrarHistorico({
-                            campaign_id: CAMPAIGN_ID,
-                            ad_name: item.adName,
-                            status: 'erro',
-                            ad_id: '',
-                            erro: uploadResult.error || 'Falha desconhecida',
-                            duracao: dur,
-                        });
-                    }
-
-                    if (i < filaAnuncios.length - 1) {
-                        logConsole(`⏳ Aguardando delay de segurança (2s)...`);
-                        progressUpdate(100, '⏳ Aguardando próximo...', `${i + 1} de ${filaAnuncios.length}`, false);
-                        await new Promise(r => setTimeout(r, 2000));
-                    }
-
-                } catch (e) {
-                    erros++;
-                    const dur = formatDuration(Date.now() - tStart);
-                    logConsole(`❌ Erro de rede: ${e.message}`, 'log-error');
-                    registrarHistorico({
-                        campaign_id: CAMPAIGN_ID,
-                        ad_name: item.adName,
-                        status: 'erro',
-                        ad_id: '',
-                        erro: `Erro de rede: ${e.message}`,
-                        duracao: dur,
-                    });
-                }
-            } // Fim do Loop For
-
-            btn.disabled = false;
-            btn.textContent = '🚀 Subir Todos os Anúncios';
-            btnStop.style.display = 'none';
-
-            logConsole(`🏁 Lote concluído: ${enviados} ✅ sucesso, ${erros} ❌ erro(s)`, enviados > 0 ? 'log-success' : 'log-error');
-            logStop();
-            if (erros === 0) {
-                progressUpdate(100, `🎉 ${enviados} anúncio(s) enviados!`, '', false);
-            } else {
-                progressUpdate(100, `⚠️ ${enviados} OK, ${erros} erro(s)`, '', false);
-            }
-
-            if (erros === 0) {
-                mostrarToast(`🎉 ${enviados} anúncio(s) enviados com sucesso!`);
-                filaAnuncios.length = 0;
-                renderizarFila();
-            } else {
-                mostrarToast(`⚠️ ${enviados} OK, ${erros} com erro`);
             }
         }
 
