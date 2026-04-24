@@ -2183,29 +2183,30 @@
         }
 
         // ======================== SUBMIT ALL ========================
-        // v2.7.1 — fila multi-conta: cada item carrega seu próprio contexto (accountId, campaignId,
-        // adset, page, texts, URL...). O upload usa o context do item, nunca a UI atual.
-        // A pré-duplicação agrupa por (accountId|campaignId|adsetModelo) — um dup por grupo.
+        // v2.8.0 — Uploads rodam em Service Worker (background). Sobrevivem navegação,
+        // troca de conta, F5. Painel global no base.html mostra progresso em qualquer tela.
+        // Pré-duplicação e SSE streaming rodam no SW (static/sw.js).
         async function subirTodos() {
             if (filaAnuncios.length === 0) return;
 
+            if (!('serviceWorker' in navigator)) {
+                mostrarToast('❌ Seu navegador não suporta Service Worker. Use Chrome/Edge/Firefox/Safari recente.');
+                return;
+            }
+
             // ===== Backfill: itens da conta/campanha ATUAL recebem os valores da UI atual
-            // para campos vazios. Isso permite adicionar mídias antes de preencher URL/estratégia/página
-            // (workflow clássico). Itens de OUTRAS contas mantém seu context original intacto.
             const uiNow = snapshotContext();
             for (const it of filaAnuncios) {
                 if (!it.context) { it.context = { ...uiNow }; continue; }
                 const ctx = it.context;
                 const mesmaConta = ctx.accountId === ACCOUNT_ID && ctx.campaignId === CAMPAIGN_ID;
                 if (!mesmaConta) continue;
-                // Backfill campo-a-campo (só se vazio no context do item)
                 const keys = ['estrategia','destino','adsetExistente','adsetModelo','adsetModeloNovo',
                               'adsetModeloGarimpo','adsetNewName','adsetNewNameNovo','pageId','igId',
                               'pixelId','leadFormId','url','utms','cta','excludedCountries','campaignName'];
                 for (const k of keys) {
                     if ((ctx[k] === '' || ctx[k] == null) && uiNow[k]) ctx[k] = uiNow[k];
                 }
-                // Arrays: só backfill se vazio
                 if ((!Array.isArray(ctx.textos) || ctx.textos.length === 0) && Array.isArray(uiNow.textos) && uiNow.textos.length > 0) {
                     ctx.textos = uiNow.textos.slice();
                 }
@@ -2215,11 +2216,10 @@
             }
             saveQueueToStorage();
 
-            // ===== Validação: cada item precisa ter contexto válido =====
+            // ===== Validação =====
             const itemsSemCtx = filaAnuncios.filter(i => !i.context || !i.context.url || !i.context.estrategia || !i.context.pageId);
             if (itemsSemCtx.length > 0) {
-                // Mensagem detalhada: aponta o que falta por item
-                const detalhes = itemsSemCtx.slice(0, 3).map((i, idx) => {
+                const detalhes = itemsSemCtx.slice(0, 3).map((i) => {
                     const c = i.context || {};
                     const falta = [];
                     if (!c.url) falta.push('URL');
@@ -2229,9 +2229,60 @@
                     return `• ${i.adName || 'item'} (${origem}): falta ${falta.join(', ')}`;
                 }).join('\n');
                 const extra = itemsSemCtx.length > 3 ? `\n(+${itemsSemCtx.length - 3} outros)` : '';
-                mostrarToast(`❌ ${itemsSemCtx.length} item(ns) sem contexto:\n${detalhes}${extra}\n\nPara itens da conta atual: preencha URL, estratégia e página aqui na tela.\nPara outras contas: volte à tela daquela conta para reconfigurar.`);
+                mostrarToast(`❌ ${itemsSemCtx.length} item(ns) sem contexto:\n${detalhes}${extra}`);
                 return;
             }
+
+            // ===== Monta job para o SW =====
+            // Cada item carrega seus próprios blobs (File) — IDB persiste isso.
+            // O SW processa sequencialmente, reportando via BroadcastChannel.
+            const jobItems = filaAnuncios.map(it => {
+                const base = {
+                    adName: it.adName,
+                    tipo: it.tipo || 'single',
+                    context: it.context,
+                };
+                if (it.tipo === 'carousel' && Array.isArray(it.cards)) {
+                    base.cards = it.cards.map(c => ({
+                        file: c.file || null,
+                        name: c.name || '',
+                        url: c.url || null,
+                        type: c.type || 'image',
+                    }));
+                } else {
+                    base.feedFile = it.feedFile || null;
+                    base.storiesFile = it.storiesFile || null;
+                    base.feedFileName = it.feedFileName || null;
+                    base.storiesFileName = it.storiesFileName || null;
+                    base.urlFeed = it.urlFeed || '';
+                    base.urlStories = it.urlStories || '';
+                }
+                return base;
+            });
+
+            // Agrupa rótulo pra painel global (ex: "Campanha X · 3 ads (act_123)")
+            const primeiroCtx = jobItems[0].context;
+            const label = `${primeiroCtx.campaignName || primeiroCtx.campaignId} · ${jobItems.length} ad(s) (${primeiroCtx.accountId})`;
+
+            try {
+                const jobId = await UploadManager.enqueue({
+                    label,
+                    accountId: primeiroCtx.accountId,
+                    campaignId: primeiroCtx.campaignId,
+                    items: jobItems,
+                });
+                mostrarToast(`🚀 Lote de ${jobItems.length} ad(s) enviado para background. Pode trocar de conta à vontade.`);
+                // Limpa fila local — agora vive no SW
+                filaAnuncios.length = 0;
+                saveQueueToStorage();
+                renderizarFila();
+            } catch (e) {
+                mostrarToast(`❌ Falha ao enfileirar no SW: ${e.message}`);
+                return;
+            }
+
+            // Saída antecipada — o resto do código abaixo é legacy e não executa mais.
+            return;
 
             const btn = document.getElementById('btn-submit-all');
             const btnStop = document.getElementById('btn-stop-upload');

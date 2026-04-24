@@ -68,7 +68,18 @@ from modules.account_settings import (
 import atexit
 atexit.register(close_db)
 
-VERSION = "v2.7.3"
+VERSION = "v2.8.0"
+
+
+@app.route('/sw.js')
+def service_worker():
+    """Serve o Service Worker no root scope (necessário para interceptar rotas)."""
+    from flask import send_from_directory, make_response
+    resp = make_response(send_from_directory('static', 'sw.js'))
+    resp.headers['Content-Type'] = 'application/javascript'
+    resp.headers['Service-Worker-Allowed'] = '/'
+    resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
+    return resp
 
 @app.before_request
 def ensure_db():
