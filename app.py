@@ -68,7 +68,7 @@ from modules.account_settings import (
 import atexit
 atexit.register(close_db)
 
-VERSION = "v2.9.0"
+VERSION = "v2.9.1"
 
 
 @app.route('/sw.js')
@@ -894,12 +894,15 @@ def api_google_ads_sheets():
     Enriquece cada campanha com MQLs/NC da planilha de MQLs (utm_source in {adwords,google}),
     matching por utm_campaign (normalizado) == campaign_name (normalizado).
 
+    Retorna também 'daily': lista ordenada por data com spend+clicks (Vinci Sheet)
+    mesclado com mqls/nc/track (planilha de MQLs) para gráficos de evolução.
+
     Query params: since=YYYY-MM-DD, until=YYYY-MM-DD
     """
     from datetime import datetime
     from modules.cruzamento import (
         SPREADSHEET_ID, fetch_sheets_data, filter_rows_by_date,
-        _norm, _is_produto_a,
+        _norm, _is_produto_a, fetch_vinci_daily, _parse_date_br,
     )
 
     since_str = request.args.get('since', '')
@@ -916,8 +919,10 @@ def api_google_ads_sheets():
 
     # ── Enriquecer com MQLs/NC da planilha (utm_source = adwords/google) ──
     mqls_by_campaign = {}   # norm(utm_campaign) → {'mqls': n, 'nc': n}
+    mqls_by_day      = {}   # 'YYYY-MM-DD' → {'mqls': n, 'nc': n, 'track': n}
     total_mqls = 0
-    total_nc = 0
+    total_nc   = 0
+    total_track = 0
     try:
         mqls_all, _wons = fetch_sheets_data(SPREADSHEET_ID)
         mqls_filtered = filter_rows_by_date(mqls_all, 'Data do preenchimento', since_dt, until_dt)
@@ -925,15 +930,33 @@ def api_google_ads_sheets():
         for r in mqls_filtered:
             if _norm(r.get('utm_source', '')) not in GOOGLE_SRC:
                 continue
+
+            # Por campanha
             key = _norm(r.get('utm_campaign', ''))
-            if not key:
-                continue
-            bucket = mqls_by_campaign.setdefault(key, {'mqls': 0, 'nc': 0})
-            bucket['mqls'] += 1
+            if key:
+                bucket = mqls_by_campaign.setdefault(key, {'mqls': 0, 'nc': 0})
+                bucket['mqls'] += 1
+
+            # Por dia
+            d_obj = _parse_date_br(r.get('Data do preenchimento', ''))
+            if d_obj:
+                day_key = d_obj.strftime('%Y-%m-%d')
+                dbucket = mqls_by_day.setdefault(day_key, {'mqls': 0, 'nc': 0, 'track': 0})
+                dbucket['mqls'] += 1
+
+            is_nc = _is_produto_a(r.get('Produto indicado', ''))
             total_mqls += 1
-            if _is_produto_a(r.get('Produto indicado', '')):
-                bucket['nc'] += 1
+            if is_nc:
                 total_nc += 1
+                if key:
+                    mqls_by_campaign[key]['nc'] = mqls_by_campaign[key].get('nc', 0) + 1
+                if d_obj:
+                    mqls_by_day[day_key]['nc'] += 1
+            else:
+                total_track += 1
+                if d_obj:
+                    mqls_by_day[day_key]['track'] += 1
+
     except Exception as e:
         # Não falha o endpoint se o sheet de MQLs der erro — apenas zera enrichment
         import traceback; traceback.print_exc()
@@ -948,19 +971,48 @@ def api_google_ads_sheets():
         c['mqls']     = mqls
         c['nc']       = nc
         c['pct_nc']   = round((nc / mqls * 100), 1) if mqls > 0 else 0.0
-        c['cpa']      = round(spend / mqls, 2) if mqls > 0 else 0.0   # Custo/MQL (substitui Custo/Conv)
+        c['cpa']      = round(spend / mqls, 2) if mqls > 0 else 0.0   # Custo/MQL
         c['custo_nc'] = round(spend / nc,   2) if nc   > 0 else 0.0
 
-    # Atualiza totais (substitui 'conversions' do Sheets pelos MQLs do sheet de MQLs)
-    data['totals']['mqls']   = total_mqls
-    data['totals']['nc']     = total_nc
-    data['totals']['pct_nc'] = round((total_nc / total_mqls * 100), 1) if total_mqls > 0 else 0.0
+    # Atualiza totais
+    data['totals']['mqls']    = total_mqls
+    data['totals']['nc']      = total_nc
+    data['totals']['track']   = total_track
+    data['totals']['pct_nc']  = round((total_nc / total_mqls * 100), 1) if total_mqls > 0 else 0.0
+
+    # ── Dados diários: mescla spend/clicks (Vinci Sheet) + mqls/nc/track (planilha MQLs) ──
+    try:
+        vinci_daily = fetch_vinci_daily(since_dt, until_dt)
+    except Exception:
+        vinci_daily = {}
+
+    # União de todas as datas com dados
+    all_dates = set(mqls_by_day.keys()) | set(vinci_daily.keys())
+    daily_list = []
+    for day_key in sorted(all_dates):
+        mq = mqls_by_day.get(day_key, {'mqls': 0, 'nc': 0, 'track': 0})
+        vd = vinci_daily.get(day_key, {'spend': 0.0, 'clicks': 0})
+        sp = round(vd.get('spend', 0.0), 2)
+        mq_n = mq['mqls']
+        nc_n = mq['nc']
+        tr_n = mq['track']
+        daily_list.append({
+            'date':    day_key,
+            'mqls':    mq_n,
+            'nc':      nc_n,
+            'track':   tr_n,
+            'spend':   sp,
+            'clicks':  vd.get('clicks', 0),
+            'pct_nc':  round(nc_n / mq_n * 100, 1) if mq_n > 0 else 0.0,
+            'cpl':     round(sp / mq_n, 2)          if mq_n > 0 else 0.0,
+        })
 
     return jsonify({
         'campaigns': data['campaigns'],
         'totals':    data['totals'],
         'count':     len(data['campaigns']),
         'filter':    'VINCI',
+        'daily':     daily_list,
     })
 
 

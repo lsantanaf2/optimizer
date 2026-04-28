@@ -1216,11 +1216,23 @@
             <div class="kpi-value" id="gads-kpi-cpa">—</div>
         </div>
         <div class="kpi-card">
+            <div class="kpi-label">🔵 NC</div>
+            <div class="kpi-value" id="gads-kpi-nc">—</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">📊 % NC</div>
+            <div class="kpi-value" id="gads-kpi-pct-nc">—</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">💎 Custo/NC</div>
+            <div class="kpi-value" id="gads-kpi-custo-nc">—</div>
+        </div>
+        <div class="kpi-card">
             <div class="kpi-label">🖱️ Cliques</div>
             <div class="kpi-value" id="gads-kpi-clicks">—</div>
         </div>
         <div class="kpi-card">
-            <div class="kpi-label">📊 CTR Médio</div>
+            <div class="kpi-label">📈 CTR Médio</div>
             <div class="kpi-value" id="gads-kpi-ctr">—</div>
         </div>
     </div>
@@ -1236,8 +1248,66 @@
     </div>
     <div id="gads-error" style="text-align:center; padding:48px 0; color:var(--danger); display:none; font-size:13px;"></div>
 
+    <!-- Donut NC/Track + Tabela por Dia -->
+    <div id="gads-main-grid" class="crz-main-grid" style="display:none;">
+
+        <!-- Donut: NC vs Track -->
+        <div class="chart-card" style="display:flex; flex-direction:column; align-items:center;">
+            <div class="chart-card-title" style="align-self:flex-start;">🎯 MQLs por Produto</div>
+            <div style="position:relative; height:200px; width:200px; margin:8px auto;">
+                <canvas id="gads-chart-donut"></canvas>
+            </div>
+            <div id="gads-donut-legend" style="width:100%; margin-top:8px;"></div>
+        </div>
+
+        <!-- Tabela diária Google Ads -->
+        <div class="chart-card" style="overflow:hidden; padding:0;">
+            <div class="chart-card-title" style="padding:14px 16px 10px; border-bottom:1px solid var(--border);">
+                📅 Dimensão por Dia
+            </div>
+            <div style="overflow-x:auto; overflow-y:auto; max-height:320px;">
+                <table class="day-table" id="gads-day-table">
+                    <thead>
+                        <tr>
+                            <th>Data</th>
+                            <th>MQLs</th>
+                            <th>NC</th>
+                            <th>Track</th>
+                            <th>%&nbsp;NC</th>
+                            <th>CPL/MQL</th>
+                            <th>Custo</th>
+                        </tr>
+                    </thead>
+                    <tbody id="gads-day-tbody"></tbody>
+                    <tfoot id="gads-day-tfoot"></tfoot>
+                </table>
+            </div>
+        </div>
+
+    </div><!-- /gads-main-grid -->
+
+    <!-- Timeline: MQL & CPL por Dia -->
+    <div class="chart-card" id="gads-timeline-container" style="display:none; overflow:hidden; padding:0;">
+        <div class="timeline-header">
+            <span style="font-weight:600; font-size:13px;">📊 Evolução MQL & CPL por Dia — Google Ads</span>
+        </div>
+        <div style="padding:16px 20px;">
+            <canvas id="gads-timeline-chart" height="90"></canvas>
+        </div>
+    </div>
+
+    <!-- Spend por Dia -->
+    <div class="chart-card" id="gads-spend-container" style="display:none; overflow:hidden; padding:0; margin-bottom:14px;">
+        <div class="timeline-header">
+            <span style="font-weight:600; font-size:13px;">💰 Valor Gasto por Dia — Google Ads</span>
+        </div>
+        <div style="padding:16px 20px;">
+            <canvas id="gads-spend-chart" height="70"></canvas>
+        </div>
+    </div>
+
     <!-- Tabela de campanhas -->
-    <div id="gads-table-container" style="display:none; overflow-x:auto; margin-top:16px;">
+    <div id="gads-table-container" style="display:none; overflow-x:auto; margin-top:4px;">
         <table class="day-table" style="width:100%; border-collapse:collapse;">
             <thead>
                 <tr>
@@ -3057,15 +3127,23 @@
     }
 
     // ── Google Ads Sheets ─────────────────────────────────────────────────────────
+    let _gadsTimelineChart = null;
+    let _gadsSpendChart    = null;
+    let _gadsDonutChart    = null;
+
     async function loadGoogleAdsSheets() {
         const loading  = document.getElementById('gads-loading');
         const empty    = document.getElementById('gads-empty');
         const errEl    = document.getElementById('gads-error');
         const tableEl  = document.getElementById('gads-table-container');
         const kpiBar   = document.getElementById('gads-kpi-bar');
+        const mainGrid = document.getElementById('gads-main-grid');
+        const tlineEl  = document.getElementById('gads-timeline-container');
+        const spendEl  = document.getElementById('gads-spend-container');
 
         // reset
-        [loading, empty, errEl, tableEl, kpiBar].forEach(el => { if (el) el.style.display = 'none'; });
+        [loading, empty, errEl, tableEl, kpiBar, mainGrid, tlineEl, spendEl]
+            .forEach(el => { if (el) el.style.display = 'none'; });
         if (loading) loading.style.display = 'block';
 
         const params = new URLSearchParams();
@@ -3083,48 +3161,61 @@
             }
 
             const camps = data.campaigns || [];
-            if (camps.length === 0) {
+            if (camps.length === 0 && !(data.daily || []).length) {
                 if (empty) empty.style.display = 'block';
                 return;
             }
 
-            renderGoogleAdsTable(camps);
+            renderGoogleAdsTable(camps, data.totals || {});
+            renderGadsCharts(data.daily || [], data.totals || {});
         } catch (e) {
             if (loading) loading.style.display = 'none';
             if (errEl)   { errEl.textContent = '⚠️ Erro ao carregar dados do Google Ads.'; errEl.style.display = 'block'; }
         }
     }
 
-    function renderGoogleAdsTable(camps) {
+    function renderGoogleAdsTable(camps, totals) {
         const kpiBar  = document.getElementById('gads-kpi-bar');
         const tableEl = document.getElementById('gads-table-container');
         const tbody   = document.getElementById('gads-tbody');
         const tfoot   = document.getElementById('gads-tfoot');
 
-        // Totais
+        // Totais calculados a partir das campanhas (spend/clicks vêm do Sheets)
         let tSpend = 0, tMqls = 0, tNC = 0, tClicks = 0;
         camps.forEach(c => {
-            tSpend  += c.spend || 0;
-            tMqls   += c.mqls  || 0;
-            tNC     += c.nc    || 0;
+            tSpend  += c.spend  || 0;
+            tMqls   += c.mqls   || 0;
+            tNC     += c.nc     || 0;
             tClicks += c.clicks || 0;
         });
-        const tCustoMql = tMqls   > 0 ? tSpend / tMqls   : 0;
-        const tCustoNC  = tNC     > 0 ? tSpend / tNC     : 0;
-        const tCPC      = tClicks > 0 ? tSpend / tClicks : 0;
-        const tPctNC    = tMqls   > 0 ? (tNC / tMqls) * 100 : 0;
+        // MQLs/NC/Track vêm dos totals do backend (mais precisos — incluem leads sem UTM campanha)
+        const beMqls  = totals.mqls  || tMqls;
+        const beNC    = totals.nc    || tNC;
+        const beTrack = totals.track || (beMqls - beNC);
 
-        // KPIs
-        document.getElementById('gads-kpi-spend').textContent  = fmtR(tSpend);
-        document.getElementById('gads-kpi-conv').textContent   = tMqls > 0 ? tMqls.toLocaleString('pt-BR') : '—';
-        document.getElementById('gads-kpi-cpa').textContent    = tCustoMql > 0 ? fmtR(tCustoMql) : '—';
-        document.getElementById('gads-kpi-clicks').textContent = tClicks > 0 ? tClicks.toLocaleString('pt-BR') : '—';
+        const tCustoMql = beMqls   > 0 ? tSpend / beMqls   : 0;
+        const tCustoNC  = beNC     > 0 ? tSpend / beNC      : 0;
+        const tCPC      = tClicks  > 0 ? tSpend / tClicks   : 0;
+        const tPctNC    = beMqls   > 0 ? (beNC  / beMqls) * 100 : 0;
+
+        // KPIs — novos campos NC, %NC, Custo/NC
+        document.getElementById('gads-kpi-spend').textContent     = fmtR(tSpend);
+        document.getElementById('gads-kpi-conv').textContent      = beMqls > 0 ? beMqls.toLocaleString('pt-BR') : '—';
+        document.getElementById('gads-kpi-cpa').textContent       = tCustoMql > 0 ? fmtR(tCustoMql) : '—';
+        document.getElementById('gads-kpi-nc').textContent        = beNC > 0 ? beNC.toLocaleString('pt-BR') : '—';
+        document.getElementById('gads-kpi-pct-nc').textContent    = beMqls > 0 ? tPctNC.toFixed(1) + '%' : '—';
+        document.getElementById('gads-kpi-custo-nc').textContent  = tCustoNC > 0 ? fmtR(tCustoNC) : '—';
+        document.getElementById('gads-kpi-clicks').textContent    = tClicks > 0 ? tClicks.toLocaleString('pt-BR') : '—';
 
         // CTR médio ponderado pelo spend
-        const tCTR = camps.reduce((s, c) => s + (c.ctr||0) * (c.spend||0), 0) / (tSpend || 1);
+        const tCTR = tSpend > 0
+            ? camps.reduce((s, c) => s + (c.ctr||0) * (c.spend||0), 0) / tSpend
+            : 0;
         document.getElementById('gads-kpi-ctr').textContent = tCTR > 0 ? tCTR.toFixed(2) + '%' : '—';
 
         kpiBar.style.display = 'flex';
+
+        if (!camps.length) return;
 
         // Linhas
         tbody.innerHTML = camps.map(c => `
@@ -3144,8 +3235,8 @@
         tfoot.innerHTML = `<tr>
             <td style="text-align:left;">TOTAL (${camps.length} camp)</td>
             <td style="text-align:right; font-weight:600;">${fmtR(tSpend)}</td>
-            <td style="text-align:right;">${tMqls > 0 ? tMqls.toLocaleString('pt-BR') : '—'}</td>
-            <td style="text-align:right;">${tMqls > 0 ? tPctNC.toFixed(1) + '%' : '—'}</td>
+            <td style="text-align:right;">${beMqls > 0 ? beMqls.toLocaleString('pt-BR') : '—'}</td>
+            <td style="text-align:right;">${beMqls > 0 ? tPctNC.toFixed(1) + '%' : '—'}</td>
             <td style="text-align:right;">${tCustoMql > 0 ? fmtR(tCustoMql) : '—'}</td>
             <td style="text-align:right;">${tCustoNC > 0 ? fmtR(tCustoNC) : '—'}</td>
             <td style="text-align:right;">${tClicks > 0 ? tClicks.toLocaleString('pt-BR') : '—'}</td>
@@ -3154,6 +3245,204 @@
         </tr>`;
 
         tableEl.style.display = 'block';
+    }
+
+    // ── Google Ads: gráficos e tabela diária ──────────────────────────────────
+    function renderGadsCharts(daily, totals) {
+        if (!daily || !daily.length) return;
+
+        const mainGrid = document.getElementById('gads-main-grid');
+        const tlineEl  = document.getElementById('gads-timeline-container');
+        const spendEl  = document.getElementById('gads-spend-container');
+
+        // ── Donut: NC vs Track ──
+        const ncTotal    = totals.nc    || daily.reduce((s, d) => s + (d.nc    || 0), 0);
+        const trackTotal = totals.track || daily.reduce((s, d) => s + (d.track || 0), 0);
+        const donutCtx = document.getElementById('gads-chart-donut');
+        if (donutCtx) {
+            if (_gadsDonutChart) { _gadsDonutChart.destroy(); _gadsDonutChart = null; }
+            const donutData = [];
+            const donutLabels = [];
+            const donutColors = [];
+            if (ncTotal > 0)    { donutData.push(ncTotal);    donutLabels.push('NC');    donutColors.push('#4f9cf9'); }
+            if (trackTotal > 0) { donutData.push(trackTotal); donutLabels.push('Track'); donutColors.push('#2cb67d'); }
+            if (donutData.length) {
+                _gadsDonutChart = new Chart(donutCtx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: donutLabels,
+                        datasets: [{ data: donutData, backgroundColor: donutColors, borderWidth: 0, hoverOffset: 6 }]
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false, cutout: '68%',
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: ctx => {
+                                        const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
+                                        const pct = total > 0 ? ((ctx.raw / total) * 100).toFixed(1) : 0;
+                                        return ` ${ctx.label}: ${ctx.raw} (${pct}%)`;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+                // Legenda manual (igual ao FB)
+                const legendEl = document.getElementById('gads-donut-legend');
+                if (legendEl) {
+                    const totalMqls = donutData.reduce((a, b) => a + b, 0);
+                    legendEl.innerHTML = donutLabels.map((lbl, i) => {
+                        const pct = totalMqls > 0 ? ((donutData[i] / totalMqls) * 100).toFixed(1) : 0;
+                        return `<div style="display:flex;align-items:center;gap:6px;margin:3px 0;font-size:12px;">
+                            <span style="width:10px;height:10px;border-radius:50%;background:${donutColors[i]};display:inline-block;flex-shrink:0;"></span>
+                            <span style="color:var(--text-secondary)">${lbl}</span>
+                            <span style="margin-left:auto;font-weight:600;color:var(--text-primary)">${donutData[i]}</span>
+                            <span style="color:var(--text-muted)">${pct}%</span>
+                        </div>`;
+                    }).join('');
+                }
+            }
+        }
+
+        // ── Tabela diária ──
+        const dayTbody = document.getElementById('gads-day-tbody');
+        const dayTfoot = document.getElementById('gads-day-tfoot');
+        if (dayTbody) {
+            let totMqls = 0, totNC = 0, totTrack = 0, totSpend = 0;
+            dayTbody.innerHTML = daily.map(d => {
+                totMqls  += d.mqls  || 0;
+                totNC    += d.nc    || 0;
+                totTrack += d.track || 0;
+                totSpend += d.spend || 0;
+                const dFmt = d.date ? d.date.slice(8,10) + '/' + d.date.slice(5,7) : d.date;
+                return `<tr>
+                    <td>${dFmt}</td>
+                    <td style="text-align:right;">${d.mqls > 0 ? d.mqls : '—'}</td>
+                    <td style="text-align:right; color:#4f9cf9;">${d.nc > 0 ? d.nc : '—'}</td>
+                    <td style="text-align:right; color:#2cb67d;">${d.track > 0 ? d.track : '—'}</td>
+                    <td style="text-align:right;">${d.mqls > 0 ? (d.pct_nc || 0).toFixed(1) + '%' : '—'}</td>
+                    <td style="text-align:right;">${d.cpl > 0 ? fmtR(d.cpl) : '—'}</td>
+                    <td style="text-align:right;">${d.spend > 0 ? fmtR(d.spend) : '—'}</td>
+                </tr>`;
+            }).join('');
+            const totCpl = totMqls > 0 ? totSpend / totMqls : 0;
+            const totPct = totMqls > 0 ? (totNC / totMqls * 100).toFixed(1) + '%' : '—';
+            if (dayTfoot) dayTfoot.innerHTML = `<tr style="font-weight:700; border-top:2px solid var(--border);">
+                <td>TOTAL</td>
+                <td style="text-align:right;">${totMqls || '—'}</td>
+                <td style="text-align:right; color:#4f9cf9;">${totNC || '—'}</td>
+                <td style="text-align:right; color:#2cb67d;">${totTrack || '—'}</td>
+                <td style="text-align:right;">${totPct}</td>
+                <td style="text-align:right;">${totCpl > 0 ? fmtR(totCpl) : '—'}</td>
+                <td style="text-align:right;">${totSpend > 0 ? fmtR(totSpend) : '—'}</td>
+            </tr>`;
+        }
+        mainGrid.style.display = 'grid';
+
+        // ── Timeline: MQL & CPL por dia ──
+        const timelineCtx = document.getElementById('gads-timeline-chart');
+        if (timelineCtx && daily.length > 1) {
+            if (_gadsTimelineChart) { _gadsTimelineChart.destroy(); _gadsTimelineChart = null; }
+            const labels = daily.map(d => d.date ? d.date.slice(8,10) + '/' + d.date.slice(5,7) : d.date);
+            _gadsTimelineChart = new Chart(timelineCtx, {
+                data: {
+                    labels,
+                    datasets: [
+                        {
+                            type: 'bar', label: 'NC', yAxisID: 'yMql',
+                            data: daily.map(d => d.nc || 0),
+                            backgroundColor: 'rgba(79,156,249,0.75)', order: 2,
+                        },
+                        {
+                            type: 'bar', label: 'Track', yAxisID: 'yMql',
+                            data: daily.map(d => d.track || 0),
+                            backgroundColor: 'rgba(44,182,125,0.75)', order: 2,
+                        },
+                        {
+                            type: 'line', label: 'CPL (R$)', yAxisID: 'yCpl',
+                            data: daily.map(d => d.cpl > 0 ? d.cpl : null),
+                            borderColor: '#ef6fa3', backgroundColor: 'transparent',
+                            pointRadius: 3, pointHoverRadius: 5, tension: 0.35,
+                            borderWidth: 2, order: 1,
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        legend: {
+                            labels: { color: '#a0a0b0', font: { family: 'Lexend', size: 11 }, usePointStyle: true, boxWidth: 8 }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: ctx => ctx.dataset.label === 'CPL (R$)'
+                                    ? ` CPL: ${ctx.raw != null ? 'R$ ' + ctx.raw.toFixed(2) : '—'}`
+                                    : ` ${ctx.dataset.label}: ${ctx.raw}`
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            ticks: { color: '#5a5a6e', font: { family: 'Lexend', size: 10 }, maxRotation: 45 },
+                            grid:  { color: 'rgba(255,255,255,0.04)' },
+                            stacked: true
+                        },
+                        yMql: {
+                            type: 'linear', position: 'left', stacked: true,
+                            ticks: { color: '#4f9cf9', font: { family: 'Lexend', size: 10 }, stepSize: 1, precision: 0 },
+                            grid:  { color: 'rgba(255,255,255,0.04)' },
+                            title: { display: true, text: 'MQLs', color: '#4f9cf9', font: { family: 'Lexend', size: 10 } }
+                        },
+                        yCpl: {
+                            type: 'linear', position: 'right',
+                            ticks: { color: '#ef6fa3', font: { family: 'Lexend', size: 10 }, callback: v => 'R$ ' + v.toFixed(0) },
+                            grid:  { display: false },
+                            title: { display: true, text: 'CPL', color: '#ef6fa3', font: { family: 'Lexend', size: 10 } }
+                        }
+                    }
+                }
+            });
+            tlineEl.style.display = 'block';
+        }
+
+        // ── Spend por dia ──
+        const spendCtx = document.getElementById('gads-spend-chart');
+        const spendDays = daily.filter(d => d.spend > 0);
+        if (spendCtx && spendDays.length > 0) {
+            if (_gadsSpendChart) { _gadsSpendChart.destroy(); _gadsSpendChart = null; }
+            const labels = daily.map(d => d.date ? d.date.slice(8,10) + '/' + d.date.slice(5,7) : d.date);
+            _gadsSpendChart = new Chart(spendCtx, {
+                type: 'bar',
+                data: {
+                    labels,
+                    datasets: [{
+                        label: 'Gasto (R$)',
+                        data: daily.map(d => d.spend || 0),
+                        backgroundColor: 'rgba(66,133,244,0.55)',
+                        borderColor: '#4285f4',
+                        borderWidth: 1,
+                        borderRadius: 3,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: { label: ctx => ` R$ ${Number(ctx.raw).toFixed(2)}` }
+                        }
+                    },
+                    scales: {
+                        x: { ticks: { color: '#5a5a6e', font: { family: 'Lexend', size: 10 }, maxRotation: 45 }, grid: { color: 'rgba(255,255,255,0.04)' } },
+                        y: { ticks: { color: '#4285f4', font: { family: 'Lexend', size: 10 }, callback: v => 'R$ ' + v.toFixed(0) }, grid: { color: 'rgba(255,255,255,0.04)' } }
+                    }
+                }
+            });
+            spendEl.style.display = 'block';
+        }
     }
 
     // ── Consolidado (FB + Google + MQLs) ────────────────────────────────────────
