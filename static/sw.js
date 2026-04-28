@@ -12,7 +12,7 @@
  * - Registra histórico ao final (/api/upload-history/add)
  */
 
-const SW_VERSION = 'v2.9.0';
+const SW_VERSION = 'v2.9.2';
 const DB_NAME = 'optimizer-uploads';
 const DB_VERSION = 1;
 const STORE_JOBS = 'jobs';
@@ -30,7 +30,13 @@ function openDb() {
                 db.createObjectStore(STORE_JOBS, { keyPath: 'id' });
             }
         };
-        req.onsuccess = () => { _dbConn = req.result; resolve(_dbConn); };
+        req.onsuccess = () => {
+            _dbConn = req.result;
+            // Fix #3: invalida cache se conexão for fechada (Safari background, quota, upgrade)
+            _dbConn.onclose = () => { _dbConn = null; };
+            _dbConn.onversionchange = () => { try { _dbConn.close(); } catch (_) {} _dbConn = null; };
+            resolve(_dbConn);
+        };
         req.onerror = () => reject(req.error);
     });
 }
@@ -114,7 +120,9 @@ async function appendLog(job, message, level) {
 function _preDupKey(ctx) {
     const modelo = ctx.estrategia === 'novo' ? ctx.adsetModeloNovo : ctx.adsetModelo;
     const nome = ctx.estrategia === 'novo' ? ctx.adsetNewNameNovo : ctx.adsetNewName;
-    return `${ctx.accountId}|${ctx.campaignId}|${modelo}|${ctx.estrategia}|${nome}`;
+    // Fix #4: inclui excludedCountries para não compartilhar adset pré-dup com exclusões diferentes
+    const excl = ctx.excludedCountries || '';
+    return `${ctx.accountId}|${ctx.campaignId}|${modelo}|${ctx.estrategia}|${nome}|${excl}`;
 }
 function _precisaPreDup(ctx) {
     return (ctx.estrategia === 'agrupado' && ctx.destino === 'duplicar') || ctx.estrategia === 'novo';
@@ -271,10 +279,16 @@ async function uploadItem(job, item, preDupMap, index) {
     broadcast('job-update', { job });
 
     let uploadResult = null;
+    let authExpired = false; // Fix #1: sinaliza para parar cascata
     try {
-        const r = await fetch(`/campanha/${ctx.campaignId}/upload`, { method: 'POST', body: fd, credentials: 'include' });
-        // Fix M6: sessão expirada — broadcast específico para re-login modal
-        if (r.status === 401) {
+        const r = await fetch(`/campanha/${ctx.campaignId}/upload`, { method: 'POST', body: fd, credentials: 'include', redirect: 'manual' });
+        // Fix #1: detecta 401/403/redirect para login (Flask @require_login normalmente devolve 302)
+        const isAuthFail = r.status === 401 || r.status === 403
+            || r.type === 'opaqueredirect'
+            || (r.status >= 300 && r.status < 400)
+            || (r.redirected && /\/login/i.test(r.url));
+        if (isAuthFail) {
+            authExpired = true;
             broadcast('auth-expired', { jobId: job.id });
             throw new Error('Sessão expirada — faça login novamente');
         }
@@ -319,6 +333,20 @@ async function uploadItem(job, item, preDupMap, index) {
     } catch (e) {
         uploadResult = { success: false, error: e.message };
         appendLog(job, `❌ Erro rede "${item.adName}": ${e.message}`, 'error');
+    }
+
+    // Fix #7: flush do debounce pendente — garante que último update chegue antes de job-finished
+    if (_broadcastDebounce.has(job.id)) {
+        clearTimeout(_broadcastDebounce.get(job.id));
+        _broadcastDebounce.delete(job.id);
+        broadcast('job-update', { job });
+    }
+
+    // Fix #1: se auth expirou, marca o job como cancelado para parar cascata de 401s
+    if (authExpired) {
+        job.status = 'cancelled';
+        appendLog(job, `⏸ Fila pausada por sessão expirada. Faça login e re-enfileire os itens restantes.`, 'warning');
+        await idbPut(job);
     }
 
     const dur = formatDur(Date.now() - tStart);

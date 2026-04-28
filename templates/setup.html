@@ -704,11 +704,10 @@
         }
 
         function pararUpload() {
-            // Fix C3: cancela via SW (não mais variável local que o SW não lê)
+            // Fix #6: NÃO zera currentJobId aqui — só ao receber confirmação via job-finished/update
             const btnStop = document.getElementById('btn-stop-upload');
             if (currentJobId) {
                 UploadManager.cancelJob(currentJobId);
-                currentJobId = null;
             }
             uploadCancelado = true; // mantido para compatibilidade
             if (btnStop) { btnStop.textContent = '⏳ Parando...'; btnStop.disabled = true; }
@@ -1174,14 +1173,52 @@
             }
         });
 
-        // Fix C3: esconde botão Parar quando o job ativo terminar/cancelar
+        // Fix C3 + #6 + #8: gerencia botão Parar reagindo a eventos do SW
+        // Também re-vincula currentJobId após F5/troca de conta (bug #2)
         if (typeof UploadManager !== 'undefined') {
-            UploadManager.onEvent(function(msg) {
-                if (msg.type === 'job-finished' || msg.type === 'job-deleted') {
-                    if (msg.job && msg.job.id === currentJobId) {
-                        currentJobId = null;
+            // #2/#8: na carga, varre jobs ativos e re-vincula se houver um da campanha atual
+            (async () => {
+                try {
+                    const jobs = await UploadManager.getJobs();
+                    const ativo = jobs.find(j =>
+                        (j.status === 'running' || j.status === 'queued') &&
+                        j.campaignId === CAMPAIGN_ID && j.accountId === ACCOUNT_ID
+                    );
+                    if (ativo) {
+                        currentJobId = ativo.id;
                         const btnStop = document.getElementById('btn-stop-upload');
-                        if (btnStop) btnStop.style.display = 'none';
+                        if (btnStop) {
+                            btnStop.style.display = 'inline-block';
+                            btnStop.disabled = false;
+                            btnStop.textContent = '⏹ Parar Upload';
+                        }
+                    }
+                } catch (_) {}
+            })();
+
+            UploadManager.onEvent(function(msg) {
+                if (!msg || !msg.job) return;
+                const isOurs = msg.job.id === currentJobId;
+
+                // #6: zera currentJobId só quando o SW confirma que o job acabou/cancelou
+                if (isOurs && (msg.type === 'job-finished' || msg.type === 'job-deleted')) {
+                    currentJobId = null;
+                    const btnStop = document.getElementById('btn-stop-upload');
+                    if (btnStop) {
+                        btnStop.style.display = 'none';
+                        btnStop.disabled = false;
+                        btnStop.textContent = '⏹ Parar Upload';
+                    }
+                }
+
+                // #6: cobre o caso de cancelamento que vem como job-update com status='cancelled'
+                if (isOurs && msg.type === 'job-update' && msg.job.status === 'cancelled') {
+                    currentJobId = null;
+                    const btnStop = document.getElementById('btn-stop-upload');
+                    if (btnStop) {
+                        btnStop.style.display = 'none';
+                        btnStop.disabled = false;
+                        btnStop.textContent = '⏹ Parar Upload';
                     }
                 }
             });
