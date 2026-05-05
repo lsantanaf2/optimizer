@@ -159,6 +159,7 @@ async function preDuplicateGroups(job) {
             fd.append('adset_name', nome || '');
             fd.append('adset_status', 'PAUSED');
             if (ctx.excludedCountries) fd.append('excluded_countries', ctx.excludedCountries);
+            if (ctx.adsetStartTime) fd.append('start_time', ctx.adsetStartTime);
             const r = await fetch(`/campanha/${ctx.campaignId}/duplicate-adset`, { method: 'POST', body: fd, credentials: 'include' });
             const data = await r.json();
             if (data.success && data.adset_id) {
@@ -193,6 +194,7 @@ async function duplicarGarimpo(job, item) {
         fd.append('adset_name', item.adName);
         fd.append('adset_status', 'PAUSED');
         if (ctx.excludedCountries) fd.append('excluded_countries', ctx.excludedCountries);
+        if (ctx.adsetStartTime) fd.append('start_time', ctx.adsetStartTime);
         const r = await fetch(`/campanha/${ctx.campaignId}/duplicate-adset`, { method: 'POST', body: fd, credentials: 'include' });
         const data = await r.json();
         if (data.success && data.adset_id) {

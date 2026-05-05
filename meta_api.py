@@ -63,6 +63,17 @@ GEO_COMPLIANCE_MSG_PATTERNS = [
     ('singapore', 'SG', 'Singapura'),
 ]
 
+def _parse_start_time(start_time_str):
+    """Converte 'YYYY-MM-DDTHH:MM' (BRT, UTC-3) para Unix timestamp que a Meta API aceita."""
+    from datetime import datetime, timezone, timedelta
+    try:
+        brt = timezone(timedelta(hours=-3))
+        dt = datetime.strptime(start_time_str[:16], '%Y-%m-%dT%H:%M').replace(tzinfo=brt)
+        return int(dt.timestamp())
+    except Exception:
+        return None
+
+
 def _detect_geo_compliance_error(err_str, error_data=None):
     """
     Analisa string de erro e retorna (country_code, country_name) se for
@@ -2155,7 +2166,8 @@ class MetaUploader:
     # ======================== DUPLICAR AD SET ========================
 
     def duplicate_adset(self, source_adset_id, new_name=None, adset_status='PAUSED',
-                        excluded_countries=None, compliance_advertiser=None, compliance_payer=None):
+                        excluded_countries=None, compliance_advertiser=None, compliance_payer=None,
+                        start_time=None):
         """Duplica um Ad Set existente. Retorna o ID do novo Ad Set.
 
         excluded_countries:   lista de códigos ISO a excluir da segmentação (ex: ['TW']).
@@ -2178,6 +2190,7 @@ class MetaUploader:
                 excluded_countries=excluded_countries,
                 compliance_advertiser=compliance_advertiser,
                 compliance_payer=compliance_payer,
+                start_time=start_time,
             )
             self._log(f"✅ Ad Set duplicado (novo ID: {adset_id})")
             return adset_id
@@ -2220,6 +2233,8 @@ class MetaUploader:
                     }
                     if new_name:
                         update_data['name'] = new_name
+                    if start_time:
+                        update_data['start_time'] = _parse_start_time(start_time)
 
                     url = f"https://graph.facebook.com/v22.0/{copied_id}"
                     resp = requests.post(url, data=update_data).json()
@@ -2238,7 +2253,8 @@ class MetaUploader:
 
     def _manual_duplicate_adset(self, source_adset_id, new_name=None,
                                 adset_status='PAUSED', excluded_countries=None,
-                                compliance_advertiser=None, compliance_payer=None):
+                                compliance_advertiser=None, compliance_payer=None,
+                                start_time=None):
         """Cria um novo Ad Set copiando configs do original.
         Usado como fallback para location_types, geo-exclusão e compliance de transparência.
 
@@ -2334,6 +2350,8 @@ class MetaUploader:
             create_params['attribution_spec'] = _json.dumps(resp['attribution_spec'])
         if resp.get('destination_type'):
             create_params['destination_type'] = resp['destination_type']
+        if start_time:
+            create_params['start_time'] = _parse_start_time(start_time)
 
         # Criar novo ad set
         create_url = f"https://graph.facebook.com/v22.0/{self.account.get_id()}/adsets"

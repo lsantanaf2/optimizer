@@ -194,6 +194,18 @@
                 <div class="card-desc" style="margin-top:6px;">⛏️ Cada criativo ganhará seu próprio conjunto, copiado
                     deste modelo. O nome do conjunto será o <strong>nome do anúncio</strong>. Conjuntos criados como <strong>pausados</strong>.</div>
             </div>
+
+            <!-- Data de início — aparece sempre que um novo conjunto é criado -->
+            <div id="adset-start-time-section" style="display:none; margin-top:14px; padding:14px; background:var(--bg-deep); border:1px solid var(--border); border-radius:8px;">
+                <label style="font-size:13px; color:var(--text-muted); margin-bottom:6px; display:block;">📅 Data de início do conjunto</label>
+                <input type="datetime-local" id="adset_start_time"
+                    style="width:100%; padding:8px 12px; border:1px solid var(--border); border-radius:8px;
+                           background:var(--card); color:var(--text); font-size:14px; cursor:pointer;">
+                <div class="card-desc" style="margin-top:6px;">
+                    O conjunto será criado pausado. A data de início controla quando ele pode ser ativado.
+                    Padrão: <strong>amanhã às 00:01</strong> (horário de Brasília).
+                </div>
+            </div>
         </div>
 
         <!-- ================================================================ -->
@@ -645,6 +657,7 @@
                 adsetModeloGarimpo:  document.getElementById('adset_modelo_garimpo')?.value || '',
                 adsetNewName:        document.getElementById('adset_new_name')?.value || '',
                 adsetNewNameNovo:    document.getElementById('adset_new_name_novo')?.value || '',
+                adsetStartTime:      document.getElementById('adset_start_time')?.value || '',
                 pageId:              document.getElementById('select-page')?.value || '',
                 igId:                document.getElementById('select-instagram')?.value || '',
                 pixelId:              document.getElementById('select-pixel')?.value || '',
@@ -1236,6 +1249,26 @@
         });
 
         // ======================== STRATEGY ========================
+        function _defaultAdsetStartTime() {
+            // Amanhã às 00:01 no horário de Brasília (America/Sao_Paulo)
+            const brtNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+            const tomorrow = new Date(brtNow);
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            const y = tomorrow.getFullYear();
+            const m = String(tomorrow.getMonth() + 1).padStart(2, '0');
+            const d = String(tomorrow.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}T00:01`;
+        }
+
+        function _toggleStartTimeField(show) {
+            const sec = document.getElementById('adset-start-time-section');
+            if (!sec) return;
+            sec.style.display = show ? 'block' : 'none';
+            if (show && !document.getElementById('adset_start_time').value) {
+                document.getElementById('adset_start_time').value = _defaultAdsetStartTime();
+            }
+        }
+
         function selecionarEstrategia(tipo) {
             document.querySelectorAll('.radio-option').forEach(el => el.classList.remove('selected'));
             document.getElementById('opt-' + tipo).classList.add('selected');
@@ -1248,6 +1281,8 @@
                 document.getElementById('select-existente').classList.add('hidden-select');
                 document.getElementById('select-duplicar').classList.add('hidden-select');
             }
+            // Mostra data de início para qualquer estratégia que cria novo conjunto
+            _toggleStartTimeField(tipo === 'novo' || tipo === 'garimpo');
         }
 
         function selecionarDestino(tipo) {
@@ -1256,6 +1291,8 @@
             document.querySelector(`input[name="destino_conjunto"][value="${tipo}"]`).checked = true;
             document.getElementById('select-existente').classList.toggle('hidden-select', tipo !== 'existente');
             document.getElementById('select-duplicar').classList.toggle('hidden-select', tipo !== 'duplicar');
+            // Agrupado: mostra data só quando vai duplicar
+            _toggleStartTimeField(tipo === 'duplicar');
         }
 
         // ======================== DYNAMIC FIELDS ========================
@@ -2258,8 +2295,8 @@
                 const mesmaConta = ctx.accountId === ACCOUNT_ID && ctx.campaignId === CAMPAIGN_ID;
                 if (!mesmaConta) continue;
                 const keys = ['estrategia','destino','adsetExistente','adsetModelo','adsetModeloNovo',
-                              'adsetModeloGarimpo','adsetNewName','adsetNewNameNovo','pageId','igId',
-                              'pixelId','leadFormId','url','utms','cta','excludedCountries','campaignName'];
+                              'adsetModeloGarimpo','adsetNewName','adsetNewNameNovo','adsetStartTime',
+                              'pageId','igId','pixelId','leadFormId','url','utms','cta','excludedCountries','campaignName'];
                 for (const k of keys) {
                     if ((ctx[k] === '' || ctx[k] == null) && uiNow[k]) ctx[k] = uiNow[k];
                 }

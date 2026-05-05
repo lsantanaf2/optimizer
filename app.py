@@ -68,7 +68,7 @@ from modules.account_settings import (
 import atexit
 atexit.register(close_db)
 
-VERSION = "v2.9.2"
+VERSION = "v2.9.3"
 
 
 @app.route('/sw.js')
@@ -1665,6 +1665,7 @@ def duplicate_adset_route(campaign_id):
             adset_status = 'PAUSED'
         excluded_countries_raw = request.form.get('excluded_countries', '')
         excluded_countries = [c.strip().upper() for c in excluded_countries_raw.split(',') if c.strip()] or None
+        start_time_raw = request.form.get('start_time', '').strip()
 
         if not adset_modelo:
             return jsonify({'success': False, 'error': 'Nenhum Ad Set modelo informado'}), 400
@@ -1674,7 +1675,8 @@ def duplicate_adset_route(campaign_id):
             new_adset_id = uploader.duplicate_adset(
                 adset_modelo, new_name=adset_name or None,
                 adset_status=adset_status,
-                excluded_countries=excluded_countries)
+                excluded_countries=excluded_countries,
+                start_time=start_time_raw or None)
         except GeoComplianceError as geo_err:
             return jsonify({
                 'success': False,
