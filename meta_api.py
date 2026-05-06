@@ -64,12 +64,16 @@ GEO_COMPLIANCE_MSG_PATTERNS = [
 ]
 
 def _parse_start_time(start_time_str):
-    """Converte 'YYYY-MM-DDTHH:MM' (BRT, UTC-3) para Unix timestamp que a Meta API aceita."""
+    """Converte 'YYYY-MM-DDTHH:MM' (BRT, UTC-3) para ISO 8601 com offset.
+
+    Retorna formato canônico aceito pela Meta API: '2026-04-29T00:01:00-0300'.
+    Retorna None se o input for inválido (caller deve tratar).
+    """
     from datetime import datetime, timezone, timedelta
     try:
         brt = timezone(timedelta(hours=-3))
         dt = datetime.strptime(start_time_str[:16], '%Y-%m-%dT%H:%M').replace(tzinfo=brt)
-        return int(dt.timestamp())
+        return dt.strftime('%Y-%m-%dT%H:%M:%S%z')
     except Exception:
         return None
 

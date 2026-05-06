@@ -1264,8 +1264,17 @@
             const sec = document.getElementById('adset-start-time-section');
             if (!sec) return;
             sec.style.display = show ? 'block' : 'none';
-            if (show && !document.getElementById('adset_start_time').value) {
-                document.getElementById('adset_start_time').value = _defaultAdsetStartTime();
+            const inp = document.getElementById('adset_start_time');
+            if (show) {
+                // min = agora (BRT) — previne escolher datas no passado
+                const brtNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+                const min = brtNow.getFullYear() + '-' +
+                            String(brtNow.getMonth() + 1).padStart(2, '0') + '-' +
+                            String(brtNow.getDate()).padStart(2, '0') + 'T' +
+                            String(brtNow.getHours()).padStart(2, '0') + ':' +
+                            String(brtNow.getMinutes()).padStart(2, '0');
+                inp.min = min;
+                if (!inp.value) inp.value = _defaultAdsetStartTime();
             }
         }
 
