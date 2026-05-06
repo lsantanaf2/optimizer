@@ -2227,14 +2227,14 @@ class MetaUploader:
             # Definir status final + renomear
             if copied_id:
                 try:
+                    # PATCH 1: status + nome — crítico, mantido separado do start_time
+                    # (misturar start_time aqui causa falha da Meta que cancela o nome também)
                     update_data = {
                         'status': adset_status,
                         'access_token': self.access_token
                     }
                     if new_name:
                         update_data['name'] = new_name
-                    if start_time:
-                        update_data['start_time'] = _parse_start_time(start_time)
 
                     url = f"https://graph.facebook.com/v22.0/{copied_id}"
                     resp = requests.post(url, data=update_data).json()
@@ -2242,6 +2242,19 @@ class MetaUploader:
                         self._log(f"⚠️ Falha ao atualizar Ad Set: {resp['error'].get('message')}")
                     else:
                         self._log(f"✅ Ad Set configurado: {adset_status}{' / ' + new_name if new_name else ''}")
+
+                    # PATCH 2: start_time — opcional, request separado para não impactar nome
+                    if start_time:
+                        parsed_ts = _parse_start_time(start_time)
+                        if parsed_ts:
+                            r2 = requests.post(url, data={
+                                'start_time': parsed_ts,
+                                'access_token': self.access_token
+                            }).json()
+                            if 'error' in r2:
+                                self._log(f"⚠️ Data de início não aceita pela API: {r2['error'].get('message')}")
+                            else:
+                                self._log(f"📅 Data de início configurada: {start_time} (BRT)")
                 except Exception as e:
                     self._log(f"⚠️ Erro ao atualizar Ad Set: {e}")
 
@@ -2350,18 +2363,44 @@ class MetaUploader:
             create_params['attribution_spec'] = _json.dumps(resp['attribution_spec'])
         if resp.get('destination_type'):
             create_params['destination_type'] = resp['destination_type']
+        # start_time: guarda separado para poder tentar sem ele em caso de rejeição
+        _start_ts = None
         if start_time:
-            create_params['start_time'] = _parse_start_time(start_time)
+            _start_ts = _parse_start_time(start_time)
+            if _start_ts:
+                create_params['start_time'] = _start_ts
 
-        # Criar novo ad set
+        # Criar novo ad set — com fallback sem start_time se a Meta rejeitar
         create_url = f"https://graph.facebook.com/v22.0/{self.account.get_id()}/adsets"
         create_resp = requests.post(create_url, data=create_params).json()
 
         if 'error' in create_resp:
-            raise Exception(f"Erro ao criar Ad Set: {create_resp['error'].get('message')}")
+            # Se falhou e havia start_time, tenta novamente sem ele
+            if _start_ts and 'start_time' in create_params:
+                self._log(f"⚠️ Criação com start_time falhou — retentando sem data de início")
+                del create_params['start_time']
+                create_resp = requests.post(create_url, data=create_params).json()
+            if 'error' in create_resp:
+                raise Exception(f"Erro ao criar Ad Set: {create_resp['error'].get('message')}")
 
         new_id = create_resp.get('id')
         self._log(f"✅ Ad Set criado manualmente: {new_id}")
+
+        # start_time via PATCH separado (caso não tenha sido incluído no create)
+        if new_id and _start_ts and 'start_time' not in create_params:
+            try:
+                url2 = f"https://graph.facebook.com/v22.0/{new_id}"
+                r2 = requests.post(url2, data={
+                    'start_time': _start_ts,
+                    'access_token': self.access_token
+                }).json()
+                if 'error' in r2:
+                    self._log(f"⚠️ Data de início não aceita: {r2['error'].get('message')}")
+                else:
+                    self._log(f"📅 Data de início configurada: {start_time} (BRT)")
+            except Exception:
+                pass
+
         return new_id
 
     # ======================== PROCESSAR FILA ========================
