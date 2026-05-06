@@ -2178,11 +2178,14 @@ class MetaUploader:
         extra = f" | excluindo: {excluded_countries}" if excluded_countries else ""
         self._log(f"📋 Duplicando Ad Set {source_adset_id} (status: {adset_status}{extra})...")
 
-        # Se há países para excluir OU compliance definido, usa duplicação manual (mais controle)
-        if excluded_countries or compliance_advertiser:
+        # create_copy herda o start_time do original (possivelmente no passado).
+        # A Meta não permite alterar start_time de conjuntos já iniciados, mesmo pausados.
+        # Por isso: qualquer parâmetro que exija controle total vai pelo caminho manual.
+        if excluded_countries or compliance_advertiser or start_time:
             reason = []
             if excluded_countries:    reason.append(f"geo-exclusão: {excluded_countries}")
             if compliance_advertiser: reason.append(f"compliance: {compliance_advertiser}")
+            if start_time:            reason.append(f"start_time: {start_time}")
             self._log(f"🔧 Criando manualmente ({', '.join(reason)})...")
             adset_id = self._manual_duplicate_adset(
                 source_adset_id, new_name,
