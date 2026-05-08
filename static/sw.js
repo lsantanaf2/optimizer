@@ -168,6 +168,10 @@ async function preDuplicateGroups(job) {
             } else {
                 preDupMap[g.key] = null;
                 appendLog(job, `❌ Falha pré-dup: ${data.error}`, 'error');
+                // Despeja logs detalhados do uploader (Meta error_user_msg, params, etc.)
+                if (Array.isArray(data.logs)) {
+                    data.logs.slice(-30).forEach(l => appendLog(job, l, classifyLevel(l)));
+                }
             }
         } catch (e) {
             preDupMap[g.key] = null;
@@ -202,6 +206,9 @@ async function duplicarGarimpo(job, item) {
             return data.adset_id;
         }
         appendLog(job, `❌ Garimpo falhou para "${item.adName}": ${data.error}`, 'error');
+        if (Array.isArray(data.logs)) {
+            data.logs.slice(-30).forEach(l => appendLog(job, l, classifyLevel(l)));
+        }
         return null;
     } catch (e) {
         appendLog(job, `❌ Erro rede garimpo: ${e.message}`, 'error');

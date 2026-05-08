@@ -2191,16 +2191,25 @@ class MetaUploader:
             if compliance_advertiser: reason.append(f"compliance: {compliance_advertiser}")
             if start_time:            reason.append(f"start_time: {start_time}")
             self._log(f"🔧 Criando manualmente ({', '.join(reason)})...")
-            adset_id = self._manual_duplicate_adset(
-                source_adset_id, new_name,
-                adset_status=adset_status,
-                excluded_countries=excluded_countries,
-                compliance_advertiser=compliance_advertiser,
-                compliance_payer=compliance_payer,
-                start_time=start_time,
-            )
-            self._log(f"✅ Ad Set duplicado (novo ID: {adset_id})")
-            return adset_id
+            try:
+                adset_id = self._manual_duplicate_adset(
+                    source_adset_id, new_name,
+                    adset_status=adset_status,
+                    excluded_countries=excluded_countries,
+                    compliance_advertiser=compliance_advertiser,
+                    compliance_payer=compliance_payer,
+                    start_time=start_time,
+                )
+                self._log(f"✅ Ad Set duplicado (novo ID: {adset_id})")
+                return adset_id
+            except Exception as manual_err:
+                # Se o único motivo do caminho manual era start_time, volta pro create_copy
+                # que é mais robusto. start_time vira best-effort via PATCH posterior.
+                if start_time and not (excluded_countries or compliance_advertiser):
+                    self._log(f"⚠️ Caminho manual falhou ({manual_err}); voltando pro create_copy + PATCH start_time")
+                    # Continua para o fluxo create_copy abaixo
+                else:
+                    raise
 
         def _do():
             source = AdSet(source_adset_id)
@@ -2300,7 +2309,13 @@ class MetaUploader:
         }).json()
 
         if 'error' in resp:
-            raise Exception(f"Erro ao ler Ad Set original: {resp['error'].get('message')}")
+            err = resp['error']
+            self._log(f"❌ [GET adset original] msg='{err.get('message')}' code={err.get('code')} subcode={err.get('error_subcode')} user_msg='{err.get('error_user_msg')}' user_title='{err.get('error_user_title')}' fbtrace={err.get('fbtrace_id')}")
+            raise Exception(f"Erro ao ler Ad Set original: {err.get('message')}")
+
+        # Log do que veio do original (debug)
+        _campos_lidos = sorted([k for k in resp.keys() if k != 'access_token'])
+        self._log(f"🔍 Campos lidos do conjunto modelo: {_campos_lidos}")
 
         # Processar targeting
         targeting = resp.get('targeting', {})
@@ -2377,18 +2392,39 @@ class MetaUploader:
             if _start_ts:
                 create_params['start_time'] = _start_ts
 
+        # Log dos parâmetros que vão pra Meta (sanitiza access_token)
+        _safe_params = {k: v for k, v in create_params.items() if k != 'access_token'}
+        # Encurta strings longas pra não poluir
+        _safe_log = {}
+        for k, v in _safe_params.items():
+            sv = str(v)
+            _safe_log[k] = sv if len(sv) <= 200 else sv[:200] + f'... [+{len(sv)-200} chars]'
+        self._log(f"📤 [create_adset] params: {_safe_log}")
+
         # Criar novo ad set — com fallback sem start_time se a Meta rejeitar
         create_url = f"https://graph.facebook.com/v22.0/{self.account.get_id()}/adsets"
         create_resp = requests.post(create_url, data=create_params).json()
 
+        def _log_meta_err(prefix, err):
+            self._log(f"❌ [{prefix}] msg='{err.get('message')}' code={err.get('code')} subcode={err.get('error_subcode')} type={err.get('type')}")
+            if err.get('error_user_msg'):  self._log(f"   ↳ user_msg: {err.get('error_user_msg')}")
+            if err.get('error_user_title'): self._log(f"   ↳ user_title: {err.get('error_user_title')}")
+            if err.get('error_data'):       self._log(f"   ↳ error_data: {err.get('error_data')}")
+            if err.get('fbtrace_id'):       self._log(f"   ↳ fbtrace_id: {err.get('fbtrace_id')}")
+
         if 'error' in create_resp:
+            _log_meta_err('create_adset (tentativa 1)', create_resp['error'])
             # Se falhou e havia start_time, tenta novamente sem ele
             if _start_ts and 'start_time' in create_params:
                 self._log(f"⚠️ Criação com start_time falhou — retentando sem data de início")
                 del create_params['start_time']
                 create_resp = requests.post(create_url, data=create_params).json()
+                if 'error' in create_resp:
+                    _log_meta_err('create_adset (tentativa 2 sem start_time)', create_resp['error'])
             if 'error' in create_resp:
-                raise Exception(f"Erro ao criar Ad Set: {create_resp['error'].get('message')}")
+                err = create_resp['error']
+                detalhe = err.get('error_user_msg') or err.get('message') or 'sem detalhe'
+                raise Exception(f"Erro ao criar Ad Set: {detalhe} (subcode={err.get('error_subcode')}, fbtrace={err.get('fbtrace_id')})")
 
         new_id = create_resp.get('id')
         self._log(f"✅ Ad Set criado manualmente: {new_id}")

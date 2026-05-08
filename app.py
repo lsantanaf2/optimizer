@@ -68,7 +68,7 @@ from modules.account_settings import (
 import atexit
 atexit.register(close_db)
 
-VERSION = "v2.9.7"
+VERSION = "v2.9.8"
 
 
 @app.route('/sw.js')
@@ -1696,7 +1696,12 @@ def duplicate_adset_route(campaign_id):
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return jsonify({'success': False, 'error': str(e)}), 500
+        # Inclui logs do uploader (se existir) para o frontend conseguir mostrar o detalhe
+        try:
+            logs = uploader.logs if 'uploader' in locals() else []
+        except Exception:
+            logs = []
+        return jsonify({'success': False, 'error': str(e), 'logs': logs}), 500
 
 
 
