@@ -797,17 +797,48 @@
 
             selectEl.innerHTML = `<option value="">${placeholder}</option>`;
 
+            // Mapa de nomes vindos da Meta API para enriquecer saved items que estão sem nome
+            const metaByVal = {};
+            items.forEach(it => {
+                const v = String(it[keyField] || it.id);
+                metaByVal[v] = it;
+            });
+
             // Primeiro: itens salvos do banco (sempre no topo)
             const savedItems = _savedAssets[assetType] || [];
+            const _toHeal = []; // saved items sem nome que descobrimos via Meta — auto-cura no banco
             savedItems.forEach(item => {
                 const val = String(item[keyField] || item.id);
-                const label = item.name || item.username || val;
+                let label = item.name || item.username;
+                if (!label && metaByVal[val]) {
+                    // Nome ausente no banco → busca da Meta API
+                    label = labelFn(metaByVal[val]);
+                    // Marca para reescrever no banco com o nome descoberto
+                    if (label && label !== val) _toHeal.push({val, name: label, raw: metaByVal[val]});
+                }
+                label = label || val; // último fallback: o ID
                 const opt = document.createElement('option');
                 opt.value = val;
                 opt.textContent = '★ ' + label;
                 opt.dataset.saved = '1';
                 selectEl.appendChild(opt);
             });
+
+            // Auto-cura assíncrona: re-salva no banco com o nome descoberto
+            if (_toHeal.length > 0) {
+                _toHeal.forEach(h => {
+                    fetch(`/api/conta/${ACCOUNT_ID}/save-asset`, {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            asset_type: assetType, key_field: keyField, value: h.val,
+                            extra: {name: h.name}
+                        })
+                    }).catch(() => {});
+                    // Atualiza cache local também
+                    const cached = (_savedAssets[assetType] || []).find(i => String(i[keyField] || i.id) === h.val);
+                    if (cached) cached.name = h.name;
+                });
+            }
 
             // Depois: itens da Meta API (sem duplicar os salvos)
             const savedVals = new Set(savedItems.map(i => String(i[keyField] || i.id)));

@@ -129,6 +129,8 @@ def get_settings_for_setup(user_id, meta_account_id):
 def _upsert_in_list(lst, key, value, extra=None):
     """
     Incrementa use_count se item já existe, ou adiciona novo.
+    Quando há `extra`, preenche campos que estejam vazios na entrada existente
+    (ex: descobrimos o `name` depois — faz auto-cura sem sobrescrever info válida).
     Retorna lista atualizada.
     """
     if not value:
@@ -137,6 +139,11 @@ def _upsert_in_list(lst, key, value, extra=None):
     for entry in lst:
         if str(entry.get(key)) == str(value):
             entry['use_count'] = entry.get('use_count', 0) + 1
+            # Auto-cura: preenche campos extras só se estiverem vazios na entrada existente
+            if extra:
+                for k, v in extra.items():
+                    if v and not entry.get(k):
+                        entry[k] = v
             return lst
     new_entry = {key: value, 'use_count': 1}
     if extra:
@@ -181,22 +188,30 @@ def save_upload_assets(user_id, meta_account_id, upload_data):
         if isinstance(assets, str):
             assets = json.loads(assets)
 
-        # Pages
+        # Pages — propaga nome quando disponível para que o select mostre o nome (não só o ID)
         if upload_data.get('page_id'):
+            page_extra = {'name': upload_data['page_name']} if upload_data.get('page_name') else None
             assets['facebook_pages'] = _upsert_in_list(
-                assets.get('facebook_pages', []), 'id', upload_data['page_id']
+                assets.get('facebook_pages', []), 'id', upload_data['page_id'], page_extra
             )
 
-        # Instagram
+        # Instagram — username vai como `name` para o select usar como label
         if upload_data.get('instagram_id'):
+            ig_extra = {}
+            if upload_data.get('instagram_name'):
+                ig_extra['name'] = upload_data['instagram_name']
+            if upload_data.get('instagram_username'):
+                ig_extra['username'] = upload_data['instagram_username']
             assets['instagram_profiles'] = _upsert_in_list(
-                assets.get('instagram_profiles', []), 'id', upload_data['instagram_id']
+                assets.get('instagram_profiles', []), 'id', upload_data['instagram_id'],
+                ig_extra or None
             )
 
         # Pixel
         if upload_data.get('pixel_id'):
+            px_extra = {'name': upload_data['pixel_name']} if upload_data.get('pixel_name') else None
             assets['pixels'] = _upsert_in_list(
-                assets.get('pixels', []), 'id', upload_data['pixel_id']
+                assets.get('pixels', []), 'id', upload_data['pixel_id'], px_extra
             )
 
         # Textos
