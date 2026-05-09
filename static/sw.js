@@ -12,7 +12,7 @@
  * - Registra histórico ao final (/api/upload-history/add)
  */
 
-const SW_VERSION = 'v2.9.9';
+const SW_VERSION = 'v2.9.10';
 const DB_NAME = 'optimizer-uploads';
 const DB_VERSION = 1;
 const STORE_JOBS = 'jobs';
@@ -289,8 +289,29 @@ async function uploadItem(job, item, preDupMap, index) {
 
     let uploadResult = null;
     let authExpired = false; // Fix #1: sinaliza para parar cascata
+
+    // Watchdog: aborta o upload se não chegar nenhum evento SSE por 3 minutos.
+    // Protege contra travamento quando a Meta engasga no meio de um chunk e o
+    // Flask fica pendurado sem responder. Bate com o Gunicorn timeout (300s).
+    const WATCHDOG_MS = 180000; // 3 minutos
+    const controller = new AbortController();
+    let lastEventAt = Date.now();
+    let watchdogTimedOut = false;
+    const watchdogId = setInterval(() => {
+        if (Date.now() - lastEventAt > WATCHDOG_MS) {
+            watchdogTimedOut = true;
+            try { controller.abort(); } catch (_) {}
+        }
+    }, 30000);
+
     try {
-        const r = await fetch(`/campanha/${ctx.campaignId}/upload`, { method: 'POST', body: fd, credentials: 'include', redirect: 'manual' });
+        const r = await fetch(`/campanha/${ctx.campaignId}/upload`, {
+            method: 'POST',
+            body: fd,
+            credentials: 'include',
+            redirect: 'manual',
+            signal: controller.signal,
+        });
         // Fix #1: detecta 401/403/redirect para login (Flask @require_login normalmente devolve 302)
         const isAuthFail = r.status === 401 || r.status === 403
             || r.type === 'opaqueredirect'
@@ -309,6 +330,7 @@ async function uploadItem(job, item, preDupMap, index) {
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
+            lastEventAt = Date.now(); // reset do watchdog a cada chunk recebido
             buffer += decoder.decode(value, { stream: true });
             const blocks = buffer.split('\n\n');
             buffer = blocks.pop();
@@ -340,8 +362,15 @@ async function uploadItem(job, item, preDupMap, index) {
             }
         }
     } catch (e) {
-        uploadResult = { success: false, error: e.message };
-        appendLog(job, `❌ Erro rede "${item.adName}": ${e.message}`, 'error');
+        if (watchdogTimedOut) {
+            uploadResult = { success: false, error: 'Inatividade de 3min — upload abortado pelo watchdog (próximo item será tentado)' };
+            appendLog(job, `⏱ "${item.adName}": sem resposta há 3min — abortado, seguindo para o próximo`, 'warning');
+        } else {
+            uploadResult = { success: false, error: e.message };
+            appendLog(job, `❌ Erro rede "${item.adName}": ${e.message}`, 'error');
+        }
+    } finally {
+        clearInterval(watchdogId);
     }
 
     // Fix #7: flush do debounce pendente — garante que último update chegue antes de job-finished
