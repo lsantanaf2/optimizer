@@ -2182,34 +2182,27 @@ class MetaUploader:
         extra = f" | excluindo: {excluded_countries}" if excluded_countries else ""
         self._log(f"📋 Duplicando Ad Set {source_adset_id} (status: {adset_status}{extra})...")
 
-        # create_copy herda o start_time do original (possivelmente no passado).
-        # A Meta não permite alterar start_time de conjuntos já iniciados, mesmo pausados.
-        # Por isso: qualquer parâmetro que exija controle total vai pelo caminho manual.
-        if excluded_countries or compliance_advertiser or start_time:
+        # Caminho manual SÓ para casos que create_copy não suporta nativamente:
+        #   - Geo-exclusão (precisa reescrever targeting)
+        #   - Compliance de transparência (Taiwan, etc.)
+        # start_time NÃO precisa do manual: create_copy + PATCH posterior funciona, pois:
+        #   - A cópia é criada PAUSED e zero impressões
+        #   - Meta permite atualizar start_time de adset paused que ainda não entregou
+        if excluded_countries or compliance_advertiser:
             reason = []
             if excluded_countries:    reason.append(f"geo-exclusão: {excluded_countries}")
             if compliance_advertiser: reason.append(f"compliance: {compliance_advertiser}")
-            if start_time:            reason.append(f"start_time: {start_time}")
             self._log(f"🔧 Criando manualmente ({', '.join(reason)})...")
-            try:
-                adset_id = self._manual_duplicate_adset(
-                    source_adset_id, new_name,
-                    adset_status=adset_status,
-                    excluded_countries=excluded_countries,
-                    compliance_advertiser=compliance_advertiser,
-                    compliance_payer=compliance_payer,
-                    start_time=start_time,
-                )
-                self._log(f"✅ Ad Set duplicado (novo ID: {adset_id})")
-                return adset_id
-            except Exception as manual_err:
-                # Se o único motivo do caminho manual era start_time, volta pro create_copy
-                # que é mais robusto. start_time vira best-effort via PATCH posterior.
-                if start_time and not (excluded_countries or compliance_advertiser):
-                    self._log(f"⚠️ Caminho manual falhou ({manual_err}); voltando pro create_copy + PATCH start_time")
-                    # Continua para o fluxo create_copy abaixo
-                else:
-                    raise
+            adset_id = self._manual_duplicate_adset(
+                source_adset_id, new_name,
+                adset_status=adset_status,
+                excluded_countries=excluded_countries,
+                compliance_advertiser=compliance_advertiser,
+                compliance_payer=compliance_payer,
+                start_time=start_time,
+            )
+            self._log(f"✅ Ad Set duplicado (novo ID: {adset_id})")
+            return adset_id
 
         def _do():
             source = AdSet(source_adset_id)
@@ -2259,18 +2252,43 @@ class MetaUploader:
                     else:
                         self._log(f"✅ Ad Set configurado: {adset_status}{' / ' + new_name if new_name else ''}")
 
-                    # PATCH 2: start_time — opcional, request separado para não impactar nome
+                    # PATCH 2: start_time — opcional, request separado para não impactar nome.
+                    # A cópia herda start_time do original. A Meta permite atualizar
+                    # apenas se o adset não tiver entregado (caso da nossa cópia paused).
+                    # Estratégia: tenta ISO 8601 → se falhar, tenta Unix timestamp.
+                    # Também limpa end_time da cópia para evitar conflito (se end < new_start).
                     if start_time:
-                        parsed_ts = _parse_start_time(start_time)
-                        if parsed_ts:
-                            r2 = requests.post(url, data={
-                                'start_time': parsed_ts,
-                                'access_token': self.access_token
-                            }).json()
-                            if 'error' in r2:
-                                self._log(f"⚠️ Data de início não aceita pela API: {r2['error'].get('message')}")
-                            else:
+                        iso_str = _parse_start_time(start_time)
+                        if iso_str:
+                            # Converte ISO de volta pra Unix como fallback
+                            try:
+                                from datetime import datetime as _dt
+                                _epoch = int(_dt.strptime(iso_str, '%Y-%m-%dT%H:%M:%S%z').timestamp())
+                            except Exception:
+                                _epoch = None
+
+                            def _patch_start_time(payload_value, label):
+                                payload = {
+                                    'start_time': payload_value,
+                                    'end_time': '',  # limpa end_time herdado para evitar conflito
+                                    'access_token': self.access_token,
+                                }
+                                r2 = requests.post(url, data=payload).json()
+                                if 'error' in r2:
+                                    err = r2['error']
+                                    detalhe = err.get('error_user_msg') or err.get('message') or 'sem detalhe'
+                                    self._log(f"⚠️ PATCH start_time ({label}) rejeitado: {detalhe} (subcode={err.get('error_subcode')}, fbtrace={err.get('fbtrace_id')})")
+                                    return False
+                                return True
+
+                            ok = _patch_start_time(iso_str, 'ISO 8601')
+                            if not ok and _epoch:
+                                self._log(f"🔁 Tentando fallback com Unix timestamp...")
+                                ok = _patch_start_time(_epoch, 'Unix epoch')
+                            if ok:
                                 self._log(f"📅 Data de início configurada: {start_time} (BRT)")
+                            else:
+                                self._log(f"⚠️ Não foi possível aplicar a data de início ao conjunto {copied_id}. Conjunto criado normalmente — ajuste manual no Ads Manager se necessário.")
                 except Exception as e:
                     self._log(f"⚠️ Erro ao atualizar Ad Set: {e}")
 
