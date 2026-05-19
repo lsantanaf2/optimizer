@@ -1,5 +1,8 @@
 {
   "dependencies": {
     "aios-core": "4.4.6"
+  },
+  "scripts": {
+    "prepare": "husky"
   }
 }
