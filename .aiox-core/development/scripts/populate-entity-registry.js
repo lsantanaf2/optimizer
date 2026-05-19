@@ -25,7 +25,7 @@ const SCAN_CONFIG = [
   { category: 'infra-scripts', basePath: '.aiox-core/infrastructure/scripts', glob: '**/*.js', type: 'script' },
   { category: 'infra-tools', basePath: '.aiox-core/infrastructure/tools', glob: '**/*.{yaml,yml,md}', type: 'tool' },
   { category: 'product-checklists', basePath: '.aiox-core/product/checklists', glob: '**/*.md', type: 'checklist' },
-  { category: 'product-data', basePath: '.aiox-core/product/data', glob: '**/*.{yaml,yml,md}', type: 'data' }
+  { category: 'product-data', basePath: '.aiox-core/product/data', glob: '**/*.{yaml,yml,md}', type: 'data' },
 ];
 
 const ADAPTABILITY_DEFAULTS = {
@@ -38,17 +38,18 @@ const ADAPTABILITY_DEFAULTS = {
   task: 0.8,
   workflow: 0.4,
   util: 0.6,
-  tool: 0.7
+  tool: 0.7,
 };
 
 const EXTERNAL_TOOLS = new Set([
   'coderabbit', 'git', 'github-cli', 'docker', 'supabase', 'browser',
   'ffmpeg', 'n8n', 'context7', 'playwright', 'apify', 'clickup',
   'jira', 'slack', 'exa', 'eslint', 'jest', 'npm', 'node',
-  'docker-gateway', 'desktop-commander', 'railway'
+  'docker-gateway', 'desktop-commander', 'railway',
 ]);
 
 const DEPRECATED_PATTERNS = [/^old[-_]/, /^backup[-_]/, /deprecated/i, /^legacy[-_]/];
+const INDEX_RESOLUTION_EXTENSIONS = ['.js', '.mjs', '.ts', '.yaml', '.yml', '.md'];
 
 const SENTINEL_VALUES = new Set(['n/a', 'na', 'none', 'tbd', 'todo', '-', '']);
 
@@ -76,6 +77,77 @@ function extractEntityId(filePath) {
   return path.basename(filePath, path.extname(filePath));
 }
 
+function toScopedEntityId(filePath, config, repoRoot = REPO_ROOT) {
+  const baseRoot = path.resolve(repoRoot, config.basePath);
+  const relativeToBase = path.relative(baseRoot, filePath).replace(/\\/g, '/');
+  const withoutExt = relativeToBase.replace(/\.[^.]+$/, '');
+  const scopedId = withoutExt
+    .split('/')
+    .filter(Boolean)
+    .join('-')
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+  return scopedId || extractEntityId(filePath);
+}
+
+function resolveEntityId(filePath, config, existingEntities = {}, repoRoot = REPO_ROOT) {
+  const baseId = extractEntityId(filePath);
+  const relPath = path.relative(repoRoot, filePath).replace(/\\/g, '/');
+  const existing = existingEntities[baseId];
+
+  if (!existing || existing.path === relPath) {
+    return baseId;
+  }
+
+  const scopedId = toScopedEntityId(filePath, config, repoRoot);
+  let candidate = scopedId;
+  let suffix = 2;
+
+  while (existingEntities[candidate] && existingEntities[candidate].path !== relPath) {
+    candidate = `${scopedId}-${suffix}`;
+    suffix += 1;
+  }
+
+  return candidate;
+}
+
+function findScanConfigForPath(filePath, repoRoot = REPO_ROOT) {
+  const relPath = path.relative(repoRoot, filePath).replace(/\\/g, '/');
+  return SCAN_CONFIG.find((config) => {
+    const basePath = config.basePath.replace(/\\/g, '/').replace(/\/+$/, '');
+    return relPath === basePath || relPath.startsWith(`${basePath}/`);
+  }) || null;
+}
+
+function resolveRelativeDependencyId(refPath, currentFilePath) {
+  if (!currentFilePath || !(refPath.startsWith('.') || refPath.startsWith('/'))) {
+    return null;
+  }
+
+  const resolvedPath = path.resolve(path.dirname(currentFilePath), refPath);
+  const resolvedExt = path.extname(resolvedPath);
+
+  if (resolvedExt) {
+    if (path.basename(resolvedPath, resolvedExt) === 'index') {
+      const config = findScanConfigForPath(resolvedPath);
+      if (config) return toScopedEntityId(resolvedPath, config);
+    }
+    return path.basename(resolvedPath, resolvedExt);
+  }
+
+  for (const ext of INDEX_RESOLUTION_EXTENSIONS) {
+    const indexPath = path.join(resolvedPath, `index${ext}`);
+    if (fs.existsSync(indexPath)) {
+      const config = findScanConfigForPath(indexPath);
+      if (config) return toScopedEntityId(indexPath, config);
+      return path.basename(resolvedPath);
+    }
+  }
+
+  return path.basename(resolvedPath);
+}
+
 function extractKeywords(filePath, content) {
   const name = path.basename(filePath, path.extname(filePath));
   const parts = name.split(/[-_.]/g).filter((p) => p.length > 1);
@@ -92,20 +164,105 @@ function extractKeywords(filePath, content) {
   return [...new Set(parts.map((p) => p.toLowerCase()))];
 }
 
+/**
+ * Detects whether a candidate purpose string is actually a template placeholder
+ * or unfilled literal, rather than a real description.
+ *
+ * Examples of garbage purposes seen in registry pre-fix:
+ *   - `{Brief description of what this task does and when to use it}`
+ *   - `{One-line description}`
+ *   - `{{TASK_TITLE}}`
+ *   - `*${taskName.replace(/-/g, '-')}`
+ *   - `${context.componentName}`
+ *   - `Generated: ${new Date().toISOString()}`
+ *   - `Spec: {{story-title}}`
+ *
+ * These slip in because the source files (templates, generators) contain
+ * literal handlebars/JS interpolation that was meant to be filled at use-time,
+ * not at scan-time. The extractor was happily pulling those raw.
+ *
+ * The check is conservative: a purpose with one or two `${var}` mentions but
+ * still describing something useful (e.g. `Hello ${name}, welcome!`) is kept.
+ * Only when the placeholder dominates do we discard the candidate.
+ *
+ * @param {string} candidate - The purpose string from a higher-priority strategy
+ * @returns {boolean} true if the string looks like an unfilled placeholder
+ */
+function looksLikePlaceholder(candidate) {
+  if (!candidate || typeof candidate !== 'string') return false;
+  const s = candidate.trim();
+  if (!s) return false;
+
+  // Whole string is a single placeholder: `{...}`, `{{...}}`, or `${...}`.
+  if (/^\{[A-Za-z][^}]*\}$/.test(s)) return true;
+  if (/^\{\{[^}]+\}\}$/.test(s)) return true;
+  if (/^\$\{[^}]+\}$/.test(s)) return true;
+
+  // Starts with a literal placeholder followed by anything: `*${name}foo`,
+  // `${ctx.x} bar baz`, `{Brief} extra`. The leading token is the literal.
+  if (/^[*]?\$\{/.test(s)) return true;
+  if (/^\{[A-Za-z][^}]*\}/.test(s) && s.length < 80) return true;
+
+  // Dominant placeholder load — more than 30% of the string is `${...}` or
+  // `{{...}}` interpolation. Catches cases like
+  //   `${icon} @${id} — ${name}${archetype !== 'Specialist' ? ...} | ${title}`
+  // where the whole string is a JS template literal that escaped.
+  const interpolationMatches = s.match(/\$\{[^}]+\}|\{\{[^}]+\}\}/g) || [];
+  const interpolationLength = interpolationMatches.reduce((sum, m) => sum + m.length, 0);
+  if (interpolationLength > 0 && interpolationLength / s.length > 0.3) return true;
+
+  return false;
+}
+
 function extractPurpose(content, filePath) {
+  // Strategy 1: YAML frontmatter — most reliable when present.
+  // Looks for `description:` (and aliases) ONLY inside the frontmatter block
+  // delimited by `---` at the top of the file. Avoids matching example output
+  // or body text that happens to contain the same words.
+  const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
+  if (frontmatterMatch) {
+    const fm = frontmatterMatch[1];
+    const fmDescMatch = fm.match(/^(?:description|purpose|summary)\s*:\s*(.+)$/im);
+    if (fmDescMatch) {
+      const cleaned = fmDescMatch[1].trim().replace(/^["']|["']$/g, '');
+      if (cleaned && !looksLikePlaceholder(cleaned)) {
+        return cleaned.substring(0, 200);
+      }
+    }
+  }
+
+  // Strategy 2: `## Purpose` section — first non-empty line.
   const purposeMatch = content.match(/^##\s*Purpose\s*\n+([\s\S]*?)(?=\n##|\n---|\n$)/im);
   if (purposeMatch) {
-    return purposeMatch[1].trim().split('\n')[0].substring(0, 200);
+    const firstLine = purposeMatch[1].trim().split('\n')[0];
+    if (firstLine && !looksLikePlaceholder(firstLine)) {
+      return firstLine.substring(0, 200);
+    }
   }
 
-  const descMatch = content.match(/(?:description|purpose|summary)[:]\s*(.+)/i);
-  if (descMatch) {
-    return descMatch[1].trim().substring(0, 200);
+  // Strategy 3: `## Overview` section — same shape as Purpose. Many guides
+  // use Overview instead of Purpose (e.g. component-creation-guide.md).
+  const overviewMatch = content.match(/^##\s*Overview\s*\n+([\s\S]*?)(?=\n##|\n---|\n$)/im);
+  if (overviewMatch) {
+    const firstLine = overviewMatch[1].trim().split('\n')[0];
+    if (firstLine && !looksLikePlaceholder(firstLine)) {
+      return firstLine.substring(0, 200);
+    }
   }
 
+  // Strategy 4: First `# Title` heading — the document's name.
+  // Note: we used to fall back to a body-level regex matching ANY
+  // `description:` / `purpose:` / `summary:` occurrence here, but that
+  // matched example output inside fenced code blocks and installer
+  // transcripts, producing nonsense purposes like "Analyzes provided
+  // dataset to identify patterns and insights" for a component creation
+  // guide. The body fallback was removed deliberately.
   const headerMatch = content.match(/^#\s+(.+)/m);
   if (headerMatch) {
-    return headerMatch[1].trim().substring(0, 200);
+    const candidate = headerMatch[1].trim();
+    if (!looksLikePlaceholder(candidate)) {
+      return candidate.substring(0, 200);
+    }
   }
 
   return `Entity at ${path.relative(REPO_ROOT, filePath)}`;
@@ -132,7 +289,7 @@ const YAML_DEP_FIELDS = {
 
 const KNOWN_AGENTS = [
   'dev', 'qa', 'pm', 'po', 'sm', 'architect', 'devops',
-  'analyst', 'data-engineer', 'ux-design-expert', 'aiox-master'
+  'analyst', 'data-engineer', 'ux-design-expert', 'aiox-master',
 ];
 
 // Pattern A: YAML dependency block items (- name.md)
@@ -267,15 +424,16 @@ function extractMarkdownCrossReferences(content, entityId, verbose = false) {
   return [...deps];
 }
 
-function detectDependencies(content, entityId, verbose = false) {
+function detectDependencies(content, entityId, verbose = false, currentFilePath = null) {
   const deps = new Set();
 
   const requireMatches = content.matchAll(/require\s*\(\s*['"]([^'"]+)['"]\s*\)/g);
   for (const m of requireMatches) {
     const reqPath = m[1];
     if (reqPath.startsWith('.') || reqPath.startsWith('/')) {
-      const base = path.basename(reqPath, path.extname(reqPath));
-      if (base !== entityId) deps.add(base);
+      const dependencyId = resolveRelativeDependencyId(reqPath, currentFilePath)
+        || path.basename(reqPath, path.extname(reqPath));
+      if (dependencyId !== entityId) deps.add(dependencyId);
     }
   }
 
@@ -283,8 +441,9 @@ function detectDependencies(content, entityId, verbose = false) {
   for (const m of importMatches) {
     const impPath = m[1];
     if (impPath.startsWith('.') || impPath.startsWith('/')) {
-      const base = path.basename(impPath, path.extname(impPath));
-      if (base !== entityId) deps.add(base);
+      const dependencyId = resolveRelativeDependencyId(impPath, currentFilePath)
+        || path.basename(impPath, path.extname(impPath));
+      if (dependencyId !== entityId) deps.add(dependencyId);
     }
   }
 
@@ -321,16 +480,9 @@ function scanCategory(config, verbose = false) {
   const files = fg.sync(globPattern, { onlyFiles: true, absolute: true });
 
   const entities = {};
-  const seenIds = new Set();
 
   for (const filePath of files) {
-    const entityId = extractEntityId(filePath);
-
-    if (seenIds.has(entityId)) {
-      console.warn(`[IDS] Duplicate entity ID "${entityId}" at ${path.relative(REPO_ROOT, filePath)} — skipping`);
-      continue;
-    }
-    seenIds.add(entityId);
+    const entityId = resolveEntityId(filePath, config, entities);
 
     let content = '';
     try {
@@ -343,7 +495,7 @@ function scanCategory(config, verbose = false) {
     const relPath = path.relative(REPO_ROOT, filePath).replace(/\\/g, '/');
     const keywords = extractKeywords(filePath, content);
     const purpose = extractPurpose(content, filePath);
-    const baseDeps = detectDependencies(content, entityId, verbose);
+    const baseDeps = detectDependencies(content, entityId, verbose, filePath);
 
     // Semantic YAML extraction for agents and workflows
     const yamlCategories = ['agents', 'workflows'];
@@ -396,10 +548,10 @@ function scanCategory(config, verbose = false) {
       adaptability: {
         score: defaultScore,
         constraints: [],
-        extensionPoints: []
+        extensionPoints: [],
       },
       checksum,
-      lastVerified: new Date().toISOString()
+      lastVerified: new Date().toISOString(),
     };
 
     if (lifecycleOverride) {
@@ -457,7 +609,7 @@ function resolveUsedBy(allEntities) {
   }
 
   // Build reverse references
-  for (const [category, entities] of Object.entries(allEntities)) {
+  for (const entities of Object.values(allEntities)) {
     for (const [entityId, entity] of Object.entries(entities)) {
       for (const depRef of entity.dependencies) {
         const target = nameIndex.get(depRef);
@@ -580,25 +732,37 @@ function populate(options = {}) {
   const categories = SCAN_CONFIG.map((c) => ({
     id: c.category,
     description: getCategoryDescription(c.category),
-    basePath: c.basePath
+    basePath: c.basePath,
   }));
 
+  const lastUpdated = new Date().toISOString();
   const registry = {
     metadata: {
       version: '1.0.0',
-      lastUpdated: new Date().toISOString(),
+      lastUpdated,
       entityCount: totalCount,
       checksumAlgorithm: 'sha256',
-      resolutionRate: rate
+      resolutionRate: rate,
     },
     entities: allEntities,
-    categories
+    categories,
   };
+
+  // Sync the self-entry for `.aiox-core/data/entity-registry.yaml` so the
+  // file's registry metadata reflects the regen. `lastVerified` mirrors
+  // `metadata.lastUpdated` exactly (single source of truth for this regen
+  // event). `checksum` is intentionally set to a sentinel value because
+  // hashing the registry file from inside the file itself is circular —
+  // any hash we compute would invalidate itself as soon as it's written.
+  // Downstream validators recognize the sentinel and skip the checksum
+  // comparison for self-references.
+  const SELF_CHECKSUM_SENTINEL = 'sha256:<self-reference>';
+  syncSelfRegistryEntry(registry, lastUpdated, SELF_CHECKSUM_SENTINEL);
 
   const yamlContent = yaml.dump(registry, {
     lineWidth: 120,
     noRefs: true,
-    sortKeys: false
+    sortKeys: false,
   });
 
   try {
@@ -610,6 +774,41 @@ function populate(options = {}) {
   console.log(`[IDS] Total entities: ${totalCount}`);
 
   return registry;
+}
+
+/**
+ * Sync the self-entry for `.aiox-core/data/entity-registry.yaml`.
+ *
+ * The registry contains a record for itself (under `entities.data.entity-registry`)
+ * because the data layer scan picks up every `.yaml` it finds. That record's
+ * `lastVerified` was previously stuck at whatever value the last scan happened to
+ * write — never matching the actual regen timestamp. This function syncs it.
+ *
+ * `checksum` is set to a sentinel (`sha256:<self-reference>`) because hashing
+ * the file from inside the file is circular: any computed hash invalidates
+ * itself the moment it's written. The sentinel signals "skip this comparison"
+ * to downstream validators.
+ *
+ * @param {object} registry - The assembled registry (mutated in place)
+ * @param {string} lastUpdated - ISO timestamp of this regen (same as metadata.lastUpdated)
+ * @param {string} sentinelChecksum - Sentinel value for the self-entry checksum
+ */
+function syncSelfRegistryEntry(registry, lastUpdated, sentinelChecksum) {
+  const dataEntities = registry?.entities?.data;
+  if (!dataEntities) return;
+
+  const selfEntry = dataEntities['entity-registry'];
+  if (!selfEntry) return;
+
+  // Only sync if the entry actually points to the registry yaml file we
+  // just wrote — the `.js` module at .aiox-core/core/doctor/checks/entity-registry.js
+  // gets its own legitimate entry under `entities.modules` (or wherever
+  // the modules scan places it) and is not self-referential.
+  const expectedPath = '.aiox-core/data/entity-registry.yaml';
+  if (selfEntry.path !== expectedPath) return;
+
+  selfEntry.lastVerified = lastUpdated;
+  selfEntry.checksum = sentinelChecksum;
 }
 
 function getCategoryDescription(category) {
@@ -627,14 +826,14 @@ function getCategoryDescription(category) {
     'infra-scripts': 'Infrastructure automation and utility scripts',
     'infra-tools': 'Infrastructure tool definitions and configurations',
     'product-checklists': 'Product validation and review checklists',
-    'product-data': 'Product reference data and configuration files'
+    'product-data': 'Product reference data and configuration files',
   };
   return descriptions[category] || category;
 }
 
 if (require.main === module) {
   try {
-    const registry = populate();
+    populate();
     console.log('[IDS] Population complete.');
     process.exit(0);
   } catch (err) {
@@ -647,8 +846,14 @@ module.exports = {
   populate,
   scanCategory,
   extractEntityId,
+  toScopedEntityId,
+  resolveEntityId,
+  findScanConfigForPath,
+  resolveRelativeDependencyId,
   extractKeywords,
   extractPurpose,
+  looksLikePlaceholder,
+  syncSelfRegistryEntry,
   detectDependencies,
   extractYamlDependencies,
   extractMarkdownCrossReferences,
@@ -669,5 +874,5 @@ module.exports = {
   EXTERNAL_TOOLS,
   DEPRECATED_PATTERNS,
   REPO_ROOT,
-  REGISTRY_PATH
+  REGISTRY_PATH,
 };

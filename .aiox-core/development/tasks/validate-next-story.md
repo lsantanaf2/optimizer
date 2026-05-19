@@ -225,11 +225,11 @@ To comprehensively validate a story draft before implementation begins, ensuring
   - **Story file**: The drafted story to validate (provided by user or discovered in `devStoryLocation`)
   - **Parent epic**: The epic containing this story's requirements
   - **Architecture documents**: Based on configuration (sharded or monolithic)
-  - **Story template**: `aiox-core/templates/story-tmpl.yaml` for completeness validation
+  - **Story template**: `.aiox-core/product/templates/story-tmpl.yaml` for completeness validation
 
 ### 1. Template Completeness Validation
 
-- Load `aiox-core/templates/story-tmpl.yaml` and extract all section headings from the template
+- Load `.aiox-core/product/templates/story-tmpl.yaml` and extract all section headings from the template
 - **Missing sections check**: Compare story sections against template sections to verify all required sections are present
 - **Placeholder validation**: Ensure no template placeholders remain unfilled (e.g., `{{EpicNum}}`, `{{role}}`, `_TBD_`)
 - **Agent section verification**: Confirm all sections from template exist for future agent use
@@ -463,10 +463,47 @@ Provide a structured validation report including:
 - **Implementation Readiness Score**: 1-10 scale
 - **Confidence Level**: High/Medium/Low for successful implementation
 
+### 12. Post-Validation Status Update (MANDATORY)
+
+**Reference:** `.claude/rules/story-lifecycle.md` — Draft → Ready transition is @po responsibility.
+
+**This step MUST be executed before presenting results to user.**
+
+**Change Log format:** Use `{date: YYYY-MM-DD}` and `{version: MAJOR.MINOR.PATCH}`. Version MUST follow semantic bump rules: major for breaking changes, minor for features, patch for fixes/process updates. HALT if either value cannot be resolved deterministically.
+
+#### IF verdict is GO (score >= 7):
+
+0. **Pre-check (blocking):**
+   - If current Status is not `**Draft**`, HALT and log: "Cannot apply GO transition: expected Draft, found {current status}."
+   - If Change Log section is missing, HALT and request user to restore template structure.
+1. **Update story Status field** in the story file: change `**Draft**` to `**Ready**`
+2. **Add Change Log entry:**
+   ```text
+   | {date: YYYY-MM-DD} | {version: MAJOR.MINOR.PATCH} | Validated GO ({score}/10) — Status: Draft → Ready | @po |
+   ```
+3. **Log:** "✅ Story status updated: Draft → Ready"
+
+#### IF verdict is NO-GO (score < 7):
+
+0. **Pre-check (blocking):**
+   - If current Status is not `**Draft**`, HALT and log: "Cannot apply NO-GO outcome: expected Draft, found {current status}."
+   - If Change Log section is missing, HALT and request user to restore template structure.
+1. **Keep** story Status as `**Draft**`
+2. **Add Change Log entry:**
+   ```text
+   | {date: YYYY-MM-DD} | {version: MAJOR.MINOR.PATCH} | Validation NO-GO — {reason summary} | @po |
+   ```
+3. **Log:** "❌ Story remains Draft — fixes required before re-validation"
+
+#### Rationale
+
+Status transitions defined in `story-lifecycle.md` are advisory (contextual rules). This step makes them imperative (procedural), ensuring agents always execute the transition as part of the workflow rather than relying on contextual rule awareness.
+
+---
+
 ## Handoff
 next_agent: @dev
 next_command: *develop {story-id}
-condition: Story status is Approved (GO decision)
+condition: Story status is Ready (GO decision, status updated in Step 12)
 alternatives:
   - agent: @sm, command: *draft, condition: Story rejected (NO-GO), needs rework
- 
