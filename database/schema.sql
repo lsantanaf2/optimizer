@@ -305,3 +305,46 @@ CREATE POLICY "Users see own rules" ON optimization_rules
 
 CREATE POLICY "Users see own audit" ON audit_logs
     FOR ALL USING (user_id = auth.uid());
+
+-- ============================================================
+-- 📊 BLOCO 5: Dashboards Multi-Tenant (/dash)
+-- ============================================================
+
+-- 12. dashboard_clients (Cada cliente com seu dash privado)
+CREATE TABLE dashboard_clients (
+    slug                       TEXT PRIMARY KEY,
+    name                       TEXT NOT NULL,
+    display_name               TEXT,
+
+    -- Meta Ads
+    meta_ad_account_id         TEXT NOT NULL,
+    meta_token_user_id         UUID,
+    typeform_action_type       TEXT DEFAULT 'offsite_conversion.fb_pixel_custom',
+
+    -- Google Ads (OAuth via MCC ou planilha pública)
+    google_ads_customer_id     TEXT,
+    google_ads_user_id         UUID,
+    google_ads_sheet_id        TEXT,
+    google_ads_sheet_gid       TEXT,
+    google_ads_filter_keyword  TEXT,
+
+    -- Planilha MQLs/Wons
+    mqls_spreadsheet_id        TEXT,
+
+    -- Comportamento UI
+    locked_period              TEXT,
+    excluded_campaign_patterns JSONB DEFAULT '[]'::jsonb,
+
+    -- Acesso público (link com token)
+    public_link_enabled        BOOLEAN DEFAULT TRUE,
+    public_link_token          TEXT UNIQUE NOT NULL,
+
+    -- Auditoria
+    created_at                 TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at                 TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT dashboard_clients_slug_format CHECK (slug ~ '^[a-z0-9-]+$')
+);
+
+CREATE INDEX idx_dashboard_clients_token ON dashboard_clients (public_link_token);
+CREATE INDEX idx_dashboard_clients_meta_account ON dashboard_clients (meta_ad_account_id);
