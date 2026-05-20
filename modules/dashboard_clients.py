@@ -188,6 +188,7 @@ def update_client(slug, **kwargs):
         'mqls_spreadsheet_id', 'locked_period',
         'excluded_campaign_patterns',
         'public_link_enabled', 'public_link_token',
+        'ticket_value',
     }
 
     sets = []

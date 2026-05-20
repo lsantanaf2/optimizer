@@ -263,6 +263,72 @@ def fetch_client_sheet_campaigns(sheet_id, sheet_gid, filter_keyword, since_dt=N
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Meta Ads only — fetch diário (sem dependência de planilha)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def fetch_meta_ads_daily(account_id, access_token, conversion_event,
+                         date_preset='last_7_days', since=None, until=None):
+    """
+    Busca insights agregados por DATA para um account_id.
+    Aceita conversion_event como parâmetro (não usa global do cruzamento).
+    Retorna lista de dicts ordenada por data:
+        { date, spend, impressions, clicks, lpv, conversions }
+    """
+    from modules.cruzamento import preset_to_dates
+
+    base_url = f'https://graph.facebook.com/v22.0/{account_id}/insights'
+    params = {
+        'access_token': access_token,
+        'level':        'account',
+        'fields':       'spend,impressions,inline_link_clicks,landing_page_views,actions,date_start',
+        'limit':        90,
+        'time_increment': 1,
+    }
+
+    if since and until:
+        params['time_range'] = json.dumps({'since': since, 'until': until})
+    else:
+        since_d, until_d = preset_to_dates(date_preset)
+        if since_d and until_d:
+            params['time_range'] = json.dumps({'since': str(since_d), 'until': str(until_d)})
+        else:
+            params['date_preset'] = 'last_30d'
+
+    rows = []
+    url = base_url
+    while url:
+        resp = _req.get(url, params=params if url == base_url else None, timeout=30)
+        resp.raise_for_status()
+        body = resp.json()
+
+        for item in body.get('data', []):
+            actions = item.get('actions', [])
+
+            def _conv(_a=actions):
+                if not conversion_event:
+                    return 0
+                return sum(
+                    int(float(a.get('value', 0) or 0))
+                    for a in _a if a.get('action_type') == conversion_event
+                )
+
+            rows.append({
+                'date':        item.get('date_start', ''),
+                'spend':       round(float(item.get('spend', 0) or 0), 2),
+                'impressions': int(item.get('impressions', 0) or 0),
+                'clicks':      int(item.get('inline_link_clicks', 0) or 0),
+                'lpv':         int(item.get('landing_page_views', 0) or 0),
+                'conversions': _conv(),
+            })
+
+        url = body.get('paging', {}).get('next')
+        params = None
+
+    rows.sort(key=lambda r: r['date'])
+    return rows
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Rotas
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -296,6 +362,20 @@ def dash_view(slug):
     display_name  = client.get('display_name') or client.get('name') or slug.title()
     locked_period = client.get('locked_period') or ''
 
+    # Clientes sem planilha de MQLs → dashboard Meta-only simplificado
+    if not client.get('mqls_spreadsheet_id'):
+        ticket = float(client.get('ticket_value') or 0)
+        return render_template(
+            'dash_meta.html',
+            client_name=display_name,
+            locked_period=locked_period,
+            api_base=f'/api/dash/{slug}',
+            dash_token=token,
+            slug=slug,
+            ticket_value=ticket,
+        )
+
+    # Clientes com planilha → dashboard completo (cruzamento)
     return render_template(
         'cruzamento.html',
         client_mode=True,
@@ -579,6 +659,118 @@ def api_dash_data(slug):
                     'elapsed_sec':        elapsed,
                     'date_preset':        date_preset,
                     'timestamp':          datetime.now(_BR_TZ).isoformat(),
+                }
+            })
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            yield _sse('error', {'message': str(e)})
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype='text/event-stream',
+        headers={'X-Accel-Buffering': 'no', 'Cache-Control': 'no-cache'},
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SSE Meta-only (clientes sem planilha de MQLs)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@dash_bp.route('/api/dash/<slug>/meta-only')
+def api_dash_meta_only(slug):
+    """
+    Endpoint SSE para dashboards Meta-only (sem planilha de MQLs/Wons).
+    Retorna dados diários + totais do período.
+    """
+    client = _require_client(slug)
+
+    meta_account_id  = client['meta_ad_account_id']
+    conversion_event = client.get('typeform_action_type') or 'offsite_conversion.fb_pixel_custom'
+    ticket_value     = float(client.get('ticket_value') or 0)
+
+    from app import obter_token
+    meta_token = obter_token()
+    if not meta_token:
+        return jsonify({'success': False,
+                        'error': 'Sistema não autenticado. Contate o administrador.'}), 503
+
+    date_preset = request.args.get('date_preset', 'last_7_days')
+    since       = request.args.get('since')
+    until       = request.args.get('until')
+
+    def _sse(stage, payload):
+        return f"data: {json.dumps({'stage': stage, **payload})}\n\n"
+
+    def generate():
+        try:
+            t0      = time.time()
+            display = client.get('display_name') or slug
+
+            yield _sse('status', {'message': f'Buscando Meta Ads para {display}...'})
+
+            rows = fetch_meta_ads_daily(
+                meta_account_id, meta_token, conversion_event,
+                date_preset, since, until,
+            )
+
+            yield _sse('status', {'message': f'Processando {len(rows)} dias...'})
+
+            # Totais
+            total_spend       = round(sum(r['spend']       for r in rows), 2)
+            total_impressions = sum(r['impressions'] for r in rows)
+            total_clicks      = sum(r['clicks']      for r in rows)
+            total_lpv         = sum(r['lpv']         for r in rows)
+            total_conv        = sum(r['conversions'] for r in rows)
+            total_revenue     = round(total_conv * ticket_value, 2)
+            roas              = round(total_revenue / total_spend, 2) if total_spend > 0 else 0.0
+
+            # Métricas derivadas por dia
+            daily = []
+            for r in rows:
+                sp, cl, im, lp, cv = (
+                    r['spend'], r['clicks'], r['impressions'],
+                    r['lpv'], r['conversions'],
+                )
+                daily.append({
+                    'date':         r['date'],
+                    'spend':        sp,
+                    'impressions':  im,
+                    'clicks':       cl,
+                    'lpv':          lp,
+                    'conversions':  cv,
+                    'ctr':          round(cl / im * 100, 2) if im > 0 else 0.0,
+                    'connect_rate': round(lp / cl * 100, 2) if cl > 0 else 0.0,
+                    'revenue':      round(cv * ticket_value, 2),
+                    'roas':         round((cv * ticket_value) / sp, 2) if sp > 0 else 0.0,
+                })
+
+            elapsed = round(time.time() - t0, 2)
+
+            yield _sse('kpis', {
+                'totals': {
+                    'spend':       total_spend,
+                    'impressions': total_impressions,
+                    'clicks':      total_clicks,
+                    'lpv':         total_lpv,
+                    'conversions': total_conv,
+                    'revenue':     total_revenue,
+                    'roas':        roas,
+                    'ticket':      ticket_value,
+                    'ctr':         round(total_clicks / total_impressions * 100, 2) if total_impressions > 0 else 0.0,
+                    'connect_rate': round(total_lpv / total_clicks * 100, 2) if total_clicks > 0 else 0.0,
+                }
+            })
+
+            yield _sse('daily', {'rows': daily})
+
+            yield _sse('done', {
+                'meta': {
+                    'days':        len(rows),
+                    'elapsed_sec': elapsed,
+                    'date_preset': date_preset,
+                    'timestamp':   datetime.now(_BR_TZ).isoformat(),
                 }
             })
 
