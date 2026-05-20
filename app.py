@@ -49,6 +49,9 @@ app.register_blueprint(optimization_bp)
 from modules.cruzamento import cruzamento_bp
 app.register_blueprint(cruzamento_bp)
 
+from modules.dash import dash_bp
+app.register_blueprint(dash_bp)
+
 from modules.anuncios import anuncios_bp
 app.register_blueprint(anuncios_bp)
 
@@ -68,7 +71,7 @@ from modules.account_settings import (
 import atexit
 atexit.register(close_db)
 
-VERSION = "v2.9.10"
+VERSION = "v2.9.11"
 
 
 @app.route('/sw.js')

@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Acesso Negado — Dashboard</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+           background: #0f1117; color: #e2e8f0;
+           display: flex; align-items: center; justify-content: center;
+           min-height: 100vh; padding: 2rem; }
+    .card { background: #1a1d27; border: 1px solid #2d3148;
+            border-radius: 12px; padding: 2.5rem; max-width: 480px;
+            text-align: center; }
+    .icon { font-size: 3rem; margin-bottom: 1rem; }
+    h1 { font-size: 1.4rem; font-weight: 600; color: #f1f5f9; margin-bottom: .75rem; }
+    p  { color: #94a3b8; line-height: 1.6; font-size: .95rem; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">🔒</div>
+    <h1>Acesso Negado</h1>
+    <p>{{ message }}</p>
+  </div>
+</body>
+</html>

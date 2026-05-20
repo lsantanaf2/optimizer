@@ -1482,6 +1482,14 @@
 <script>
     const IS_CLIENT = {{ 'true' if client_mode else 'false' }};
     const LOCKED_PERIOD = '{{ locked_period if client_mode else "" }}';
+    const API_BASE   = '{{ api_base|default("/api/cruzamento") }}';
+    const DASH_TOKEN = '{{ dash_token|default("") }}';
+    /** Constrói URL de API com token opcional para dash multi-tenant. */
+    function _apiUrl(path, qstring) {
+        const q = [DASH_TOKEN ? 't=' + DASH_TOKEN : '', qstring ? String(qstring) : '']
+                    .filter(Boolean).join('&');
+        return API_BASE + path + (q ? '?' + q : '');
+    }
 
     // ── Tab System ───────────────────────────────────────────────────────────────
     let _panelDataCache = null;   // dados do daily_funnel cacheados
@@ -1730,7 +1738,7 @@
         modal.style.display = 'flex';
         document.getElementById('filters-msg').textContent = 'Carregando...';
         try {
-            const resp = await fetch('/api/cruzamento/filters');
+            const resp = await fetch(_apiUrl('/filters'));
             const data = await resp.json();
             if (!data.success) throw new Error(data.error || 'Erro');
             _filtersWorking = [...(data.patterns || [])];
@@ -1780,7 +1788,7 @@
 
     async function resetFiltersToDefault() {
         try {
-            const resp = await fetch('/api/cruzamento/filters');
+            const resp = await fetch(_apiUrl('/filters'));
             const data = await resp.json();
             _filtersWorking = [...(data.defaults || [])];
             renderFiltersList();
@@ -1793,7 +1801,7 @@
     async function saveFilters() {
         document.getElementById('filters-msg').textContent = 'Salvando...';
         try {
-            const resp = await fetch('/api/cruzamento/filters', {
+            const resp = await fetch(_apiUrl('/filters'), {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({patterns: _filtersWorking})
@@ -2775,7 +2783,7 @@
 
         // ── fetch + ReadableStream (SSE manual) ──────────────────────────────────
         try {
-            const url = `/api/cruzamento/data?${getDateParams()}`;
+            const url = _apiUrl('/data', getDateParams());
             const resp = await fetch(url, { signal });
             if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 
@@ -3151,7 +3159,7 @@
         if (appliedUntil) params.set('until', dateStr(appliedUntil));
 
         try {
-            const resp = await fetch(`/api/cruzamento/google-ads-sheets?${params}`);
+            const resp = await fetch(_apiUrl('/google-ads-sheets', params));
             const data = await resp.json();
             if (loading) loading.style.display = 'none';
 
@@ -3466,7 +3474,7 @@
         if (appliedUntil) params.set('until', dateStr(appliedUntil));
 
         try {
-            const resp = await fetch(`/api/cruzamento/consolidado?${params}`, { signal });
+            const resp = await fetch(_apiUrl('/consolidado', params), { signal });
             const data = await resp.json();
             if (loading) loading.style.display = 'none';
 

@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboards — Admin</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+           background: #0f1117; color: #e2e8f0; padding: 2rem; }
+    h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 1.5rem; color: #f1f5f9; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1rem; }
+    .card { background: #1a1d27; border: 1px solid #2d3148; border-radius: 10px;
+            padding: 1.25rem; }
+    .card h2 { font-size: 1.1rem; font-weight: 600; color: #f1f5f9; margin-bottom: .5rem; }
+    .card .slug { font-size: .8rem; color: #64748b; margin-bottom: .75rem; font-family: monospace; }
+    .meta { font-size: .85rem; color: #94a3b8; margin-bottom: .5rem; }
+    .meta strong { color: #cbd5e1; }
+    .link-btn { display: inline-block; margin-top: .75rem;
+                padding: .4rem .9rem; border-radius: 6px;
+                background: #3b4bd6; color: #fff; text-decoration: none;
+                font-size: .85rem; font-weight: 500; }
+    .link-btn:hover { background: #4f5de8; }
+    .disabled { opacity: .45; }
+    .badge { display: inline-block; padding: .2rem .5rem; border-radius: 4px;
+             font-size: .75rem; font-weight: 600; }
+    .badge.on  { background: #14532d; color: #4ade80; }
+    .badge.off { background: #3f1f1f; color: #f87171; }
+    .empty { color: #64748b; padding: 2rem; text-align: center; }
+  </style>
+</head>
+<body>
+  <h1>🖥️ Dashboards — Visão Admin</h1>
+
+  {% if clients %}
+  <div class="grid">
+    {% for c in clients %}
+    <div class="card {% if not c.public_link_enabled %}disabled{% endif %}">
+      <h2>{{ c.display_name or c.name }}</h2>
+      <div class="slug">slug: {{ c.slug }}</div>
+
+      <div class="meta">
+        <strong>Conta Meta:</strong> {{ c.meta_ad_account_id or '—' }}
+      </div>
+      {% if c.google_ads_customer_id %}
+      <div class="meta">
+        <strong>Google Ads (OAuth):</strong> {{ c.google_ads_customer_id }}
+      </div>
+      {% elif c.google_ads_sheet_id %}
+      <div class="meta">
+        <strong>Google Ads (planilha):</strong>
+        <span style="font-family:monospace;font-size:.8rem">{{ c.google_ads_sheet_id[:20] }}…</span>
+      </div>
+      {% endif %}
+      {% if c.mqls_spreadsheet_id %}
+      <div class="meta">
+        <strong>Planilha MQLs:</strong>
+        <span style="font-family:monospace;font-size:.8rem">{{ c.mqls_spreadsheet_id[:20] }}…</span>
+      </div>
+      {% endif %}
+
+      <div class="meta" style="margin-top:.5rem">
+        <span class="badge {% if c.public_link_enabled %}on{% else %}off{% endif %}">
+          {{ 'link ativo' if c.public_link_enabled else 'link desabilitado' }}
+        </span>
+      </div>
+
+      {% if c.public_link_enabled and c.public_link_token %}
+      <a class="link-btn"
+         href="/dash/{{ c.slug }}?t={{ c.public_link_token }}"
+         target="_blank">
+        Abrir dashboard ↗
+      </a>
+      <div class="meta" style="margin-top:.5rem;font-size:.75rem;font-family:monospace;word-break:break-all">
+        /dash/{{ c.slug }}?t={{ c.public_link_token }}
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty">Nenhum cliente configurado ainda.</div>
+  {% endif %}
+</body>
+</html>
