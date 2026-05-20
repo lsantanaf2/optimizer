@@ -286,11 +286,11 @@ def fetch_meta_ads_daily(account_id, access_token, conversion_event,
     }
 
     if since and until:
-        params['time_range'] = json.dumps({'since': since, 'until': until})
+        params['time_range'] = json.dumps({'since': since, 'until': until}, separators=(',', ':'))
     else:
         since_d, until_d = preset_to_dates(date_preset)
         if since_d and until_d:
-            params['time_range'] = json.dumps({'since': str(since_d), 'until': str(until_d)})
+            params['time_range'] = json.dumps({'since': str(since_d), 'until': str(until_d)}, separators=(',', ':'))
         else:
             params['date_preset'] = 'last_30d'
 
