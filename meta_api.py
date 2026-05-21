@@ -717,7 +717,8 @@ class MetaUploader:
             fields = 'id,name,instagram_business_account'
             resp = requests.get(
                 f"https://graph.facebook.com/v22.0/{self.account_id}/promote_pages",
-                params={'fields': fields, 'access_token': self.access_token, 'limit': 200}
+                params={'fields': fields, 'access_token': self.access_token, 'limit': 200},
+                timeout=30
             ).json()
             for p in resp.get('data', []):
                 pid = p.get('id')
@@ -765,7 +766,8 @@ class MetaUploader:
                 try:
                     p_resp = requests.get(
                         f"https://graph.facebook.com/v22.0/{page_id}",
-                        params={'fields': 'access_token', 'access_token': self.access_token}
+                        params={'fields': 'access_token', 'access_token': self.access_token},
+                        timeout=20
                     ).json()
                     if 'access_token' in p_resp:
                         token = p_resp['access_token']
@@ -775,7 +777,8 @@ class MetaUploader:
 
             resp = requests.get(
                 f"https://graph.facebook.com/v22.0/{page_id}/leadgen_forms",
-                params={'fields': 'id,name,status', 'access_token': token, 'limit': 100}
+                params={'fields': 'id,name,status', 'access_token': token, 'limit': 100},
+                timeout=30
             ).json()
 
             if 'error' in resp:
@@ -821,7 +824,8 @@ class MetaUploader:
             try:
                 resp = requests.get(
                     f"https://graph.facebook.com/v22.0/{self.account_id}/{edge}",
-                    params={'fields': 'id,username', 'access_token': self.access_token, 'limit': 100}
+                    params={'fields': 'id,username', 'access_token': self.access_token, 'limit': 100},
+                    timeout=30
                 ).json()
                 if 'error' in resp:
                     print(f"⚠️ [get_ig/{edge}] API error: {resp['error'].get('message', '?')}")
@@ -844,7 +848,8 @@ class MetaUploader:
                     try:
                         resp = requests.get(
                             f"https://graph.facebook.com/v22.0/{ig_id}",
-                            params={'fields': 'username', 'access_token': self.access_token}
+                            params={'fields': 'username', 'access_token': self.access_token},
+                            timeout=20
                         ).json()
                         ig_username = resp.get('username')
                     except Exception:
@@ -929,11 +934,21 @@ class MetaUploader:
                     max_usage = max(call_count, total_cputime, total_time)
 
                     if max_usage >= self.RATE_LIMIT_THRESHOLD:
+                        # v2.9.14: emite progresso periódico durante a pausa para evitar
+                        # travamento aparente no cliente (SSE keepalive sozinho não basta).
+                        total_pause = self.RATE_LIMIT_PAUSE_SECONDS
+                        tick = 20  # log a cada 20s — abaixo do watchdog do cliente (180s)
                         self._log(
                             f"⏸️ Rate limit alto ({max_usage}%). "
-                            f"Pausando {self.RATE_LIMIT_PAUSE_SECONDS // 60} min..."
+                            f"Pausando {total_pause // 60} min (com ticks a cada {tick}s)..."
                         )
-                        time.sleep(self.RATE_LIMIT_PAUSE_SECONDS)
+                        remaining = total_pause
+                        while remaining > 0:
+                            step = min(tick, remaining)
+                            time.sleep(step)
+                            remaining -= step
+                            if remaining > 0:
+                                self._log(f"   ⏳ Aguardando rate limit liberar — {remaining}s restantes...")
                         self._log("▶️ Retomando uploads após pausa de rate limit.")
                         return True
         except (json.JSONDecodeError, TypeError):
@@ -1157,7 +1172,7 @@ class MetaUploader:
         api_url = f"https://graph.facebook.com/v22.0/{self.account_id}/adimages"
         
         def _do():
-            resp = requests.post(api_url, data={'url': url, 'access_token': self.access_token})
+            resp = requests.post(api_url, data={'url': url, 'access_token': self.access_token}, timeout=60)
             result = resp.json()
             if 'error' in result:
                 msg = result['error'].get('message', '')
@@ -1200,7 +1215,7 @@ class MetaUploader:
         api_url = f"https://graph.facebook.com/v22.0/{self.account_id}/advideos"
         
         def _do():
-            resp = requests.post(api_url, data={'file_url': url, 'access_token': self.access_token})
+            resp = requests.post(api_url, data={'file_url': url, 'access_token': self.access_token}, timeout=60)
             result = resp.json()
             if 'error' in result:
                 msg = result['error'].get('message', '')
@@ -1300,8 +1315,8 @@ class MetaUploader:
                 'fields': 'source',
                 'access_token': self.access_token
             }
-            resp = requests.get(url, params=params).json()
-            
+            resp = requests.get(url, params=params, timeout=30).json()
+
             if 'error' in resp or 'source' not in resp:
                 self._log(f"⚠️ Não foi possível obter URL do vídeo: {resp.get('error', {}).get('message', 'sem source')}")
                 return None
@@ -1552,8 +1567,8 @@ class MetaUploader:
                     'fields': 'status',
                     'access_token': self.access_token
                 }
-                resp = requests.get(url, params=params).json()
-                
+                resp = requests.get(url, params=params, timeout=30).json()
+
                 if 'error' in resp:
                     self._log(f"⚠️ Erro ao consultar status: {resp['error'].get('message')}")
                     time.sleep(interval)
@@ -1597,8 +1612,8 @@ class MetaUploader:
                     'fields': 'hash,status',
                     'access_token': self.access_token
                 }
-                resp = requests.get(url, params=params).json()
-                
+                resp = requests.get(url, params=params, timeout=30).json()
+
                 if 'error' in resp:
                     self._log(f"⚠️ Erro ao consultar imagem: {resp['error'].get('message')}")
                     time.sleep(interval)
@@ -1709,7 +1724,7 @@ class MetaUploader:
             for h in image_hashes:
                 self.wait_for_image_ready(h)
 
-            resp = requests.post(api_url, data=post_data)
+            resp = requests.post(api_url, data=post_data, timeout=60)
             result = resp.json()
 
             if 'error' in result:
@@ -2083,7 +2098,7 @@ class MetaUploader:
             for k, v in payload.items():
                 post_data[k] = json.dumps(v) if isinstance(v, (dict, list)) else v
 
-            resp = requests.post(api_url, data=post_data)
+            resp = requests.post(api_url, data=post_data, timeout=60)
             result = resp.json()
 
             if 'error' in result:
@@ -2143,7 +2158,7 @@ class MetaUploader:
             debug_data = {k: v for k, v in post_data.items() if k != 'access_token'}
             print(f"🔍 [create_ad] Params enviados: {json.dumps(debug_data, indent=2)}")
             
-            resp = requests.post(url, data=post_data).json()
+            resp = requests.post(url, data=post_data, timeout=60).json()
             print(f"🔍 [create_ad] Resposta completa: {json.dumps(resp, indent=2, ensure_ascii=False)}")
 
             if 'error' in resp:
@@ -2246,7 +2261,7 @@ class MetaUploader:
                         update_data['name'] = new_name
 
                     url = f"https://graph.facebook.com/v22.0/{copied_id}"
-                    resp = requests.post(url, data=update_data).json()
+                    resp = requests.post(url, data=update_data, timeout=30).json()
                     if 'error' in resp:
                         self._log(f"⚠️ Falha ao atualizar Ad Set: {resp['error'].get('message')}")
                     else:
@@ -2273,7 +2288,7 @@ class MetaUploader:
                                     'end_time': '',  # limpa end_time herdado para evitar conflito
                                     'access_token': self.access_token,
                                 }
-                                r2 = requests.post(url, data=payload).json()
+                                r2 = requests.post(url, data=payload, timeout=30).json()
                                 if 'error' in r2:
                                     err = r2['error']
                                     detalhe = err.get('error_user_msg') or err.get('message') or 'sem detalhe'
@@ -2324,7 +2339,7 @@ class MetaUploader:
         resp = requests.get(url, params={
             'fields': ','.join(fields_to_read),
             'access_token': self.access_token
-        }).json()
+        }, timeout=30).json()
 
         if 'error' in resp:
             err = resp['error']
@@ -2421,7 +2436,7 @@ class MetaUploader:
 
         # Criar novo ad set — com fallback sem start_time se a Meta rejeitar
         create_url = f"https://graph.facebook.com/v22.0/{self.account.get_id()}/adsets"
-        create_resp = requests.post(create_url, data=create_params).json()
+        create_resp = requests.post(create_url, data=create_params, timeout=60).json()
 
         def _log_meta_err(prefix, err):
             self._log(f"❌ [{prefix}] msg='{err.get('message')}' code={err.get('code')} subcode={err.get('error_subcode')} type={err.get('type')}")
@@ -2436,7 +2451,7 @@ class MetaUploader:
             if _start_ts and 'start_time' in create_params:
                 self._log(f"⚠️ Criação com start_time falhou — retentando sem data de início")
                 del create_params['start_time']
-                create_resp = requests.post(create_url, data=create_params).json()
+                create_resp = requests.post(create_url, data=create_params, timeout=60).json()
                 if 'error' in create_resp:
                     _log_meta_err('create_adset (tentativa 2 sem start_time)', create_resp['error'])
             if 'error' in create_resp:
@@ -2454,7 +2469,7 @@ class MetaUploader:
                 r2 = requests.post(url2, data={
                     'start_time': _start_ts,
                     'access_token': self.access_token
-                }).json()
+                }, timeout=30).json()
                 if 'error' in r2:
                     self._log(f"⚠️ Data de início não aceita: {r2['error'].get('message')}")
                 else:

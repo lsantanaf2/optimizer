@@ -12,7 +12,7 @@
  * - Registra histórico ao final (/api/upload-history/add)
  */
 
-const SW_VERSION = 'v2.9.10';
+const SW_VERSION = 'v2.9.14';
 const DB_NAME = 'optimizer-uploads';
 const DB_VERSION = 1;
 const STORE_JOBS = 'jobs';
@@ -330,13 +330,16 @@ async function uploadItem(job, item, preDupMap, index) {
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
-            lastEventAt = Date.now(); // reset do watchdog a cada chunk recebido
+            // v2.9.14: NÃO resetamos lastEventAt aqui — keepalive (": keepalive\n\n")
+            // chega como chunk e antes mascarava travamento real do backend. Agora o
+            // reset acontece somente quando processamos um evento `data:` real abaixo.
             buffer += decoder.decode(value, { stream: true });
             const blocks = buffer.split('\n\n');
             buffer = blocks.pop();
             for (const block of blocks) {
                 const line = block.split('\n').find(l => l.startsWith('data: '));
                 if (!line) continue;
+                lastEventAt = Date.now(); // reset apenas em evento real (não-keepalive)
                 let evt;
                 try { evt = JSON.parse(line.slice(6)); } catch { continue; }
 
@@ -434,8 +437,15 @@ async function processJob(jobId) {
     await idbPut(job);
     broadcast('job-update', { job });
 
-    // 1. Pré-duplicação por grupo
-    const preDupMap = await preDuplicateGroups(job);
+    // 1. Pré-duplicação por grupo (v2.9.14: try/catch impede travamento da fila)
+    let preDupMap = {};
+    try {
+        preDupMap = await preDuplicateGroups(job);
+    } catch (e) {
+        appendLog(job, `❌ Erro fatal na pré-duplicação: ${e && e.message ? e.message : e} — fila continuará (ads podem usar conjuntos originais)`, 'error');
+        await idbPut(job);
+        broadcast('job-update', { job });
+    }
 
     // 2. Loop de upload
     let enviados = 0, erros = 0;
@@ -448,7 +458,17 @@ async function processJob(jobId) {
             break;
         }
 
-        const res = await uploadItem(job, job.items[i], preDupMap, i);
+        // v2.9.14: try/catch garante que exceção isolada NÃO mate a fila inteira
+        let res;
+        try {
+            res = await uploadItem(job, job.items[i], preDupMap, i);
+        } catch (e) {
+            const msg = e && e.message ? e.message : String(e);
+            appendLog(job, `❌ Exceção fatal em "${job.items[i].adName}": ${msg} — pulando para o próximo`, 'error');
+            await idbPut(job);
+            broadcast('job-update', { job });
+            res = { success: false, error: msg };
+        }
         if (res && res.success) enviados++; else erros++;
 
         // Delay entre ads

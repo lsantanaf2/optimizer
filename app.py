@@ -71,7 +71,7 @@ from modules.account_settings import (
 import atexit
 atexit.register(close_db)
 
-VERSION = "v2.9.12"
+VERSION = "v2.9.14"
 
 
 @app.route('/sw.js')
@@ -1562,21 +1562,6 @@ def upload_single(campaign_id):
             ad_id = uploader.create_ad(actual_adset_id, creative_id, ad_name,
                                        pixel_id=pixel_id, ad_status=ad_status)
 
-            # Cleanup temp
-            try:
-                if feed_path and os.path.exists(feed_path):
-                    os.remove(feed_path)
-                if stories_path and os.path.exists(stories_path):
-                    os.remove(stories_path)
-                for c in carousel_cards:
-                    cp = c.get('local_path')
-                    if cp and os.path.exists(cp):
-                        try: os.remove(cp)
-                        except OSError: pass
-                os.rmdir(temp_dir)
-            except OSError:
-                pass
-
             # Squad 2 — salvar assets
             if user_id:
                 save_upload_assets(user_id, account_id, {
@@ -1619,6 +1604,25 @@ def upload_single(campaign_id):
             msg_queue.put({'type': 'error', 'message': str(e),
                            'logs': uploader.logs if uploader else []})
         finally:
+            # v2.9.14: cleanup do temp_dir SEMPRE (sucesso ou falha) — antes era só
+            # no caminho feliz, e cada exceção vazava um diretório no /tmp da VPS.
+            try:
+                if feed_path and os.path.exists(feed_path):
+                    try: os.remove(feed_path)
+                    except OSError: pass
+                if stories_path and os.path.exists(stories_path):
+                    try: os.remove(stories_path)
+                    except OSError: pass
+                for c in carousel_cards:
+                    cp = c.get('local_path')
+                    if cp and os.path.exists(cp):
+                        try: os.remove(cp)
+                        except OSError: pass
+                if temp_dir and os.path.exists(temp_dir):
+                    try: os.rmdir(temp_dir)
+                    except OSError: pass
+            except Exception:
+                pass
             msg_queue.put(None)  # sentinel
 
     thread = threading.Thread(target=_run_upload, daemon=True)
