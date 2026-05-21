@@ -815,6 +815,162 @@ def api_dash_meta_only(slug):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Debug: lista todos os action_types disponíveis no período (descoberta de
+# `conversion_event` correto pra cada cliente). Retorna HTML com tabela.
+# ─────────────────────────────────────────────────────────────────────────────
+
+@dash_bp.route('/api/dash/<slug>/debug-actions')
+def api_dash_debug_actions(slug):
+    """
+    Lista TODOS os action_types retornados pela Meta para a conta do cliente
+    no período, agregados (total_value, total_count, dias_com_evento).
+    Destaca tipos relevantes (purchase/lead/conversion/typeform) para facilitar
+    identificação do `conversion_event` correto.
+
+    Uso: /api/dash/<slug>/debug-actions?t=<token>&date_preset=this_month
+    """
+    client = _require_client(slug)
+    meta_account_id = client['meta_ad_account_id']
+    current_event   = client.get('typeform_action_type') or '—'
+
+    from app import obter_token
+    meta_token = obter_token()
+    if not meta_token:
+        return 'Sistema não autenticado.', 503
+
+    from modules.cruzamento import preset_to_dates
+    date_preset = request.args.get('date_preset', 'last_30d')
+    since       = request.args.get('since')
+    until       = request.args.get('until')
+
+    base_url = f'https://graph.facebook.com/v22.0/{meta_account_id}/insights'
+    params = {
+        'access_token':   meta_token,
+        'level':          'ad',
+        'fields':         'actions,date_start',
+        'limit':          500,
+        'time_increment': 1,
+    }
+    if since and until:
+        params['time_range'] = json.dumps({'since': since, 'until': until}, separators=(',', ':'))
+    else:
+        since_d, until_d = preset_to_dates(date_preset)
+        if since_d and until_d:
+            params['time_range'] = json.dumps({'since': str(since_d), 'until': str(until_d)}, separators=(',', ':'))
+
+    # Agrega action_types
+    by_type = {}  # action_type -> {'value': float, 'days': set}
+    url = base_url
+    try:
+        while url:
+            resp = _req.get(url, params=params if url == base_url else None, timeout=30)
+            try:
+                resp.raise_for_status()
+            except _req.HTTPError:
+                err = (resp.json() or {}).get('error', {}) or {}
+                detail = err.get('error_user_msg') or err.get('message') or 'sem detalhe'
+                return f'<pre style="color:#f87171;padding:24px;font-family:monospace">Meta API: {detail}\n(code={err.get("code")}, subcode={err.get("error_subcode")}, fbtrace={err.get("fbtrace_id")})</pre>', 200
+
+            body = resp.json()
+            for item in body.get('data', []):
+                date = item.get('date_start', '')
+                for a in (item.get('actions') or []):
+                    at = a.get('action_type', '')
+                    if not at:
+                        continue
+                    entry = by_type.setdefault(at, {'value': 0.0, 'days': set()})
+                    entry['value'] += float(a.get('value', 0) or 0)
+                    if date:
+                        entry['days'].add(date)
+
+            url = body.get('paging', {}).get('next')
+            params = None
+    except Exception as e:
+        return f'<pre style="color:#f87171;padding:24px;font-family:monospace">Erro: {e}</pre>', 500
+
+    # Sort: relevantes primeiro (purchase/lead/conversion/typeform), depois por valor
+    KEYWORDS_RELEVANT = ('purchase', 'lead', 'conversion', 'typeform', 'submit', 'complete_registration', 'subscribe')
+    def _score(at):
+        s = 0
+        atl = at.lower()
+        for kw in KEYWORDS_RELEVANT:
+            if kw in atl:
+                s += 100
+        return s
+    rows = sorted(
+        [{'action_type': k, **v, 'days': len(v['days'])} for k, v in by_type.items()],
+        key=lambda r: (_score(r['action_type']), r['value']),
+        reverse=True,
+    )
+
+    # Renderiza HTML
+    rows_html = ''
+    if rows:
+        for r in rows:
+            highlight = any(kw in r['action_type'].lower() for kw in KEYWORDS_RELEVANT)
+            row_style = 'background:#1e293b' if highlight else ''
+            is_current = r['action_type'] == current_event
+            current_badge = '<span style="background:#22c55e;color:#000;padding:2px 8px;border-radius:4px;font-size:.7rem;font-weight:700;margin-left:8px">EM USO</span>' if is_current else ''
+            rows_html += (
+                f'<tr style="{row_style}">'
+                f'<td style="padding:8px 14px;font-family:monospace;font-size:.85rem;color:#e2e8f0">{r["action_type"]}{current_badge}</td>'
+                f'<td style="padding:8px 14px;text-align:right;font-weight:600;color:{"#22c55e" if highlight else "#94a3b8"}">{int(r["value"])}</td>'
+                f'<td style="padding:8px 14px;text-align:right;color:#94a3b8">{r["days"]}</td>'
+                f'</tr>'
+            )
+    else:
+        rows_html = '<tr><td colspan="3" style="padding:24px;text-align:center;color:#64748b">Nenhuma ação retornada pela Meta no período.</td></tr>'
+
+    period_label = (f'{since} → {until}' if since and until else date_preset)
+    html = f'''<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="UTF-8"><title>Debug Actions — {slug}</title>
+<style>
+  body {{ background:#0f1117; color:#e2e8f0; font-family:-apple-system, sans-serif; padding:24px; margin:0; }}
+  h1 {{ font-size:1.4rem; margin-bottom:8px; color:#f1f5f9; }}
+  .sub {{ color:#94a3b8; font-size:.9rem; margin-bottom:20px; }}
+  .info {{ background:#1a1d27; border:1px solid #252836; border-radius:8px;
+          padding:12px 16px; margin-bottom:16px; font-size:.85rem; color:#cbd5e1; }}
+  .info code {{ background:#0f1117; padding:2px 6px; border-radius:3px; color:#a5b4fc; font-family:monospace; }}
+  table {{ width:100%; border-collapse:collapse; background:#1a1d27; border:1px solid #252836; border-radius:8px; overflow:hidden; }}
+  th {{ background:#131621; padding:10px 14px; text-align:left;
+        font-size:.75rem; text-transform:uppercase; color:#64748b; letter-spacing:.05em; }}
+  th:nth-child(2), th:nth-child(3) {{ text-align:right; }}
+  td {{ border-bottom:1px solid #252836; }}
+  tr:last-child td {{ border-bottom:none; }}
+  .legend {{ margin-top:14px; color:#64748b; font-size:.8rem; }}
+  .filters {{ display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; }}
+  .filters a {{ background:#1a1d27; border:1px solid #252836; padding:5px 12px;
+                border-radius:6px; color:#cbd5e1; text-decoration:none; font-size:.82rem; }}
+  .filters a:hover {{ border-color:#6366f1; color:#6366f1; }}
+</style>
+</head><body>
+<h1>🔍 Debug — Action Types disponíveis</h1>
+<div class="sub">Cliente: <b>{slug}</b> | Período: <b>{period_label}</b></div>
+
+<div class="info">
+  <b>conversion_event atual:</b> <code>{current_event}</code><br>
+  Linhas destacadas (em verde) contêm palavras-chave de conversão. Identifique qual <code>action_type</code> bate com o seu volume real de vendas e me passe o nome — vou atualizar o banco.
+</div>
+
+<div class="filters">
+  <a href="?t={request.args.get('t','')}&date_preset=last_7d">7 dias</a>
+  <a href="?t={request.args.get('t','')}&date_preset=last_30d">30 dias</a>
+  <a href="?t={request.args.get('t','')}&date_preset=this_month">Este mês</a>
+  <a href="?t={request.args.get('t','')}&date_preset=last_month">Mês passado</a>
+  <a href="?t={request.args.get('t','')}&date_preset=maximum">Tempo todo</a>
+</div>
+
+<table>
+  <thead><tr><th>Action Type</th><th>Total (somado)</th><th>Dias c/ evento</th></tr></thead>
+  <tbody>{rows_html}</tbody>
+</table>
+
+<div class="legend">Total = soma do campo <code>value</code> em todos os ads do período. Tipos relevantes (purchase/lead/conversion/typeform/submit/subscribe) aparecem no topo destacados.</div>
+</body></html>'''
+    return html
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Filtros
 # ─────────────────────────────────────────────────────────────────────────────
 
