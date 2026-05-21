@@ -270,6 +270,10 @@ def fetch_meta_ads_daily(account_id, access_token, conversion_event,
                          date_preset='last_7_days', since=None, until=None):
     """
     Busca insights agregados por DATA para um account_id.
+    Usa `level='ad'` (mesmo padrão de cruzamento.fetch_fb_insights — testado em prod)
+    e agrega por date_start no Python para evitar restrições de campo da Meta no
+    `level='account'`.
+
     Aceita conversion_event como parâmetro (não usa global do cruzamento).
     Retorna lista de dicts ordenada por data:
         { date, spend, impressions, clicks, lpv, conversions }
@@ -278,10 +282,10 @@ def fetch_meta_ads_daily(account_id, access_token, conversion_event,
 
     base_url = f'https://graph.facebook.com/v22.0/{account_id}/insights'
     params = {
-        'access_token': access_token,
-        'level':        'account',
-        'fields':       'spend,impressions,inline_link_clicks,landing_page_views,actions,date_start',
-        'limit':        90,
+        'access_token':   access_token,
+        'level':          'ad',
+        'fields':         'spend,impressions,clicks,inline_link_clicks,actions,date_start',
+        'limit':          500,
         'time_increment': 1,
     }
 
@@ -294,36 +298,60 @@ def fetch_meta_ads_daily(account_id, access_token, conversion_event,
         else:
             params['date_preset'] = 'last_30d'
 
-    rows = []
+    # Agrega por dia (chave = date_start). level='ad' retorna N linhas por dia.
+    by_day = {}
     url = base_url
     while url:
         resp = _req.get(url, params=params if url == base_url else None, timeout=30)
-        resp.raise_for_status()
+        try:
+            resp.raise_for_status()
+        except _req.HTTPError:
+            # Extrai mensagem útil do JSON de erro da Meta (não apenas "400 Bad Request")
+            try:
+                err = (resp.json() or {}).get('error', {}) or {}
+                detail = err.get('error_user_msg') or err.get('message') or 'sem detalhe'
+                raise Exception(
+                    f'Meta API: {detail} '
+                    f'(code={err.get("code")}, subcode={err.get("error_subcode")}, '
+                    f'type={err.get("type")}, fbtrace={err.get("fbtrace_id")})'
+                )
+            except ValueError:
+                raise  # JSON parse falhou — relança HTTPError original
         body = resp.json()
 
         for item in body.get('data', []):
-            actions = item.get('actions', [])
+            date = item.get('date_start', '')
+            if not date:
+                continue
+            actions = item.get('actions', []) or []
 
-            def _conv(_a=actions):
-                if not conversion_event:
-                    return 0
-                return sum(
+            conv = 0
+            if conversion_event:
+                conv = sum(
                     int(float(a.get('value', 0) or 0))
-                    for a in _a if a.get('action_type') == conversion_event
+                    for a in actions if a.get('action_type') == conversion_event
                 )
+            lpv = sum(
+                int(float(a.get('value', 0) or 0))
+                for a in actions if a.get('action_type') == 'landing_page_view'
+            )
 
-            rows.append({
-                'date':        item.get('date_start', ''),
-                'spend':       round(float(item.get('spend', 0) or 0), 2),
-                'impressions': int(item.get('impressions', 0) or 0),
-                'clicks':      int(item.get('inline_link_clicks', 0) or 0),
-                'lpv':         int(item.get('landing_page_views', 0) or 0),
-                'conversions': _conv(),
+            entry = by_day.setdefault(date, {
+                'date': date, 'spend': 0.0, 'impressions': 0, 'clicks': 0,
+                'lpv': 0, 'conversions': 0,
             })
+            entry['spend']       += float(item.get('spend', 0) or 0)
+            entry['impressions'] += int(item.get('impressions', 0) or 0)
+            entry['clicks']      += int(item.get('inline_link_clicks', 0) or 0)
+            entry['lpv']         += lpv
+            entry['conversions'] += conv
 
         url = body.get('paging', {}).get('next')
         params = None
 
+    rows = list(by_day.values())
+    for r in rows:
+        r['spend'] = round(r['spend'], 2)
     rows.sort(key=lambda r: r['date'])
     return rows
 

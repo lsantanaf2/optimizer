@@ -9,14 +9,28 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg:      #0f1117;
-      --surface: #1a1d27;
-      --border:  #252836;
-      --text:    #e2e8f0;
-      --muted:   #64748b;
-      --accent:  #6366f1;
-      --green:   #22c55e;
-      --red:     #f87171;
+      /* Paleta principal */
+      --bg:             #0f1117;
+      --bg-deep:        #0a0c12;
+      --surface:        #1a1d27;
+      --border:         #252836;
+      --text:           #e2e8f0;
+      --muted:          #64748b;
+      --accent:         #6366f1;
+      --green:          #22c55e;
+      --red:            #f87171;
+
+      /* Aliases para reutilizar o DRP do cruzamento sem reescrever */
+      --bg-surface:     var(--surface);
+      --card-bg:        var(--surface);
+      --card-bg-hover:  rgba(255,255,255,0.05);
+      --text-primary:   var(--text);
+      --text-secondary: #cbd5e1;
+      --text-muted:     var(--muted);
+      --accent-alt:     #818cf8;
+      --radius-sm:      6px;
+      --radius-md:      8px;
+      --font-sans:      inherit;
     }
 
     body { background: var(--bg); color: var(--text);
@@ -26,23 +40,112 @@
     /* ── Top bar ── */
     .topbar { display: flex; align-items: center; justify-content: space-between;
               padding: 14px 24px; background: var(--surface);
-              border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 50; }
+              border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 50;
+              gap: 12px; flex-wrap: wrap; }
+    .topbar-left { display: flex; align-items: baseline; gap: 8px; }
     .topbar-name { font-size: 1.1rem; font-weight: 700; color: #f1f5f9; }
-    .topbar-badge { font-size: .75rem; color: var(--muted); margin-left: 8px; }
+    .topbar-badge { font-size: .75rem; color: var(--muted); }
+    .topbar-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
-    /* ── Date filter bar ── */
-    .filter-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-                  padding: 12px 24px; border-bottom: 1px solid var(--border); background: var(--surface); }
-    .preset-btn { padding: 5px 12px; border-radius: 6px; border: 1px solid var(--border);
-                  background: transparent; color: var(--text); cursor: pointer; font-size: .82rem;
-                  transition: background .15s; }
-    .preset-btn:hover, .preset-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-    .date-range { display: flex; align-items: center; gap: 6px; margin-left: auto; }
-    .date-range input { background: var(--bg); border: 1px solid var(--border); color: var(--text);
-                        border-radius: 6px; padding: 4px 8px; font-size: .82rem; }
-    .apply-btn { padding: 5px 14px; border-radius: 6px; background: var(--accent); border: none;
-                 color: #fff; cursor: pointer; font-size: .82rem; font-weight: 600; }
-    .apply-btn:hover { background: #818cf8; }
+    /* ── Date Range Picker (portado do /cruzamento) ────────────────── */
+    .drp-wrap { position: relative; }
+    .drp-trigger {
+        display: flex; align-items: center; gap: 8px;
+        padding: 6px 14px;
+        background: var(--bg-surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        color: var(--text-primary);
+        font-family: var(--font-sans);
+        font-size: 12px; font-weight: 500;
+        cursor: pointer; transition: all 0.15s; white-space: nowrap;
+    }
+    .drp-trigger:hover { border-color: var(--accent); }
+    .drp-arrow { font-size: 10px; color: var(--text-muted); }
+    .drp-dropdown {
+        display: none; position: absolute;
+        top: calc(100% + 6px); right: 0; z-index: 1000;
+        background: var(--bg-surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+        min-width: 620px;
+    }
+    .drp-dropdown.open { display: block; }
+    .drp-body { display: flex; }
+    .drp-presets {
+        width: 160px; border-right: 1px solid var(--border);
+        padding: 12px 0; display: flex; flex-direction: column; flex-shrink: 0;
+    }
+    .drp-presets-title {
+        padding: 4px 16px 8px; font-size: 10px;
+        text-transform: uppercase; letter-spacing: 0.6px;
+        color: var(--text-muted); font-weight: 700;
+    }
+    .drp-preset {
+        display: flex; align-items: center; gap: 8px;
+        padding: 0 16px; margin: 5px 0; font-size: 12px; color: var(--text-secondary);
+        cursor: pointer; transition: all 0.1s; border: none; background: none;
+    }
+    .drp-preset:hover { background: var(--card-bg-hover); color: var(--text-primary); }
+    .drp-preset.active { background: rgba(99,102,241,0.15); color: var(--accent); }
+    .drp-preset input[type="radio"] { width: 13px; height: 13px; accent-color: var(--accent); margin: 0; cursor: pointer; }
+    .drp-cal-area { display: flex; flex-direction: column; flex: 1; }
+    .drp-cals { display: flex; gap: 0; padding: 12px 16px; flex: 1; }
+    .drp-cal { flex: 1; }
+    .drp-cal-header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 0 4px 10px; font-size: 12px; font-weight: 600; color: var(--text-primary);
+    }
+    .drp-cal-nav {
+        background: none; border: none; color: var(--text-muted);
+        font-size: 16px; cursor: pointer; padding: 2px 6px; border-radius: 4px; transition: all 0.15s;
+    }
+    .drp-cal-nav:hover { background: var(--card-bg-hover); color: var(--text-primary); }
+    .drp-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; text-align: center; }
+    .drp-cal-dow { font-size: 10px; font-weight: 700; color: var(--text-muted); padding: 4px 0; text-transform: uppercase; letter-spacing: 0.4px; }
+    .drp-cal-day { font-size: 12px; padding: 6px 2px; cursor: pointer; border-radius: 4px; color: var(--text-secondary); transition: all 0.1s; }
+    .drp-cal-day:hover { background: var(--card-bg-hover); color: var(--text-primary); }
+    .drp-cal-day.other-month { color: var(--text-muted); opacity: 0.3; }
+    .drp-cal-day.today { font-weight: 700; color: var(--accent); }
+    .drp-cal-day.in-range { background: rgba(99,102,241,0.18); border-radius: 0; color: var(--text-primary); }
+    .drp-cal-day.range-start { background: var(--accent); color: #fff; border-radius: 6px 0 0 6px; font-weight: 700; }
+    .drp-cal-day.range-end { background: var(--accent); color: #fff; border-radius: 0 6px 6px 0; font-weight: 700; }
+    .drp-cal-day.range-start.range-end { border-radius: 6px; }
+    .drp-cal-day.disabled { opacity: 0.2; pointer-events: none; }
+    .drp-inline-footer {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 12px; padding: 10px 16px; border-top: 1px solid var(--border);
+    }
+    .drp-footer-dates { display: flex; align-items: center; gap: 6px; }
+    .drp-date-input {
+        width: 120px; padding: 5px 8px;
+        background: var(--bg-deep); border: 1px solid var(--border);
+        border-radius: 4px; color: var(--text-primary);
+        font-family: var(--font-sans); font-size: 11px; text-align: center;
+    }
+    .drp-footer-btns { display: flex; gap: 8px; }
+    .drp-btn-cancel {
+        padding: 6px 16px; background: var(--bg-deep);
+        border: 1px solid var(--border); border-radius: 4px;
+        color: var(--text-secondary); font-family: var(--font-sans);
+        font-size: 12px; cursor: pointer; transition: all 0.15s;
+    }
+    .drp-btn-cancel:hover { border-color: var(--text-muted); color: var(--text-primary); }
+    .drp-btn-apply {
+        padding: 6px 20px; background: var(--accent); border: none; border-radius: 4px;
+        color: #fff; font-family: var(--font-sans); font-size: 12px;
+        font-weight: 600; cursor: pointer; transition: all 0.15s;
+    }
+    .drp-btn-apply:hover { background: var(--accent-alt); }
+
+    .btn-refresh {
+        padding: 6px 14px; border: 1px solid var(--border);
+        border-radius: var(--radius-sm); background: var(--card-bg);
+        color: var(--text-primary); cursor: pointer;
+        font-size: 12px; font-weight: 600; transition: all .15s;
+    }
+    .btn-refresh:hover { border-color: var(--accent); color: var(--accent); }
 
     /* ── Main layout ── */
     .main { padding: 20px 24px; max-width: 1280px; margin: 0 auto; }
@@ -99,25 +202,54 @@
 
 <!-- Top bar -->
 <div class="topbar">
-  <div>
+  <div class="topbar-left">
     <span class="topbar-name">{{ client_name }}</span>
     <span class="topbar-badge">Dashboard</span>
   </div>
-</div>
-
-<!-- Date filter bar -->
-<div class="filter-bar">
-  <button class="preset-btn" data-preset="last_7_days">7 dias</button>
-  <button class="preset-btn" data-preset="last_14_days">14 dias</button>
-  <button class="preset-btn active" data-preset="last_30_days">30 dias</button>
-  <button class="preset-btn" data-preset="this_month">Este mês</button>
-  <button class="preset-btn" data-preset="last_month">Mês anterior</button>
-
-  <div class="date-range">
-    <input type="date" id="since-input" title="De">
-    <span style="color:var(--muted)">→</span>
-    <input type="date" id="until-input" title="Até">
-    <button class="apply-btn" id="apply-range">Aplicar</button>
+  <div class="topbar-right">
+    <div class="drp-wrap" id="drp-wrap">
+      <button class="drp-trigger" id="drp-trigger" onclick="toggleDatePicker()">
+        <span>📅</span>
+        <span id="drp-label">Últimos 7 dias</span>
+        <span class="drp-arrow">▾</span>
+      </button>
+      <div class="drp-dropdown" id="drp-dropdown">
+        <div class="drp-body">
+          <div class="drp-presets">
+            <div class="drp-presets-title">Período</div>
+            <label class="drp-preset" data-preset="today"><input type="radio" name="drp" value="today"> Hoje</label>
+            <label class="drp-preset" data-preset="yesterday"><input type="radio" name="drp" value="yesterday"> Ontem</label>
+            <label class="drp-preset" data-preset="last_3d"><input type="radio" name="drp" value="last_3d"> Últimos 3 dias</label>
+            <label class="drp-preset" data-preset="last_7d"><input type="radio" name="drp" value="last_7d" checked> Últimos 7 dias</label>
+            <label class="drp-preset" data-preset="last_14d"><input type="radio" name="drp" value="last_14d"> Últimos 14 dias</label>
+            <label class="drp-preset" data-preset="last_30d"><input type="radio" name="drp" value="last_30d"> Últimos 30 dias</label>
+            <label class="drp-preset" data-preset="this_month"><input type="radio" name="drp" value="this_month"> Este mês</label>
+            <label class="drp-preset" data-preset="last_month"><input type="radio" name="drp" value="last_month"> Mês passado</label>
+            <label class="drp-preset" data-preset="last_60d"><input type="radio" name="drp" value="last_60d"> Últimos 60 dias</label>
+            <label class="drp-preset" data-preset="maximum"><input type="radio" name="drp" value="maximum"> Tempo todo</label>
+            <label class="drp-preset" data-preset="custom"><input type="radio" name="drp" value="custom"> Personalizado</label>
+          </div>
+          <div class="drp-cal-area">
+            <div class="drp-cals">
+              <div class="drp-cal" id="drp-cal-left"></div>
+              <div class="drp-cal" id="drp-cal-right"></div>
+            </div>
+            <div class="drp-inline-footer">
+              <div class="drp-footer-dates">
+                <input type="text" class="drp-date-input" id="drp-since-display" readonly placeholder="Data inicial">
+                <span style="color:var(--text-muted);font-size:11px;">→</span>
+                <input type="text" class="drp-date-input" id="drp-until-display" readonly placeholder="Data final">
+              </div>
+              <div class="drp-footer-btns">
+                <button class="drp-btn-cancel" onclick="cancelDatePicker()">Cancelar</button>
+                <button class="drp-btn-apply" onclick="applyDatePicker()">Atualizar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <button class="btn-refresh" onclick="load()">🔄 Atualizar</button>
   </div>
 </div>
 
@@ -192,17 +324,14 @@
 
 <script>
 // ── Config injetada pelo servidor ──────────────────────────────────────────
-const API_BASE   = '{{ api_base }}';
-const DASH_TOKEN = '{{ dash_token }}';
-const TICKET     = {{ ticket_value | default(0) }};
+const API_BASE      = '{{ api_base }}';
+const DASH_TOKEN    = '{{ dash_token }}';
 const LOCKED_PERIOD = '{{ locked_period }}';
+const IS_CLIENT     = true;  // dash_meta sempre é client-view
 
 // ── Estado ─────────────────────────────────────────────────────────────────
-let appliedPreset = LOCKED_PERIOD || 'last_30_days';
-let appliedSince  = null;
-let appliedUntil  = null;
-let abortCtrl     = null;
-let chart         = null;
+let abortCtrl = null;
+let chart     = null;
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 const fmtBRL = v => v == null ? '—' :
@@ -217,55 +346,205 @@ function apiUrl(path, qs) {
     return API_BASE + path + (parts ? '?' + parts : '');
 }
 
+// ── Date Range Picker (copiado do /cruzamento, adaptado p/ dash_meta) ─────
+const MONTHS_PT = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+const DAYS_PT   = ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
+
+let drpOpen = false;
+let drpPreset      = LOCKED_PERIOD || 'last_7d';
+let drpTempSince   = null, drpTempUntil = null;
+let drpClickState  = 0;
+let drpLeftMonth   = null, drpRightMonth = null;
+let appliedPreset  = LOCKED_PERIOD || 'last_7d';
+let appliedSince   = null, appliedUntil  = null;
+
+function todayDate() { const d = new Date(); d.setHours(0,0,0,0); return d; }
+function dateStr(d)  { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+function datePT(d)   { return `${d.getDate()} de ${MONTHS_PT[d.getMonth()]} de ${d.getFullYear()}`; }
+function sameDay(a, b) { return a && b && dateStr(a) === dateStr(b); }
+
+function presetToDates(preset) {
+    const today = todayDate();
+    switch (preset) {
+        case 'today':      return { since: new Date(today), until: new Date(today) };
+        case 'yesterday':  return { since: new Date(today - 86400000), until: new Date(today - 86400000) };
+        case 'last_3d':    return { since: new Date(today - 2*86400000),  until: new Date(today) };
+        case 'last_7d':    return { since: new Date(today - 6*86400000),  until: new Date(today) };
+        case 'last_14d':   return { since: new Date(today - 13*86400000), until: new Date(today) };
+        case 'last_30d':   return { since: new Date(today - 29*86400000), until: new Date(today) };
+        case 'this_month': return { since: new Date(today.getFullYear(), today.getMonth(), 1), until: new Date(today) };
+        case 'last_month': return {
+            since: new Date(today.getFullYear(), today.getMonth()-1, 1),
+            until: new Date(today.getFullYear(), today.getMonth(), 0)
+        };
+        case 'last_60d': return { since: new Date(today - 59*86400000), until: new Date(today) };
+        default: return { since: new Date(today - 6*86400000), until: new Date(today) };
+    }
+}
+
 function getDateQS() {
     const p = new URLSearchParams();
+    if (appliedPreset === 'maximum') { p.set('date_preset', 'maximum'); return p.toString(); }
     if (appliedSince && appliedUntil) {
-        p.set('since', appliedSince);
-        p.set('until', appliedUntil);
+        p.set('since', dateStr(appliedSince));
+        p.set('until', dateStr(appliedUntil));
     } else {
-        p.set('date_preset', appliedPreset);
+        p.set('date_preset', appliedPreset || 'last_7d');
     }
     return p.toString();
 }
 
-// ── Date presets ───────────────────────────────────────────────────────────
-const presetBtns = document.querySelectorAll('.preset-btn');
-presetBtns.forEach(btn => {
-    if (LOCKED_PERIOD) btn.disabled = true;
-    btn.addEventListener('click', () => {
-        if (LOCKED_PERIOD) return;
-        presetBtns.forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        appliedPreset = btn.dataset.preset;
-        appliedSince  = null;
-        appliedUntil  = null;
-        document.getElementById('since-input').value = '';
-        document.getElementById('until-input').value = '';
-        load();
-    });
-});
-
-if (LOCKED_PERIOD) {
-    // Highlight locked preset button
-    presetBtns.forEach(b => {
-        b.classList.toggle('active', b.dataset.preset === LOCKED_PERIOD);
-    });
-    document.getElementById('apply-range').disabled = true;
-    document.getElementById('since-input').disabled = true;
-    document.getElementById('until-input').disabled = true;
+function initDRP() {
+    const { since, until } = presetToDates(appliedPreset);
+    appliedSince = since; appliedUntil = until;
+    drpTempSince = new Date(since); drpTempUntil = new Date(until);
+    const today = todayDate();
+    drpLeftMonth  = { year: today.getMonth() === 0 ? today.getFullYear()-1 : today.getFullYear(),
+                      month: today.getMonth() === 0 ? 11 : today.getMonth()-1 };
+    drpRightMonth = { year: today.getFullYear(), month: today.getMonth() };
+    updateTriggerLabel();
 }
 
-document.getElementById('apply-range').addEventListener('click', () => {
-    if (LOCKED_PERIOD) return;
-    const s = document.getElementById('since-input').value;
-    const u = document.getElementById('until-input').value;
-    if (!s || !u) return;
-    appliedPreset = '';
-    appliedSince  = s;
-    appliedUntil  = u;
-    presetBtns.forEach(b => b.classList.remove('active'));
+function updateTriggerLabel() {
+    const label = document.getElementById('drp-label');
+    if (!label) return;
+    if (appliedPreset === 'maximum') { label.textContent = 'Tempo todo'; return; }
+    const s = appliedSince, u = appliedUntil;
+    if (s && u) label.textContent = sameDay(s, u) ? datePT(s) : `${datePT(s)} → ${datePT(u)}`;
+}
+
+function toggleDatePicker() {
+    drpOpen = !drpOpen;
+    document.getElementById('drp-dropdown').classList.toggle('open', drpOpen);
+    if (drpOpen) {
+        drpPreset = appliedPreset;
+        drpTempSince = appliedSince ? new Date(appliedSince) : null;
+        drpTempUntil = appliedUntil ? new Date(appliedUntil) : null;
+        drpClickState = 0;
+        highlightPreset(); renderCalendars(); updateFooterDates();
+    }
+}
+
+function cancelDatePicker() {
+    drpOpen = false;
+    document.getElementById('drp-dropdown').classList.remove('open');
+}
+
+function applyDatePicker() {
+    appliedPreset = drpPreset;
+    if (drpPreset === 'custom') {
+        if (!drpTempSince || !drpTempUntil) return;
+        appliedSince = new Date(drpTempSince); appliedUntil = new Date(drpTempUntil);
+    } else if (drpPreset === 'maximum') {
+        appliedSince = null; appliedUntil = null;
+    } else {
+        const { since, until } = presetToDates(drpPreset);
+        appliedSince = since; appliedUntil = until;
+    }
+    drpOpen = false;
+    document.getElementById('drp-dropdown').classList.remove('open');
+    updateTriggerLabel();
     load();
+}
+
+function highlightPreset() {
+    document.querySelectorAll('.drp-preset').forEach(el => {
+        const val = el.dataset.preset;
+        el.classList.toggle('active', val === drpPreset);
+        const radio = el.querySelector('input'); if (radio) radio.checked = val === drpPreset;
+    });
+}
+
+document.addEventListener('click', (e) => {
+    const preset = e.target.closest('.drp-preset');
+    if (preset) {
+        const val = preset.dataset.preset;
+        drpPreset = val; highlightPreset();
+        if (val !== 'custom' && val !== 'maximum') {
+            const { since, until } = presetToDates(val);
+            drpTempSince = since; drpTempUntil = until; drpClickState = 0;
+            drpLeftMonth  = { year: since.getFullYear(), month: since.getMonth() };
+            const nm = since.getMonth() + 1;
+            drpRightMonth = { year: nm > 11 ? since.getFullYear()+1 : since.getFullYear(), month: nm > 11 ? 0 : nm };
+            if (until.getFullYear() > drpRightMonth.year ||
+                (until.getFullYear() === drpRightMonth.year && until.getMonth() > drpRightMonth.month)) {
+                drpRightMonth = { year: until.getFullYear(), month: until.getMonth() };
+                const pm = until.getMonth() - 1;
+                drpLeftMonth = { year: pm < 0 ? until.getFullYear()-1 : until.getFullYear(), month: pm < 0 ? 11 : pm };
+            }
+        } else if (val === 'maximum') {
+            drpTempSince = null; drpTempUntil = null; drpClickState = 0;
+        } else { drpClickState = 0; }
+        renderCalendars(); updateFooterDates();
+    }
+    if (drpOpen && !e.target.closest('#drp-wrap')) cancelDatePicker();
 });
+
+function updateFooterDates() {
+    document.getElementById('drp-since-display').value = drpTempSince ? datePT(drpTempSince) : '';
+    document.getElementById('drp-until-display').value = drpTempUntil ? datePT(drpTempUntil) : '';
+}
+
+function renderCalendars() {
+    renderOneCalendar('drp-cal-left',  drpLeftMonth,  'left');
+    renderOneCalendar('drp-cal-right', drpRightMonth, 'right');
+}
+
+function renderOneCalendar(containerId, monthObj, side) {
+    const container = document.getElementById(containerId);
+    if (!container || !monthObj) return;
+    const { year, month } = monthObj;
+    const today = todayDate();
+    let html = `<div class="drp-cal-header">`;
+    html += side === 'left'  ? `<button class="drp-cal-nav" onclick="event.stopPropagation();navMonth(-1)">‹</button>` : `<span></span>`;
+    html += `<span>${MONTHS_PT[month]} ${year}</span>`;
+    html += side === 'right' ? `<button class="drp-cal-nav" onclick="event.stopPropagation();navMonth(1)">›</button>`  : `<span></span>`;
+    html += `</div><div class="drp-cal-grid">`;
+    DAYS_PT.forEach(d => { html += `<div class="drp-cal-dow">${d}</div>`; });
+    let startDow = new Date(year, month, 1).getDay();
+    startDow = startDow === 0 ? 6 : startDow - 1;
+    const daysInMonth = new Date(year, month+1, 0).getDate();
+    const prevDays    = new Date(year, month, 0).getDate();
+    for (let i = startDow-1; i >= 0; i--) html += `<div class="drp-cal-day other-month">${prevDays-i}</div>`;
+    for (let d = 1; d <= daysInMonth; d++) {
+        const td = new Date(year, month, d);
+        const cls = ['drp-cal-day'];
+        if (sameDay(td, today)) cls.push('today');
+        if (td > today) cls.push('disabled');
+        if (drpTempSince && drpTempUntil) {
+            if (sameDay(td, drpTempSince)) cls.push('range-start');
+            if (sameDay(td, drpTempUntil)) cls.push('range-end');
+            if (td > drpTempSince && td < drpTempUntil) cls.push('in-range');
+        } else if (drpTempSince && sameDay(td, drpTempSince)) cls.push('range-start','range-end');
+        html += `<div class="${cls.join(' ')}" onclick="event.stopPropagation();onDayClick('${dateStr(td)}')">${d}</div>`;
+    }
+    const remaining = (startDow + daysInMonth) % 7 === 0 ? 0 : 7 - ((startDow + daysInMonth) % 7);
+    for (let i = 1; i <= remaining; i++) html += `<div class="drp-cal-day other-month">${i}</div>`;
+    html += `</div>`;
+    container.innerHTML = html;
+}
+
+function navMonth(dir) {
+    [drpLeftMonth, drpRightMonth].forEach(m => {
+        m.month += dir;
+        if (m.month < 0)  { m.month = 11; m.year--; }
+        if (m.month > 11) { m.month = 0;  m.year++; }
+    });
+    renderCalendars();
+}
+
+function onDayClick(ds) {
+    const clicked = new Date(ds + 'T00:00:00');
+    drpPreset = 'custom'; highlightPreset();
+    if (drpClickState === 0) {
+        drpTempSince = clicked; drpTempUntil = null; drpClickState = 1;
+    } else {
+        if (clicked < drpTempSince) { drpTempUntil = new Date(drpTempSince); drpTempSince = clicked; }
+        else drpTempUntil = clicked;
+        drpClickState = 0;
+    }
+    renderCalendars(); updateFooterDates();
+}
 
 // ── Render KPIs ────────────────────────────────────────────────────────────
 function renderKpis(t) {
@@ -287,14 +566,12 @@ function renderTable(rows) {
     const empty = document.getElementById('table-empty');
 
     if (!rows.length) {
-        tbody.innerHTML = '';
-        tfoot.innerHTML = '';
+        tbody.innerHTML = ''; tfoot.innerHTML = '';
         empty.style.display = 'block';
         return;
     }
     empty.style.display = 'none';
 
-    // Sorted descending by date
     const sorted = [...rows].sort((a, b) => b.date.localeCompare(a.date));
 
     tbody.innerHTML = sorted.map(r => `
@@ -308,7 +585,6 @@ function renderTable(rows) {
           <td>${fmtN(r.conversions)}</td>
         </tr>`).join('');
 
-    // Totals row
     const tot = rows.reduce((acc, r) => {
         acc.spend += r.spend; acc.clicks += r.clicks;
         acc.lpv   += r.lpv;   acc.conv   += r.conversions;
@@ -316,8 +592,8 @@ function renderTable(rows) {
         return acc;
     }, {spend: 0, clicks: 0, lpv: 0, conv: 0, impr: 0});
 
-    const totCtr = tot.impr > 0 ? (tot.clicks / tot.impr * 100).toFixed(1) : '—';
-    const totCr  = tot.clicks > 0 ? (tot.lpv / tot.clicks * 100).toFixed(1) : '—';
+    const totCtr = tot.impr   > 0 ? (tot.clicks / tot.impr   * 100).toFixed(1) : '—';
+    const totCr  = tot.clicks > 0 ? (tot.lpv    / tot.clicks * 100).toFixed(1) : '—';
 
     tfoot.innerHTML = `
         <tr>
@@ -334,9 +610,9 @@ function renderTable(rows) {
 // ── Render Chart ───────────────────────────────────────────────────────────
 function renderChart(rows) {
     const sorted = [...rows].sort((a, b) => a.date.localeCompare(b.date));
-    const labels  = sorted.map(r => r.date.slice(5));  // MM-DD
-    const spends  = sorted.map(r => r.spend);
-    const convs   = sorted.map(r => r.conversions);
+    const labels = sorted.map(r => r.date.slice(5));  // MM-DD
+    const spends = sorted.map(r => r.spend);
+    const convs  = sorted.map(r => r.conversions);
 
     const ctx = document.getElementById('main-chart').getContext('2d');
     if (chart) { chart.destroy(); chart = null; }
@@ -389,11 +665,10 @@ function setStatus(msg, cls = '') {
     document.getElementById('status-msg').textContent = msg;
 }
 
-function show(id)    { const el = document.getElementById(id); if (el) el.style.display = ''; }
-function hide(id)    { const el = document.getElementById(id); if (el) el.style.display = 'none'; }
+function show(id) { const el = document.getElementById(id); if (el) el.style.display = ''; }
+function hide(id) { const el = document.getElementById(id); if (el) el.style.display = 'none'; }
 
 async function load() {
-    // Abort any in-flight request
     if (abortCtrl) { try { abortCtrl.abort(); } catch (_) {} }
     abortCtrl = new AbortController();
     const signal = abortCtrl.signal;
@@ -428,20 +703,16 @@ async function load() {
 
                 if (d.stage === 'status') {
                     setStatus(d.message);
-
                 } else if (d.stage === 'kpis') {
                     renderKpis(d.totals);
                     show('kpi-grid');
-
                 } else if (d.stage === 'daily') {
                     renderTable(d.rows);
                     renderChart(d.rows);
                     show('table-card');
                     show('chart-card');
-
                 } else if (d.stage === 'done') {
                     setStatus('✓ Atualizado em ' + new Date().toLocaleTimeString('pt-BR'), 'done');
-
                 } else if (d.stage === 'error') {
                     setStatus('Erro: ' + d.message, 'error');
                     document.getElementById('error-msg').textContent = d.message;
@@ -457,7 +728,10 @@ async function load() {
 }
 
 // ── Boot ───────────────────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', load);
+document.addEventListener('DOMContentLoaded', () => {
+    initDRP();
+    load();
+});
 </script>
 </body>
 </html>
