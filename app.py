@@ -71,7 +71,7 @@ from modules.account_settings import (
 import atexit
 atexit.register(close_db)
 
-VERSION = "v2.9.17"
+VERSION = "v2.10.0"
 
 
 @app.route('/sw.js')

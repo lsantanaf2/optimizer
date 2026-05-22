@@ -166,14 +166,28 @@
     .status-bar.done .spinner, .status-bar.error .spinner { display: none; }
 
     /* ── KPI cards ── */
-    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-                gap: 12px; margin-bottom: 20px; }
+    .kpi-section-title { font-size: .75rem; font-weight: 700; color: var(--muted);
+                          text-transform: uppercase; letter-spacing: .08em;
+                          margin: 4px 2px 10px; }
+    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+                gap: 12px; margin-bottom: 18px; }
     .kpi-card { background: var(--surface); border: 1px solid var(--border);
-                border-radius: 10px; padding: 16px 18px; }
-    .kpi-label { font-size: .75rem; color: var(--muted); text-transform: uppercase;
+                border-radius: 10px; padding: 14px 16px; position: relative; }
+    .kpi-card.highlight { border-color: rgba(99,102,241,0.5);
+                          background: linear-gradient(135deg, rgba(99,102,241,0.08), var(--surface)); }
+    .kpi-card.profit-pos { border-color: rgba(34,197,94,0.35); }
+    .kpi-card.profit-neg { border-color: rgba(248,113,113,0.35); }
+    .kpi-label { font-size: .72rem; color: var(--muted); text-transform: uppercase;
                  letter-spacing: .05em; margin-bottom: 6px; }
-    .kpi-value { font-size: 1.55rem; font-weight: 700; color: #f1f5f9; }
-    .kpi-sub   { font-size: .78rem; color: var(--muted); margin-top: 4px; }
+    .kpi-value { font-size: 1.45rem; font-weight: 700; color: #f1f5f9;
+                 line-height: 1.2; word-break: break-word; }
+    .kpi-sub   { font-size: .75rem; color: var(--muted); margin-top: 4px; }
+    .kpi-delta { display: inline-flex; align-items: center; gap: 3px;
+                 font-size: .72rem; font-weight: 700; padding: 2px 6px;
+                 border-radius: 4px; margin-top: 6px; }
+    .kpi-delta.up   { background: rgba(34,197,94,0.15);  color: #22c55e; }
+    .kpi-delta.down { background: rgba(248,113,113,0.15); color: #f87171; }
+    .kpi-delta.neutral { background: rgba(100,116,139,0.15); color: var(--muted); }
 
     /* ── Chart card ── */
     .chart-card { background: var(--surface); border: 1px solid var(--border);
@@ -202,6 +216,31 @@
 
     /* Tabela com scroll horizontal em telas pequenas */
     .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+    /* ── Top criativos ── */
+    .top-ads-card { background: var(--surface); border: 1px solid var(--border);
+                    border-radius: 10px; padding: 18px 20px; margin-bottom: 20px; }
+    .top-ads-list { display: flex; flex-direction: column; gap: 0; margin-top: 6px; }
+    .top-ad-row { display: grid; grid-template-columns: 36px 1fr auto; gap: 14px;
+                  align-items: center; padding: 12px 14px;
+                  border-bottom: 1px solid var(--border); }
+    .top-ad-row:last-child { border-bottom: none; }
+    .top-ad-rank { width: 32px; height: 32px; border-radius: 50%;
+                   background: rgba(99,102,241,0.18); color: var(--accent);
+                   display: flex; align-items: center; justify-content: center;
+                   font-weight: 700; font-size: .9rem; }
+    .top-ad-rank.gold   { background: rgba(250,204,21,0.18);  color: #facc15; }
+    .top-ad-rank.silver { background: rgba(203,213,225,0.18); color: #cbd5e1; }
+    .top-ad-rank.bronze { background: rgba(251,146,60,0.18);  color: #fb923c; }
+    .top-ad-info { min-width: 0; }
+    .top-ad-name { font-size: .9rem; font-weight: 600; color: #f1f5f9;
+                   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .top-ad-meta { font-size: .72rem; color: var(--muted); margin-top: 2px;
+                   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .top-ad-stats { display: flex; flex-direction: column; align-items: flex-end;
+                    gap: 2px; text-align: right; }
+    .top-ad-conv { font-size: 1rem; font-weight: 700; color: var(--green); }
+    .top-ad-roas { font-size: .72rem; color: var(--muted); }
 
     /* ── Mobile (≤ 720px) ───────────────────────────────────────── */
     @media (max-width: 720px) {
@@ -238,10 +277,17 @@
 
       .main { padding: 14px 12px; }
 
-      .kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
-      .kpi-card { padding: 12px 14px; }
-      .kpi-value { font-size: 1.3rem; }
-      .kpi-label { font-size: .7rem; }
+      .kpi-section-title { margin: 2px 2px 8px; font-size: .68rem; }
+      .kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 14px; }
+      .kpi-card { padding: 10px 12px; }
+      .kpi-value { font-size: 1.15rem; }
+      .kpi-label { font-size: .65rem; }
+      .kpi-sub { font-size: .68rem; }
+      .kpi-delta { font-size: .65rem; padding: 1px 5px; }
+      .top-ads-list { font-size: .8rem; }
+      .top-ad-row { padding: 10px 12px; }
+      .top-ad-name { font-size: .85rem; }
+      .top-ad-meta { font-size: .7rem; }
 
       .chart-card { padding: 14px 12px; }
       .card-title { font-size: .85rem; margin-bottom: 12px; }
@@ -322,35 +368,77 @@
     <span id="status-msg">Carregando...</span>
   </div>
 
-  <!-- KPIs -->
-  <div class="kpi-grid" id="kpi-grid" style="display:none">
-    <div class="kpi-card">
-      <div class="kpi-label">💸 Gasto</div>
-      <div class="kpi-value" id="kpi-spend">—</div>
+  <!-- KPIs — Resultado financeiro -->
+  <div id="kpi-section-result" style="display:none">
+    <div class="kpi-section-title">📈 Resultado</div>
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-label">💸 Gasto</div>
+        <div class="kpi-value" id="kpi-spend">—</div>
+        <div id="delta-spend"></div>
+      </div>
+      <div class="kpi-card highlight">
+        <div class="kpi-label">🏆 Vendas</div>
+        <div class="kpi-value" id="kpi-conv">—</div>
+        <div id="delta-conv"></div>
+      </div>
+      <div class="kpi-card highlight">
+        <div class="kpi-label">💰 Faturamento</div>
+        <div class="kpi-value" id="kpi-revenue">—</div>
+        <div class="kpi-sub" id="kpi-revenue-sub">—</div>
+        <div id="delta-revenue"></div>
+      </div>
+      <div class="kpi-card" id="card-profit">
+        <div class="kpi-label">📊 Lucro</div>
+        <div class="kpi-value" id="kpi-profit">—</div>
+        <div id="delta-profit"></div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">⚡ ROAS</div>
+        <div class="kpi-value" id="kpi-roas">—</div>
+        <div id="delta-roas"></div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">🎯 CAC</div>
+        <div class="kpi-value" id="kpi-cac">—</div>
+        <div class="kpi-sub" id="kpi-aov">AOV —</div>
+        <div id="delta-cac"></div>
+      </div>
     </div>
-    <div class="kpi-card">
-      <div class="kpi-label">🏆 Vendas</div>
-      <div class="kpi-value" id="kpi-conv">—</div>
+  </div>
+
+  <!-- KPIs — Eficiência / Funil -->
+  <div id="kpi-section-funnel" style="display:none">
+    <div class="kpi-section-title">🔍 Eficiência</div>
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-label">🖱️ Cliques link</div>
+        <div class="kpi-value" id="kpi-clicks">—</div>
+        <div class="kpi-sub" id="kpi-ctr">CTR —</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">📄 Visitas LP</div>
+        <div class="kpi-value" id="kpi-lpv">—</div>
+        <div class="kpi-sub" id="kpi-cr">Connect Rate —</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">💵 CPC link</div>
+        <div class="kpi-value" id="kpi-cpc">—</div>
+        <div id="delta-cpc"></div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">📡 CPM</div>
+        <div class="kpi-value" id="kpi-cpm">—</div>
+        <div id="delta-cpm"></div>
+      </div>
     </div>
-    <div class="kpi-card">
-      <div class="kpi-label">💰 Faturamento</div>
-      <div class="kpi-value" id="kpi-revenue">—</div>
-      <div class="kpi-sub" id="kpi-ticket">ticket R$ —</div>
-    </div>
-    <div class="kpi-card">
-      <div class="kpi-label">📈 ROAS</div>
-      <div class="kpi-value" id="kpi-roas">—</div>
-    </div>
-    <div class="kpi-card">
-      <div class="kpi-label">🖱️ Cliques</div>
-      <div class="kpi-value" id="kpi-clicks">—</div>
-      <div class="kpi-sub" id="kpi-ctr">CTR —</div>
-    </div>
-    <div class="kpi-card">
-      <div class="kpi-label">📄 Visitas LP</div>
-      <div class="kpi-value" id="kpi-lpv">—</div>
-      <div class="kpi-sub" id="kpi-cr">Connect Rate —</div>
-    </div>
+  </div>
+
+  <!-- Top criativos -->
+  <div class="top-ads-card" id="top-ads-card" style="display:none">
+    <div class="card-title">🏆 Top 5 criativos do período</div>
+    <div class="top-ads-list" id="top-ads-list"></div>
+    <div class="empty" id="top-ads-empty" style="display:none">Nenhum criativo com vendas no período.</div>
   </div>
 
   <!-- Chart -->
@@ -609,16 +697,113 @@ function onDayClick(ds) {
 }
 
 // ── Render KPIs ────────────────────────────────────────────────────────────
-function renderKpis(t) {
+// Lista de KPIs onde "menor é melhor" (deltas invertem polaridade)
+const INVERSE_KPIS = new Set(['cac', 'cpm', 'cpc_link', 'spend']);
+
+function renderDelta(elId, kpiKey, deltaPct) {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    if (deltaPct == null || isNaN(deltaPct)) {
+        el.innerHTML = '<span class="kpi-delta neutral">— vs ant.</span>';
+        return;
+    }
+    const isInverse = INVERSE_KPIS.has(kpiKey);
+    // up = aumentou; mas se for "menor é melhor", aumentar é ruim
+    const positive = isInverse ? deltaPct < 0 : deltaPct > 0;
+    const cls = deltaPct === 0 ? 'neutral' : (positive ? 'up' : 'down');
+    const arrow = deltaPct === 0 ? '●' : (deltaPct > 0 ? '▲' : '▼');
+    const txt = Math.abs(deltaPct).toFixed(1) + '%';
+    el.innerHTML = `<span class="kpi-delta ${cls}">${arrow} ${txt} vs ant.</span>`;
+}
+
+function renderKpis(t, deltas) {
+    deltas = deltas || {};
+
+    // ── Resultado ──
     document.getElementById('kpi-spend').textContent   = fmtBRL(t.spend);
     document.getElementById('kpi-conv').textContent    = fmtN(t.conversions);
+
+    // Faturamento: prefere REAL do Pixel, mostra ambos no subtitle
     document.getElementById('kpi-revenue').textContent = fmtBRL(t.revenue);
-    document.getElementById('kpi-ticket').textContent  = 'ticket ' + fmtBRL(t.ticket);
-    document.getElementById('kpi-roas').textContent    = fmtX(t.roas);
-    document.getElementById('kpi-clicks').textContent  = fmtN(t.clicks);
-    document.getElementById('kpi-ctr').textContent     = 'CTR ' + fmtPct(t.ctr);
-    document.getElementById('kpi-lpv').textContent     = fmtN(t.lpv);
-    document.getElementById('kpi-cr').textContent      = 'Connect Rate ' + fmtPct(t.connect_rate);
+    const revSub = document.getElementById('kpi-revenue-sub');
+    if (t.revenue_real > 0) {
+        // Tem dado real do Pixel
+        revSub.innerHTML = `<span style="color:#22c55e">✓ Pixel</span> · est. ${fmtBRL(t.revenue_est)} (ticket ${fmtBRL(t.ticket)})`;
+    } else if (t.revenue_est > 0) {
+        // Só estimativa via ticket fixo
+        revSub.textContent = `estimado · ticket ${fmtBRL(t.ticket)}`;
+    } else {
+        revSub.textContent = `ticket ${fmtBRL(t.ticket)}`;
+    }
+
+    document.getElementById('kpi-profit').textContent = fmtBRL(t.profit);
+    const profitCard = document.getElementById('card-profit');
+    profitCard.classList.remove('profit-pos', 'profit-neg');
+    if (t.profit > 0) profitCard.classList.add('profit-pos');
+    else if (t.profit < 0) profitCard.classList.add('profit-neg');
+
+    document.getElementById('kpi-roas').textContent = fmtX(t.roas);
+
+    document.getElementById('kpi-cac').textContent = fmtBRL(t.cac);
+    document.getElementById('kpi-aov').textContent =
+        t.aov > 0 ? 'AOV ' + fmtBRL(t.aov) : 'AOV —';
+
+    // ── Eficiência ──
+    document.getElementById('kpi-clicks').textContent = fmtN(t.clicks);
+    document.getElementById('kpi-ctr').textContent    = 'CTR ' + fmtPct(t.ctr);
+    document.getElementById('kpi-lpv').textContent    = fmtN(t.lpv);
+    document.getElementById('kpi-cr').textContent     = 'Connect Rate ' + fmtPct(t.connect_rate);
+    document.getElementById('kpi-cpc').textContent    = fmtBRL(t.cpc_link);
+    document.getElementById('kpi-cpm').textContent    = fmtBRL(t.cpm);
+
+    // ── Deltas ──
+    renderDelta('delta-spend',   'spend',        deltas.spend);
+    renderDelta('delta-conv',    'conversions',  deltas.conversions);
+    renderDelta('delta-revenue', 'revenue',      deltas.revenue);
+    renderDelta('delta-profit',  'profit',       deltas.profit);
+    renderDelta('delta-roas',    'roas',         deltas.roas);
+    renderDelta('delta-cac',     'cac',          deltas.cac);
+    renderDelta('delta-cpc',     'cpc_link',     deltas.cpc_link);
+    renderDelta('delta-cpm',     'cpm',          deltas.cpm);
+}
+
+// ── Render Top Ads ─────────────────────────────────────────────────────────
+function renderTopAds(rows, ticket) {
+    const list  = document.getElementById('top-ads-list');
+    const empty = document.getElementById('top-ads-empty');
+
+    if (!rows || !rows.length) {
+        list.innerHTML = '';
+        empty.style.display = 'block';
+        return;
+    }
+    empty.style.display = 'none';
+
+    const rankClass = ['gold', 'silver', 'bronze', '', ''];
+
+    list.innerHTML = rows.map((r, i) => {
+        const cls = rankClass[i] || '';
+        const conv = r.conversions || 0;
+        const revReal = r.revenue_real || 0;
+        const revEst  = conv * (ticket || 0);
+        const rev     = revReal > 0 ? revReal : revEst;
+        const roas    = r.spend > 0 ? (rev / r.spend) : 0;
+        const cpa     = conv > 0 ? (r.spend / conv) : 0;
+        const adName  = (r.ad_name || '—').replace(/</g, '&lt;');
+        const campName= (r.campaign_name || '').replace(/</g, '&lt;');
+        return `
+            <div class="top-ad-row">
+              <div class="top-ad-rank ${cls}">${i + 1}</div>
+              <div class="top-ad-info">
+                <div class="top-ad-name" title="${adName}">${adName}</div>
+                <div class="top-ad-meta">${campName} · ${fmtBRL(r.spend)} gasto · CAC ${fmtBRL(cpa)}</div>
+              </div>
+              <div class="top-ad-stats">
+                <div class="top-ad-conv">${fmtN(conv)} venda${conv === 1 ? '' : 's'}</div>
+                <div class="top-ad-roas">ROAS ${fmtX(roas)}</div>
+              </div>
+            </div>`;
+    }).join('');
 }
 
 // ── Render Table ───────────────────────────────────────────────────────────
@@ -736,7 +921,8 @@ async function load() {
     abortCtrl = new AbortController();
     const signal = abortCtrl.signal;
 
-    hide('kpi-grid'); hide('chart-card'); hide('table-card'); hide('error-msg');
+    hide('kpi-section-result'); hide('kpi-section-funnel');
+    hide('top-ads-card'); hide('chart-card'); hide('table-card'); hide('error-msg');
     setStatus('Carregando...');
 
     try {
@@ -767,8 +953,12 @@ async function load() {
                 if (d.stage === 'status') {
                     setStatus(d.message);
                 } else if (d.stage === 'kpis') {
-                    renderKpis(d.totals);
-                    show('kpi-grid');
+                    renderKpis(d.totals, d.deltas);
+                    show('kpi-section-result');
+                    show('kpi-section-funnel');
+                } else if (d.stage === 'top_ads') {
+                    renderTopAds(d.rows, d.ticket);
+                    show('top-ads-card');
                 } else if (d.stage === 'daily') {
                     renderTable(d.rows);
                     renderChart(d.rows);

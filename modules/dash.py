@@ -266,17 +266,75 @@ def fetch_client_sheet_campaigns(sheet_id, sheet_gid, filter_keyword, since_dt=N
 # Meta Ads only — fetch diário (sem dependência de planilha)
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _meta_api_get(url, params, *, timeout=30):
+    """Wrapper para GET na Meta API com extração rica de erro."""
+    resp = _req.get(url, params=params, timeout=timeout)
+    try:
+        resp.raise_for_status()
+    except _req.HTTPError:
+        try:
+            err = (resp.json() or {}).get('error', {}) or {}
+            detail = err.get('error_user_msg') or err.get('message') or 'sem detalhe'
+            raise Exception(
+                f'Meta API: {detail} '
+                f'(code={err.get("code")}, subcode={err.get("error_subcode")}, '
+                f'type={err.get("type")}, fbtrace={err.get("fbtrace_id")})'
+            )
+        except ValueError:
+            raise
+    return resp.json()
+
+
+def _sum_action_value(actions, action_type):
+    """Soma `value` de actions com action_type específico."""
+    if not action_type:
+        return 0
+    return sum(
+        int(float(a.get('value', 0) or 0))
+        for a in (actions or []) if a.get('action_type') == action_type
+    )
+
+
+def _sum_action_money(action_values, action_type):
+    """Soma `value` monetário de action_values com action_type específico."""
+    if not action_type:
+        return 0.0
+    return sum(
+        float(a.get('value', 0) or 0)
+        for a in (action_values or []) if a.get('action_type') == action_type
+    )
+
+
+def _previous_period(since_str, until_str):
+    """
+    Dado um período (YYYY-MM-DD strings), retorna o período anterior equivalente
+    de mesma duração imediatamente antes.
+
+    Ex: ('2026-05-01', '2026-05-21') → ('2026-04-10', '2026-04-30')
+    """
+    if not since_str or not until_str:
+        return None, None
+    try:
+        s = datetime.strptime(since_str, '%Y-%m-%d').date()
+        u = datetime.strptime(until_str, '%Y-%m-%d').date()
+    except (ValueError, TypeError):
+        return None, None
+    duration = (u - s).days
+    new_until = s - timedelta(days=1)
+    new_since = new_until - timedelta(days=duration)
+    return str(new_since), str(new_until)
+
+
 def fetch_meta_ads_daily(account_id, access_token, conversion_event,
                          date_preset='last_7_days', since=None, until=None):
     """
     Busca insights agregados por DATA para um account_id.
     Usa `level='ad'` (mesmo padrão de cruzamento.fetch_fb_insights — testado em prod)
-    e agrega por date_start no Python para evitar restrições de campo da Meta no
-    `level='account'`.
+    e agrega por date_start no Python.
 
-    Aceita conversion_event como parâmetro (não usa global do cruzamento).
     Retorna lista de dicts ordenada por data:
-        { date, spend, impressions, clicks, lpv, conversions }
+        { date, spend, impressions, clicks, lpv, conversions, revenue_real }
+    Onde revenue_real é o valor reportado pelo Pixel via action_values[conversion_event].
     """
     from modules.cruzamento import preset_to_dates
 
@@ -284,7 +342,7 @@ def fetch_meta_ads_daily(account_id, access_token, conversion_event,
     params = {
         'access_token':   access_token,
         'level':          'ad',
-        'fields':         'spend,impressions,clicks,inline_link_clicks,actions,date_start',
+        'fields':         'spend,impressions,clicks,inline_link_clicks,actions,action_values,date_start',
         'limit':          500,
         'time_increment': 1,
     }
@@ -298,62 +356,108 @@ def fetch_meta_ads_daily(account_id, access_token, conversion_event,
         else:
             params['date_preset'] = 'last_30d'
 
-    # Agrega por dia (chave = date_start). level='ad' retorna N linhas por dia.
     by_day = {}
     url = base_url
     while url:
-        resp = _req.get(url, params=params if url == base_url else None, timeout=30)
-        try:
-            resp.raise_for_status()
-        except _req.HTTPError:
-            # Extrai mensagem útil do JSON de erro da Meta (não apenas "400 Bad Request")
-            try:
-                err = (resp.json() or {}).get('error', {}) or {}
-                detail = err.get('error_user_msg') or err.get('message') or 'sem detalhe'
-                raise Exception(
-                    f'Meta API: {detail} '
-                    f'(code={err.get("code")}, subcode={err.get("error_subcode")}, '
-                    f'type={err.get("type")}, fbtrace={err.get("fbtrace_id")})'
-                )
-            except ValueError:
-                raise  # JSON parse falhou — relança HTTPError original
-        body = resp.json()
+        body = _meta_api_get(url, params if url == base_url else None)
 
         for item in body.get('data', []):
             date = item.get('date_start', '')
             if not date:
                 continue
-            actions = item.get('actions', []) or []
-
-            conv = 0
-            if conversion_event:
-                conv = sum(
-                    int(float(a.get('value', 0) or 0))
-                    for a in actions if a.get('action_type') == conversion_event
-                )
-            lpv = sum(
-                int(float(a.get('value', 0) or 0))
-                for a in actions if a.get('action_type') == 'landing_page_view'
-            )
+            actions       = item.get('actions') or []
+            action_values = item.get('action_values') or []
 
             entry = by_day.setdefault(date, {
                 'date': date, 'spend': 0.0, 'impressions': 0, 'clicks': 0,
-                'lpv': 0, 'conversions': 0,
+                'lpv': 0, 'conversions': 0, 'revenue_real': 0.0,
             })
-            entry['spend']       += float(item.get('spend', 0) or 0)
-            entry['impressions'] += int(item.get('impressions', 0) or 0)
-            entry['clicks']      += int(item.get('inline_link_clicks', 0) or 0)
-            entry['lpv']         += lpv
-            entry['conversions'] += conv
+            entry['spend']        += float(item.get('spend', 0) or 0)
+            entry['impressions']  += int(item.get('impressions', 0) or 0)
+            entry['clicks']       += int(item.get('inline_link_clicks', 0) or 0)
+            entry['lpv']          += _sum_action_value(actions, 'landing_page_view')
+            entry['conversions']  += _sum_action_value(actions, conversion_event)
+            entry['revenue_real'] += _sum_action_money(action_values, conversion_event)
 
         url = body.get('paging', {}).get('next')
         params = None
 
     rows = list(by_day.values())
     for r in rows:
-        r['spend'] = round(r['spend'], 2)
+        r['spend']        = round(r['spend'], 2)
+        r['revenue_real'] = round(r['revenue_real'], 2)
     rows.sort(key=lambda r: r['date'])
     return rows
+
+
+def fetch_meta_ads_top(account_id, access_token, conversion_event,
+                       since=None, until=None, date_preset='last_30d', limit=5):
+    """
+    Busca insights agregados por AD para retornar o top N ads por número de
+    conversões. Usado pela seção 'Top criativos' do dashboard.
+
+    Retorna lista ordenada (desc por conversions) com:
+        { ad_id, ad_name, campaign_name, spend, impressions, clicks,
+          conversions, revenue_real, roas, cpa }
+    """
+    from modules.cruzamento import preset_to_dates
+
+    base_url = f'https://graph.facebook.com/v22.0/{account_id}/insights'
+    params = {
+        'access_token': access_token,
+        'level':        'ad',
+        'fields':       ('ad_id,ad_name,campaign_id,campaign_name,'
+                         'spend,impressions,clicks,inline_link_clicks,'
+                         'actions,action_values'),
+        'limit':        500,
+        # SEM time_increment — agrega o período todo por ad
+    }
+    if since and until:
+        params['time_range'] = json.dumps({'since': since, 'until': until}, separators=(',', ':'))
+    else:
+        since_d, until_d = preset_to_dates(date_preset)
+        if since_d and until_d:
+            params['time_range'] = json.dumps({'since': str(since_d), 'until': str(until_d)}, separators=(',', ':'))
+        else:
+            params['date_preset'] = 'last_30d'
+
+    by_ad = {}
+    url = base_url
+    while url:
+        body = _meta_api_get(url, params if url == base_url else None)
+        for item in body.get('data', []):
+            ad_id = item.get('ad_id') or ''
+            if not ad_id:
+                continue
+            actions       = item.get('actions') or []
+            action_values = item.get('action_values') or []
+
+            entry = by_ad.setdefault(ad_id, {
+                'ad_id': ad_id,
+                'ad_name':       item.get('ad_name', ''),
+                'campaign_name': item.get('campaign_name', ''),
+                'spend': 0.0, 'impressions': 0, 'clicks': 0,
+                'conversions': 0, 'revenue_real': 0.0,
+            })
+            entry['spend']        += float(item.get('spend', 0) or 0)
+            entry['impressions']  += int(item.get('impressions', 0) or 0)
+            entry['clicks']       += int(item.get('inline_link_clicks', 0) or 0)
+            entry['conversions']  += _sum_action_value(actions, conversion_event)
+            entry['revenue_real'] += _sum_action_money(action_values, conversion_event)
+
+        url = body.get('paging', {}).get('next')
+        params = None
+
+    rows = list(by_ad.values())
+    # Filtra ads sem nenhuma venda (não interessam para "top criativos")
+    rows = [r for r in rows if r['conversions'] > 0]
+    for r in rows:
+        r['spend']        = round(r['spend'], 2)
+        r['revenue_real'] = round(r['revenue_real'], 2)
+        r['roas']         = round(r['revenue_real'] / r['spend'], 2) if r['spend'] > 0 else 0.0
+        r['cpa']          = round(r['spend'] / r['conversions'], 2) if r['conversions'] > 0 else 0.0
+    rows.sort(key=lambda r: r['conversions'], reverse=True)
+    return rows[:limit]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -731,6 +835,54 @@ def api_dash_meta_only(slug):
     def _sse(stage, payload):
         return f"data: {json.dumps({'stage': stage, **payload})}\n\n"
 
+    def _aggregate_totals(rows):
+        """Recebe a lista diária e devolve dict de totais + métricas derivadas."""
+        t_spend   = sum(r['spend']        for r in rows)
+        t_imp     = sum(r['impressions']  for r in rows)
+        t_clicks  = sum(r['clicks']       for r in rows)
+        t_lpv     = sum(r['lpv']          for r in rows)
+        t_conv    = sum(r['conversions']  for r in rows)
+        t_rev_re  = sum(r['revenue_real'] for r in rows)
+        t_rev_est = t_conv * ticket_value
+        # Faturamento "efetivo": prioriza Pixel, cai pro estimado se vier 0
+        t_rev_eff = t_rev_re if t_rev_re > 0 else t_rev_est
+
+        return {
+            'spend':         round(t_spend, 2),
+            'impressions':   t_imp,
+            'clicks':        t_clicks,
+            'lpv':           t_lpv,
+            'conversions':   t_conv,
+            'revenue_real':  round(t_rev_re, 2),
+            'revenue_est':   round(t_rev_est, 2),
+            'revenue':       round(t_rev_eff, 2),   # campo principal
+            'ticket':        ticket_value,
+            'aov':           round(t_rev_re / t_conv, 2) if (t_rev_re > 0 and t_conv > 0) else 0.0,
+            'roas':          round(t_rev_eff / t_spend, 2) if t_spend > 0 else 0.0,
+            'profit':        round(t_rev_eff - t_spend, 2),
+            'cac':           round(t_spend / t_conv, 2) if t_conv > 0 else 0.0,
+            'cpm':           round(t_spend / t_imp * 1000, 2) if t_imp > 0 else 0.0,
+            'cpc_link':      round(t_spend / t_clicks, 2) if t_clicks > 0 else 0.0,
+            'ctr':           round(t_clicks / t_imp * 100, 2) if t_imp > 0 else 0.0,
+            'connect_rate':  round(t_lpv / t_clicks * 100, 2) if t_clicks > 0 else 0.0,
+        }
+
+    def _deltas(curr, prev):
+        """Calcula delta percentual para cada KPI comparado ao período anterior."""
+        out = {}
+        # Para CAC/CPM/CPC e profit a interpretação de delta é específica:
+        # - 'inverse' significa que valor menor é melhor (CAC, CPM, CPC)
+        # - 'neutral' usa valor absoluto sem polaridade definida
+        for key in ('spend', 'impressions', 'clicks', 'lpv', 'conversions',
+                    'revenue', 'revenue_real', 'roas', 'aov', 'profit',
+                    'cac', 'cpm', 'cpc_link', 'ctr', 'connect_rate'):
+            c, p = curr.get(key, 0) or 0, prev.get(key, 0) or 0
+            if p == 0:
+                out[key] = None  # sem base de comparação
+            else:
+                out[key] = round((c - p) / p * 100, 1)
+        return out
+
     def generate():
         try:
             t0      = time.time()
@@ -738,29 +890,53 @@ def api_dash_meta_only(slug):
 
             yield _sse('status', {'message': f'Buscando Meta Ads para {display}...'})
 
+            # Período atual
             rows = fetch_meta_ads_daily(
                 meta_account_id, meta_token, conversion_event,
                 date_preset, since, until,
             )
 
-            yield _sse('status', {'message': f'Processando {len(rows)} dias...'})
+            # Resolve período anterior — só calculável quando temos since/until concretos
+            from modules.cruzamento import preset_to_dates as _p2d
+            curr_since, curr_until = since, until
+            if not (curr_since and curr_until):
+                _sd, _ud = _p2d(date_preset)
+                if _sd and _ud:
+                    curr_since, curr_until = str(_sd), str(_ud)
+            prev_since, prev_until = _previous_period(curr_since, curr_until)
 
-            # Totais
-            total_spend       = round(sum(r['spend']       for r in rows), 2)
-            total_impressions = sum(r['impressions'] for r in rows)
-            total_clicks      = sum(r['clicks']      for r in rows)
-            total_lpv         = sum(r['lpv']         for r in rows)
-            total_conv        = sum(r['conversions'] for r in rows)
-            total_revenue     = round(total_conv * ticket_value, 2)
-            roas              = round(total_revenue / total_spend, 2) if total_spend > 0 else 0.0
+            yield _sse('status', {'message': f'Processando {len(rows)} dias + período anterior + top criativos...'})
 
-            # Métricas derivadas por dia
+            # Fetch paralelo: período anterior + top ads do período atual
+            prev_rows = []
+            top_ads   = []
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
+                fut_prev = (ex.submit(
+                    fetch_meta_ads_daily, meta_account_id, meta_token, conversion_event,
+                    date_preset, prev_since, prev_until,
+                ) if prev_since and prev_until else None)
+                fut_top  = ex.submit(
+                    fetch_meta_ads_top, meta_account_id, meta_token, conversion_event,
+                    curr_since, curr_until, date_preset, 5,
+                )
+                if fut_prev:
+                    try:    prev_rows = fut_prev.result()
+                    except Exception as e:
+                        logger.warning(f'[dash:{slug}] período anterior falhou: {e}')
+                try:    top_ads = fut_top.result()
+                except Exception as e:
+                    logger.warning(f'[dash:{slug}] top ads falhou: {e}')
+
+            totals      = _aggregate_totals(rows)
+            prev_totals = _aggregate_totals(prev_rows)
+            deltas      = _deltas(totals, prev_totals)
+
+            # Métricas derivadas por dia (mantém compat com tabela atual)
             daily = []
             for r in rows:
-                sp, cl, im, lp, cv = (
-                    r['spend'], r['clicks'], r['impressions'],
-                    r['lpv'], r['conversions'],
-                )
+                sp, cl, im, lp, cv = (r['spend'], r['clicks'], r['impressions'],
+                                      r['lpv'], r['conversions'])
+                rev = r['revenue_real'] if r['revenue_real'] > 0 else round(cv * ticket_value, 2)
                 daily.append({
                     'date':         r['date'],
                     'spend':        sp,
@@ -770,28 +946,22 @@ def api_dash_meta_only(slug):
                     'conversions':  cv,
                     'ctr':          round(cl / im * 100, 2) if im > 0 else 0.0,
                     'connect_rate': round(lp / cl * 100, 2) if cl > 0 else 0.0,
-                    'revenue':      round(cv * ticket_value, 2),
-                    'roas':         round((cv * ticket_value) / sp, 2) if sp > 0 else 0.0,
+                    'revenue':      rev,
+                    'roas':         round(rev / sp, 2) if sp > 0 else 0.0,
                 })
 
             elapsed = round(time.time() - t0, 2)
 
             yield _sse('kpis', {
-                'totals': {
-                    'spend':       total_spend,
-                    'impressions': total_impressions,
-                    'clicks':      total_clicks,
-                    'lpv':         total_lpv,
-                    'conversions': total_conv,
-                    'revenue':     total_revenue,
-                    'roas':        roas,
-                    'ticket':      ticket_value,
-                    'ctr':         round(total_clicks / total_impressions * 100, 2) if total_impressions > 0 else 0.0,
-                    'connect_rate': round(total_lpv / total_clicks * 100, 2) if total_clicks > 0 else 0.0,
-                }
+                'totals':      totals,
+                'prev_totals': prev_totals,
+                'deltas':      deltas,
+                'period':      {'since': curr_since, 'until': curr_until},
+                'prev_period': {'since': prev_since, 'until': prev_until},
             })
 
-            yield _sse('daily', {'rows': daily})
+            yield _sse('daily',   {'rows': daily})
+            yield _sse('top_ads', {'rows': top_ads, 'ticket': ticket_value})
 
             yield _sse('done', {
                 'meta': {
