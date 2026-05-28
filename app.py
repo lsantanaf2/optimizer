@@ -1,6 +1,8 @@
 import os
 import json
 import time
+import glob
+import uuid
 import requests as req_lib
 import tempfile
 import queue
@@ -71,7 +73,39 @@ from modules.account_settings import (
 import atexit
 atexit.register(close_db)
 
-VERSION = "v2.10.0"
+VERSION = "v2.11.0"
+
+# ======================== STAGING DE UPLOAD (v2.11.0) ========================
+# Desacoplamento: o Service Worker sobe cada arquivo UMA vez para a VPS (staging),
+# e o request SSE de criação do anúncio só referencia o arquivo já salvo via stage_id.
+# Elimina o transfer duplo (browser→VPS + VPS→Meta) dentro do mesmo request limitado
+# pelo timeout do Gunicorn (300s) — que matava o worker em vídeos grandes (155-187MB).
+STAGE_DIR = os.path.join(tempfile.gettempdir(), 'optimizer_stage')
+
+
+def _sweep_stage_dir(max_age_seconds=6 * 3600):
+    """Remove arquivos staged órfãos mais velhos que max_age_seconds."""
+    try:
+        now = time.time()
+        for p in glob.glob(os.path.join(STAGE_DIR, '*')):
+            try:
+                if now - os.path.getmtime(p) > max_age_seconds:
+                    os.remove(p)
+            except OSError:
+                pass
+    except Exception:
+        pass
+
+
+def _resolve_stage(stage_id):
+    """Resolve um stage_id para o caminho do arquivo no STAGE_DIR (ou None)."""
+    if not stage_id:
+        return None
+    safe = os.path.basename(str(stage_id))  # anti path-traversal
+    if not safe:
+        return None
+    matches = glob.glob(os.path.join(STAGE_DIR, f'{safe}__*'))
+    return matches[0] if matches else None
 
 
 @app.route('/sw.js')
@@ -1345,6 +1379,37 @@ def historico_textos(campaign_id):
         return jsonify({'error': str(e)}), 500
 
 
+# ======================== UPLOAD: STAGING (v2.11.0) ========================
+
+@app.route('/campanha/<campaign_id>/upload/stage', methods=['POST'])
+def upload_stage(campaign_id):
+    """Recebe UM arquivo do Service Worker e persiste no STAGE_DIR.
+    Retorna um stage_id que o request SSE de criação usa para referenciar
+    o arquivo já salvo — evitando o transfer duplo no mesmo request."""
+    access_token = obter_token()
+    if not access_token:
+        return jsonify({'success': False, 'error': 'Não autenticado'}), 401
+
+    if 'file' not in request.files:
+        return jsonify({'success': False, 'error': 'Nenhum arquivo enviado'}), 400
+    f = request.files['file']
+    if not f.filename:
+        return jsonify({'success': False, 'error': 'Arquivo vazio'}), 400
+
+    try:
+        os.makedirs(STAGE_DIR, exist_ok=True)
+        _sweep_stage_dir()  # limpa órfãos antigos a cada novo staging
+        stage_id = uuid.uuid4().hex
+        safe_name = os.path.basename(f.filename) or 'media'
+        dest = os.path.join(STAGE_DIR, f'{stage_id}__{safe_name}')
+        f.save(dest)
+        size_kb = os.path.getsize(dest) / 1024
+        print(f"📥 [STAGE] {dest} ({size_kb:.0f} KB)")
+        return jsonify({'success': True, 'stage_id': stage_id, 'filename': safe_name})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 # ======================== UPLOAD: POR ITEM ========================
 
 @app.route('/campanha/<campaign_id>/upload', methods=['POST'])
@@ -1404,19 +1469,31 @@ def upload_single(campaign_id):
             c_url = request.form.get(f'card_{i}_url_remote') or None
             c_link = request.form.get(f'card_{i}_link') or None
             c_path = None
-            fkey = f'card_{i}_arquivo'
-            if fkey in request.files:
-                f = request.files[fkey]
-                if f.filename:
-                    safe_name = f"card{i}_" + os.path.basename(f.filename)
-                    c_path = os.path.join(temp_dir, safe_name)
-                    f.save(c_path)
-                    print(f"📁 [UPLOAD CARROSSEL] Card {i+1}: {c_path} ({os.path.getsize(c_path) / 1024:.0f} KB)")
+            # v2.11.0: prefere arquivo staged (já na VPS) sobre upload multipart
+            c_stage_path = _resolve_stage(request.form.get(f'card_{i}_stage_id'))
+            if c_stage_path:
+                c_path = c_stage_path
+                print(f"📁 [UPLOAD CARROSSEL STAGED] Card {i+1}: {c_path}")
+            else:
+                fkey = f'card_{i}_arquivo'
+                if fkey in request.files:
+                    f = request.files[fkey]
+                    if f.filename:
+                        safe_name = f"card{i}_" + os.path.basename(f.filename)
+                        c_path = os.path.join(temp_dir, safe_name)
+                        f.save(c_path)
+                        print(f"📁 [UPLOAD CARROSSEL] Card {i+1}: {c_path} ({os.path.getsize(c_path) / 1024:.0f} KB)")
             if not c_path and not c_url:
                 return jsonify({'success': False, 'error': f'Card {i+1} sem mídia (arquivo ou link).'}), 400
             carousel_cards.append({'local_path': c_path, 'url_remote': c_url, 'link': c_link})
     else:
-        if 'arquivo_feed' in request.files:
+        # v2.11.0: prefere arquivos staged (já na VPS) sobre upload multipart
+        staged_feed = _resolve_stage(request.form.get('feed_stage_id'))
+        staged_stories = _resolve_stage(request.form.get('stories_stage_id'))
+        if staged_feed:
+            feed_path = staged_feed
+            print(f"📁 [UPLOAD STAGED] Feed: {feed_path}")
+        elif 'arquivo_feed' in request.files:
             f = request.files['arquivo_feed']
             if f.filename:
                 safe_name = os.path.basename(f.filename)
@@ -1424,7 +1501,10 @@ def upload_single(campaign_id):
                 f.save(feed_path)
                 print(f"📁 [UPLOAD LOCAL] Feed salvo: {feed_path} ({os.path.getsize(feed_path) / 1024:.0f} KB)")
 
-        if 'arquivo_stories' in request.files:
+        if staged_stories:
+            stories_path = staged_stories
+            print(f"📁 [UPLOAD STAGED] Stories: {stories_path}")
+        elif 'arquivo_stories' in request.files:
             f = request.files['arquivo_stories']
             if f.filename:
                 safe_name = os.path.basename(f.filename)

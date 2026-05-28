@@ -12,7 +12,7 @@
  * - Registra histórico ao final (/api/upload-history/add)
  */
 
-const SW_VERSION = 'v2.9.14';
+const SW_VERSION = 'v2.11.0';
 const DB_NAME = 'optimizer-uploads';
 const DB_VERSION = 1;
 const STORE_JOBS = 'jobs';
@@ -216,6 +216,33 @@ async function duplicarGarimpo(job, item) {
     }
 }
 
+// v2.11.0: Sobe UM arquivo para o staging da VPS e devolve o stage_id.
+// Desacopla o transfer browser→VPS do request SSE de criação do anúncio,
+// evitando o transfer duplo dentro do timeout do Gunicorn (300s).
+async function stageFile(campaignId, file, displayName) {
+    const fd = new FormData();
+    fd.append('file', file, displayName || 'media');
+    const r = await fetch(`/campanha/${campaignId}/upload/stage`, {
+        method: 'POST',
+        body: fd,
+        credentials: 'include',
+        redirect: 'manual',
+    });
+    if (r.status === 401 || r.status === 403 || r.type === 'opaqueredirect'
+        || (r.status >= 300 && r.status < 400)
+        || (r.redirected && /\/login/i.test(r.url))) {
+        const e = new Error('Sessão expirada — faça login novamente');
+        e.authExpired = true;
+        throw e;
+    }
+    if (!r.ok) throw new Error(`stage HTTP ${r.status}`);
+    const data = await r.json();
+    if (!data || !data.success || !data.stage_id) {
+        throw new Error((data && data.error) || 'staging falhou');
+    }
+    return data.stage_id;
+}
+
 async function uploadItem(job, item, preDupMap, index) {
     const ctx = item.context;
     if (!ctx.pageId) {
@@ -262,19 +289,46 @@ async function uploadItem(job, item, preDupMap, index) {
     (ctx.titulos || []).forEach(t => fd.append('headline[]', t));
     if (ctx.excludedCountries) fd.append('excluded_countries', ctx.excludedCountries);
 
-    if (item.tipo === 'carousel' && Array.isArray(item.cards)) {
-        fd.append('tipo_criativo', 'carousel');
-        fd.append('card_count', String(item.cards.length));
-        item.cards.forEach((c, ci) => {
-            if (c.file) fd.append(`card_${ci}_arquivo`, c.file, c.name || `card_${ci}`);
-            if (c.url) fd.append(`card_${ci}_url_remote`, c.url);
-        });
-    } else {
-        fd.append('tipo_criativo', 'single');
-        if (item.feedFile) fd.append('arquivo_feed', item.feedFile, item.feedFileName || 'feed');
-        if (item.storiesFile) fd.append('arquivo_stories', item.storiesFile, item.storiesFileName || 'stories');
-        if (item.urlFeed) fd.append('url_feed_remote', item.urlFeed);
-        if (item.urlStories) fd.append('url_stories_remote', item.urlStories);
+    // v2.11.0: STAGING — sobe cada arquivo UMA vez pra VPS antes do SSE.
+    // O request SSE de criação só referencia stage_id (sem carregar o vídeo de novo).
+    try {
+        if (item.tipo === 'carousel' && Array.isArray(item.cards)) {
+            fd.append('tipo_criativo', 'carousel');
+            fd.append('card_count', String(item.cards.length));
+            for (let ci = 0; ci < item.cards.length; ci++) {
+                const c = item.cards[ci];
+                if (c.file) {
+                    appendLog(job, `📥 Enviando card ${ci + 1} de "${item.adName}" para a VPS...`, 'info');
+                    const sid = await stageFile(ctx.campaignId, c.file, c.name || `card_${ci}`);
+                    fd.append(`card_${ci}_stage_id`, sid);
+                }
+                if (c.url) fd.append(`card_${ci}_url_remote`, c.url);
+            }
+        } else {
+            fd.append('tipo_criativo', 'single');
+            if (item.feedFile) {
+                appendLog(job, `📥 Enviando feed de "${item.adName}" para a VPS...`, 'info');
+                const sid = await stageFile(ctx.campaignId, item.feedFile, item.feedFileName || 'feed');
+                fd.append('feed_stage_id', sid);
+            }
+            if (item.storiesFile) {
+                appendLog(job, `📥 Enviando stories de "${item.adName}" para a VPS...`, 'info');
+                const sid = await stageFile(ctx.campaignId, item.storiesFile, item.storiesFileName || 'stories');
+                fd.append('stories_stage_id', sid);
+            }
+            if (item.urlFeed) fd.append('url_feed_remote', item.urlFeed);
+            if (item.urlStories) fd.append('url_stories_remote', item.urlStories);
+        }
+    } catch (stageErr) {
+        if (stageErr && stageErr.authExpired) {
+            broadcast('auth-expired', { jobId: job.id });
+            job.status = 'cancelled';
+            appendLog(job, `⏸ "${item.adName}": sessão expirada no envio à VPS. Faça login e re-enfileire.`, 'warning');
+            await idbPut(job);
+            return { success: false, error: 'auth expirada', authExpired: true };
+        }
+        appendLog(job, `❌ "${item.adName}": falha ao enviar mídia para a VPS — ${stageErr.message}`, 'error');
+        return { success: false, error: `staging: ${stageErr.message}` };
     }
 
     fd.append('page_id', ctx.pageId);
