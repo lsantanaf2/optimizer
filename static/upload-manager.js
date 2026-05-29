@@ -224,6 +224,23 @@
 .upg-bar-fill { height: 100%; background: linear-gradient(90deg, #7f5af0, #4f9cf9); transition: width 0.3s; }
 .upg-job-meta { color: #9ba3b8; font-size: 11px; display: flex; justify-content: space-between; }
 .upg-job-msg { color: #cbd5e1; margin-top: 4px; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Lista por-ad: o que já subiu / está subindo / falta — com conjunto de destino */
+.upg-items {
+    margin-top: 8px; max-height: 200px; overflow-y: auto;
+    background: #0f1218; border-radius: 6px; padding: 4px 6px;
+}
+.upg-item {
+    display: flex; align-items: center; gap: 7px; padding: 4px 2px;
+    font-size: 11px; border-bottom: 1px solid #1c2230;
+}
+.upg-item:last-child { border-bottom: none; }
+.upg-item-ico { flex: 0 0 auto; width: 14px; text-align: center; }
+.upg-item-body { flex: 1; min-width: 0; }
+.upg-item-name { color: #e0e0e0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.upg-item-adset { color: #9ba3b8; font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.upg-item-uploading .upg-item-name { color: #60a5fa; }
+.upg-item-done .upg-item-name { color: #10b981; }
+.upg-item-error .upg-item-name { color: #f87171; }
 .upg-job-actions { display: flex; gap: 6px; margin-top: 6px; align-items: center; }
 .upg-job-actions button {
     background: #2a2f40; border: 1px solid #3a4056; color: #cbd5e1;
@@ -315,6 +332,21 @@
                 const msgEl = el.querySelector('.upg-job-msg');
                 if (msgEl) msgEl.textContent = j.currentMessage || '';
 
+                // Atualiza a lista por-ad (status individual muda ao longo do upload)
+                const itemsEl = el.querySelector('.upg-items');
+                const itemsHtml = _itemsHtml(j);
+                if (itemsEl) {
+                    itemsEl.outerHTML = itemsHtml;
+                } else if (itemsHtml) {
+                    const msgRef = el.querySelector('.upg-job-msg');
+                    const actionsRef = el.querySelector('.upg-job-actions');
+                    const tmp = document.createElement('div');
+                    tmp.innerHTML = itemsHtml;
+                    const node = tmp.firstElementChild;
+                    if (actionsRef) el.insertBefore(node, actionsRef);
+                    else if (msgRef) msgRef.insertAdjacentElement('afterend', node);
+                }
+
                 // Atualiza logs se expandido
                 if (_expandedJobs.has(j.id)) {
                     _updateLogs(el, j);
@@ -340,6 +372,49 @@
                  cancelled: 'Cancelado', interrupted: 'Interrompido' }[s] || s;
     }
 
+    // Nome legível do conjunto de destino (novo ou existente) a partir do contexto.
+    function _adsetLabel(ctx, adName) {
+        if (!ctx) return '';
+        if (ctx.estrategia === 'garimpo') {
+            // Garimpo: cada anúncio ganha um conjunto novo nomeado como o próprio anúncio.
+            return '🆕 ' + (adName || 'conjunto novo');
+        }
+        if (ctx.estrategia === 'novo') {
+            return '🆕 ' + (ctx.adsetNewNameNovo || ctx.adsetNewName || 'conjunto novo');
+        }
+        // agrupado
+        if (ctx.destino === 'existente') {
+            return '📂 ' + (ctx.adsetExistenteName || ctx.adsetExistente || 'conjunto existente');
+        }
+        // agrupado + duplicar
+        return '🆕 ' + (ctx.adsetNewName || ctx.adsetNewNameNovo || 'conjunto novo');
+    }
+
+    function _itemIco(st) {
+        return { pending: '⏳', uploading: '🔄', done: '✅', error: '❌' }[st] || '⏳';
+    }
+
+    // Lista por-ad: nome do anúncio + conjunto de destino + status individual.
+    function _itemsHtml(j) {
+        const items = j.items || [];
+        if (!items.length) return '';
+        const statuses = j.itemStatus || [];
+        const lines = items.map((it, i) => {
+            const st = statuses[i] || 'pending';
+            const adName = it.adName || `Anúncio ${i + 1}`;
+            const adset = _adsetLabel(it.context, adName);
+            return `
+                <div class="upg-item upg-item-${st}">
+                    <span class="upg-item-ico">${_itemIco(st)}</span>
+                    <span class="upg-item-body">
+                        <span class="upg-item-name" title="${_esc(adName)}">${_esc(adName)}</span>
+                        <span class="upg-item-adset" title="${_esc(adset)}">${_esc(adset)}</span>
+                    </span>
+                </div>`;
+        }).join('');
+        return `<div class="upg-items">${lines}</div>`;
+    }
+
     function _jobHtml(j) {
         const prog = Math.min(100, Math.max(0, j.progress || 0));
         const msg = j.currentMessage || '';
@@ -359,6 +434,7 @@
                     <span>${prog}%</span>
                 </div>
                 ${msg ? `<div class="upg-job-msg">${_esc(msg)}</div>` : ''}
+                ${_itemsHtml(j)}
                 <div class="upg-job-actions">
                     ${isLive ? `<button onclick="UploadManager.cancelJob('${j.id}')">⏹ Cancelar</button>` : ''}
                     ${!isLive ? `<button onclick="UploadManager.deleteJob('${j.id}')">🗑 Remover</button>` : ''}

@@ -645,6 +645,11 @@
             const estrategiaEl = document.querySelector('input[name="estrategia"]:checked');
             const destinoEl = document.querySelector('input[name="destino_conjunto"]:checked');
             const excluded = document.getElementById('excluded_countries')?.value || '';
+            // Captura o NOME (texto da option) do conjunto existente selecionado,
+            // para o painel de uploads exibir o conjunto de destino — não só o ID.
+            const adsetExEl = document.getElementById('adset_existente');
+            const adsetExistenteName = (adsetExEl && adsetExEl.value)
+                ? (adsetExEl.selectedOptions?.[0]?.text || '').trim() : '';
             return {
                 accountId:           ACCOUNT_ID,
                 campaignId:          CAMPAIGN_ID,
@@ -652,6 +657,7 @@
                 estrategia:          estrategiaEl?.value || '',
                 destino:             destinoEl?.value || '',
                 adsetExistente:      document.getElementById('adset_existente')?.value || '',
+                adsetExistenteName:  adsetExistenteName,
                 adsetModelo:         document.getElementById('adset_modelo')?.value || '',
                 adsetModeloNovo:     document.getElementById('adset_modelo_novo')?.value || '',
                 adsetModeloGarimpo:  document.getElementById('adset_modelo_garimpo')?.value || '',
@@ -2334,7 +2340,7 @@
                 const ctx = it.context;
                 const mesmaConta = ctx.accountId === ACCOUNT_ID && ctx.campaignId === CAMPAIGN_ID;
                 if (!mesmaConta) continue;
-                const keys = ['estrategia','destino','adsetExistente','adsetModelo','adsetModeloNovo',
+                const keys = ['estrategia','destino','adsetExistente','adsetExistenteName','adsetModelo','adsetModeloNovo',
                               'adsetModeloGarimpo','adsetNewName','adsetNewNameNovo','adsetStartTime',
                               'pageId','igId','pixelId','leadFormId','url','utms','cta','excludedCountries','campaignName'];
                 for (const k of keys) {

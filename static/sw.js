@@ -12,7 +12,7 @@
  * - Registra histórico ao final (/api/upload-history/add)
  */
 
-const SW_VERSION = 'v2.12.0';
+const SW_VERSION = 'v2.14.0';
 const DB_NAME = 'optimizer-uploads';
 const DB_VERSION = 1;
 const STORE_JOBS = 'jobs';
@@ -565,6 +565,14 @@ async function processJob(jobId) {
 
     job.status = 'running';
     job.startedAt = job.startedAt || Date.now();
+    // Status por item (pending|uploading|done|error) — alimenta a lista por-ad do painel.
+    if (!Array.isArray(job.itemStatus) || job.itemStatus.length !== job.items.length) {
+        job.itemStatus = job.items.map((_, i) => {
+            const prev = Array.isArray(job.itemStatus) ? job.itemStatus[i] : null;
+            // Preserva done/error já registrados (retomada após morte do SW)
+            return (prev === 'done' || prev === 'error') ? prev : 'pending';
+        });
+    }
     await idbPut(job);
     broadcast('job-update', { job });
 
@@ -589,6 +597,13 @@ async function processJob(jobId) {
             break;
         }
 
+        // Marca o item como "enviando" para o painel destacar o que está em curso.
+        if (Array.isArray(job.itemStatus) && job.itemStatus[i] !== 'done') {
+            job.itemStatus[i] = 'uploading';
+            await idbPut(job);
+            broadcast('job-update', { job });
+        }
+
         // v2.9.14: try/catch garante que exceção isolada NÃO mate a fila inteira
         let res;
         try {
@@ -601,6 +616,14 @@ async function processJob(jobId) {
             res = { success: false, error: msg };
         }
         if (res && res.success) enviados++; else erros++;
+
+        // Persiste status final do item na MESMA referência que uploadItem mutou
+        // (preserva os logs em memória ainda não persistidos, ex.: "✅ criado").
+        if (Array.isArray(job.itemStatus)) {
+            job.itemStatus[i] = (res && res.success) ? 'done' : 'error';
+            await idbPut(job);
+            broadcast('job-update', { job });
+        }
 
         // Delay entre ads
         if (i < job.items.length - 1 && job.status !== 'cancelled') {
