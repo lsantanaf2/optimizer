@@ -73,7 +73,7 @@ from modules.account_settings import (
 import atexit
 atexit.register(close_db)
 
-VERSION = "v2.11.2"
+VERSION = "v2.12.0"
 
 # ======================== STAGING DE UPLOAD (v2.11.0) ========================
 # Desacoplamento: o Service Worker sobe cada arquivo UMA vez para a VPS (staging),
@@ -1410,16 +1410,96 @@ def upload_stage(campaign_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-# ======================== UPLOAD: POR ITEM ========================
+# ======================== UPLOAD: ESTADO DURÁVEL (v2.12.0) ========================
+# Desacoplamento do job da conexão HTTP. O POST /upload/start inicia a thread e
+# devolve job_id NA HORA; a thread grava progresso + ad_id num arquivo de estado
+# no STAGE_DIR (cross-worker, sobrevive à morte do Service Worker). O cliente faz
+# polling curto em /upload/status/<job_id> — requests de ~1s que não dependem de
+# manter conexão por minutos (o que o Chrome matava ao terminar o SW no meio do
+# lote). Idempotência por job_key impede recriar anúncio em retry.
 
-@app.route('/campanha/<campaign_id>/upload', methods=['POST'])
-def upload_single(campaign_id):
-    """Upload de um único anúncio via SSE stream. Cada etapa emite um evento de progresso."""
-    access_token = obter_token()
-    if not access_token:
-        return jsonify({'success': False, 'error': 'Não autenticado'}), 401
+def _job_path(job_id):
+    safe = os.path.basename(str(job_id))
+    return os.path.join(STAGE_DIR, f'job_{safe}.json')
 
-    # Extrair todos os dados do request ANTES da thread (contexto de request não é thread-safe)
+
+def _job_read(job_id):
+    try:
+        with open(_job_path(job_id), 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def _job_write(job_id, data):
+    """Escrita atômica (tmp + os.replace) — o poller nunca lê arquivo pela metade."""
+    try:
+        os.makedirs(STAGE_DIR, exist_ok=True)
+        path = _job_path(job_id)
+        tmp = f'{path}.{uuid.uuid4().hex}.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            json.dump(data, f)
+        os.replace(tmp, path)
+    except Exception as e:
+        print(f"⚠️ _job_write falhou ({job_id}): {e}")
+
+
+def _make_job_emit(job_id):
+    """Cria uma função emit() que persiste cada evento no arquivo de estado do job.
+    Substitui o msg_queue do SSE — mas o core de upload é o mesmo."""
+    state = {
+        'job_id': job_id, 'status': 'running', 'percent': 5,
+        'message': '🚀 Iniciando...', 'ad_id': None, 'error': None,
+        'geo': None, 'logs': [],
+        'started_at': time.time(), 'updated_at': time.time(),
+    }
+    _job_write(job_id, state)
+    lock = threading.Lock()
+
+    def emit(etype, **kw):
+        with lock:
+            state['updated_at'] = time.time()  # heartbeat (detecta thread morta)
+            if etype == 'log':
+                msg = kw.get('message')
+                if msg:
+                    state['logs'].append(msg)
+            elif etype == 'progress':
+                if 'percent' in kw:
+                    state['percent'] = kw['percent']
+                if kw.get('message'):
+                    state['message'] = kw['message']
+                    state['logs'].append(kw['message'])
+            elif etype == 'done':
+                state['status'] = 'done'
+                state['percent'] = 100
+                state['ad_id'] = kw.get('ad_id')
+                state['message'] = kw.get('message')
+                if kw.get('logs'):
+                    state['logs'] = kw['logs']
+            elif etype == 'error':
+                state['status'] = 'error'
+                state['error'] = kw.get('message')
+                if kw.get('logs'):
+                    state['logs'] = kw['logs']
+            elif etype == 'geo_compliance_error':
+                state['status'] = 'error'
+                state['error'] = kw.get('message')
+                state['geo'] = {
+                    'country_code': kw.get('country_code'),
+                    'country_name': kw.get('country_name'),
+                }
+            # cap de logs para não inflar o arquivo
+            if len(state['logs']) > 800:
+                state['logs'] = state['logs'][-800:]
+            _job_write(job_id, dict(state))
+    return emit
+
+
+# ======================== UPLOAD: PARSE + CORE COMPARTILHADOS ========================
+
+def _parse_upload_params(campaign_id, access_token):
+    """Extrai todos os campos do request (form+files) ANTES da thread.
+    Retorna (params_dict, None) em sucesso ou (None, (response, status)) em erro."""
     # v2.7.1: Fila multi-conta — cada item envia seu próprio account_id (fallback para session)
     account_id = (request.form.get('account_id') or session.get('account_id', '') or '').strip()
     if account_id and not account_id.startswith('act_'):
@@ -1445,16 +1525,13 @@ def upload_single(campaign_id):
     url_feed_remote = request.form.get('url_feed_remote') or None
     url_stories_remote = request.form.get('url_stories_remote') or None
     tipo_criativo = (request.form.get('tipo_criativo') or 'single').lower()
-    # Países a excluir da segmentação (geo-compliance bypass)
     excluded_countries_raw = request.form.get('excluded_countries', '')
     excluded_countries = [c.strip().upper() for c in excluded_countries_raw.split(',') if c.strip()] or None
 
-    # Salvar arquivos locais em temp dir antes da thread
     temp_dir = tempfile.mkdtemp(prefix='optimizer_')
     feed_path = None
     stories_path = None
 
-    # ====== CARROSSEL: parse cards ordenados ======
     carousel_cards = []  # lista de dicts: {local_path, url_remote, link}
     if tipo_criativo == 'carousel':
         try:
@@ -1462,14 +1539,13 @@ def upload_single(campaign_id):
         except ValueError:
             card_count = 0
         if card_count < 2:
-            return jsonify({'success': False, 'error': 'Carrossel exige no mínimo 2 cards.'}), 400
+            return None, (jsonify({'success': False, 'error': 'Carrossel exige no mínimo 2 cards.'}), 400)
         if card_count > 10:
-            return jsonify({'success': False, 'error': 'Carrossel aceita no máximo 10 cards.'}), 400
+            return None, (jsonify({'success': False, 'error': 'Carrossel aceita no máximo 10 cards.'}), 400)
         for i in range(card_count):
             c_url = request.form.get(f'card_{i}_url_remote') or None
             c_link = request.form.get(f'card_{i}_link') or None
             c_path = None
-            # v2.11.0: prefere arquivo staged (já na VPS) sobre upload multipart
             c_stage_path = _resolve_stage(request.form.get(f'card_{i}_stage_id'))
             if c_stage_path:
                 c_path = c_stage_path
@@ -1484,10 +1560,9 @@ def upload_single(campaign_id):
                         f.save(c_path)
                         print(f"📁 [UPLOAD CARROSSEL] Card {i+1}: {c_path} ({os.path.getsize(c_path) / 1024:.0f} KB)")
             if not c_path and not c_url:
-                return jsonify({'success': False, 'error': f'Card {i+1} sem mídia (arquivo ou link).'}), 400
+                return None, (jsonify({'success': False, 'error': f'Card {i+1} sem mídia (arquivo ou link).'}), 400)
             carousel_cards.append({'local_path': c_path, 'url_remote': c_url, 'link': c_link})
     else:
-        # v2.11.0: prefere arquivos staged (já na VPS) sobre upload multipart
         staged_feed = _resolve_stage(request.form.get('feed_stage_id'))
         staged_stories = _resolve_stage(request.form.get('stories_stage_id'))
         if staged_feed:
@@ -1513,210 +1588,320 @@ def upload_single(campaign_id):
                 print(f"📁 [UPLOAD LOCAL] Stories salvo: {stories_path} ({os.path.getsize(stories_path) / 1024:.0f} KB)")
 
         if not feed_path and not stories_path and not url_feed_remote and not url_stories_remote:
-            return jsonify({'success': False, 'error': 'Nenhuma mídia (arquivo ou link) enviada'}), 400
+            return None, (jsonify({'success': False, 'error': 'Nenhuma mídia (arquivo ou link) enviada'}), 400)
+
+    params = {
+        'campaign_id': campaign_id, 'access_token': access_token,
+        'account_id': account_id, 'user_id': user_id, 'page_id': page_id,
+        'instagram_actor_id': instagram_actor_id, 'pixel_id': pixel_id,
+        'estrategia': estrategia, 'destino': destino,
+        'adset_existente': adset_existente, 'adset_modelo': adset_modelo,
+        'ad_name': ad_name, 'ad_status': ad_status, 'url_destino': url_destino,
+        'utm_pattern': utm_pattern, 'cta': cta, 'textos': textos, 'titulos': titulos,
+        'lead_gen_form_id': lead_gen_form_id, 'url_feed_remote': url_feed_remote,
+        'url_stories_remote': url_stories_remote, 'tipo_criativo': tipo_criativo,
+        'excluded_countries': excluded_countries, 'temp_dir': temp_dir,
+        'feed_path': feed_path, 'stories_path': stories_path,
+        'carousel_cards': carousel_cards,
+    }
+    return params, None
+
+
+def _run_upload_core(p, emit):
+    """Corpo de upload de um anúncio. Recebe params (de _parse_upload_params) e uma
+    função emit(type, **kw). emit pode escrever no SSE (legado) ou no arquivo de
+    estado do job (start/poll). A lógica de criação do anúncio é idêntica."""
+    # Unpack para locais (corpo abaixo inalterado em relação ao SSE original)
+    campaign_id = p['campaign_id']; access_token = p['access_token']
+    account_id = p['account_id']; user_id = p['user_id']; page_id = p['page_id']
+    instagram_actor_id = p['instagram_actor_id']; pixel_id = p['pixel_id']
+    estrategia = p['estrategia']; destino = p['destino']
+    adset_existente = p['adset_existente']; adset_modelo = p['adset_modelo']
+    ad_name = p['ad_name']; ad_status = p['ad_status']; url_destino = p['url_destino']
+    utm_pattern = p['utm_pattern']; cta = p['cta']; textos = p['textos']; titulos = p['titulos']
+    lead_gen_form_id = p['lead_gen_form_id']; url_feed_remote = p['url_feed_remote']
+    url_stories_remote = p['url_stories_remote']; tipo_criativo = p['tipo_criativo']
+    excluded_countries = p['excluded_countries']; temp_dir = p['temp_dir']
+    feed_path = p['feed_path']; stories_path = p['stories_path']
+    carousel_cards = p['carousel_cards']
+
+    uploader = None
+    try:
+        def _evt(type, **kw):
+            emit(type, **kw)
+
+        uploader = MetaUploader(account_id, access_token, APP_ID, APP_SECRET)
+        uploader.set_callback(lambda msg: _evt('log', message=msg))
+
+        target_adset_id = adset_existente or adset_modelo
+        if not target_adset_id:
+            raise ValueError('Nenhum Ad Set selecionado')
+        if not page_id:
+            raise ValueError('Página do Facebook Obrigatória')
+
+        carousel_media = []  # ordered list of media dicts (para carrossel)
+        feed_media = None
+        stories_media = None
+
+        if tipo_criativo == 'carousel':
+            total_cards = len(carousel_cards)
+            for idx, c in enumerate(carousel_cards):
+                pct = 10 + int((idx / max(1, total_cards)) * 35)
+                _evt('progress', percent=pct, stage=f'upload_card_{idx}',
+                     message=f'📤 Enviando card {idx+1}/{total_cards} para Meta...')
+                if c.get('url_remote'):
+                    m = uploader.upload_media(url=c['url_remote'])
+                else:
+                    m = uploader.upload_media(file_path=c['local_path'])
+                carousel_media.append({'media': m, 'link': c.get('link')})
+                uploader.smart_delay()
+        else:
+            _evt('progress', percent=10, stage='upload_feed',
+                 message='📤 Enviando mídia feed para Meta...')
+
+            if url_feed_remote:
+                feed_media = uploader.upload_media(url=url_feed_remote)
+                uploader.smart_delay()
+            elif feed_path:
+                feed_media = uploader.upload_media(file_path=feed_path)
+                uploader.smart_delay()
+
+            has_stories = url_stories_remote or stories_path
+            if has_stories:
+                _evt('progress', percent=30, stage='upload_stories',
+                     message='📤 Enviando mídia stories para Meta...')
+                if url_stories_remote:
+                    stories_media = uploader.upload_media(url=url_stories_remote)
+                    uploader.smart_delay()
+                elif stories_path:
+                    stories_media = uploader.upload_media(file_path=stories_path)
+                    uploader.smart_delay()
+
+        actual_adset_id = target_adset_id
+        if destino == 'duplicar' and estrategia == 'agrupado':
+            try:
+                actual_adset_id = uploader.duplicate_adset(
+                    target_adset_id,
+                    excluded_countries=excluded_countries)
+            except GeoComplianceError as geo_err:
+                _evt('geo_compliance_error', **{
+                    'country_code': geo_err.country_code,
+                    'country_name': geo_err.country_name,
+                    'message': str(geo_err),
+                })
+                return
+            uploader.smart_delay()
+
+        # Aguardar processamento de vídeos
+        if tipo_criativo == 'carousel':
+            for idx, entry in enumerate(carousel_media):
+                m = entry['media']
+                if m and m.get('type') == 'video' and m.get('id'):
+                    _evt('progress', percent=50 + idx, stage=f'meta_processing_card_{idx}',
+                         message=f'⏳ Meta processando vídeo do card {idx+1}...', polling=True)
+                    uploader.wait_for_video_ready(m['id'])
+        else:
+            if feed_media and feed_media.get('type') == 'video' and feed_media.get('id'):
+                _evt('progress', percent=45, stage='meta_processing',
+                     message='⏳ Meta processando vídeo do feed...', polling=True)
+                uploader.wait_for_video_ready(feed_media['id'])
+                _evt('progress', percent=60, stage='meta_processing_done',
+                     message='✅ Vídeo feed pronto.')
+
+            if stories_media and stories_media.get('type') == 'video' and stories_media.get('id'):
+                _evt('progress', percent=65, stage='meta_processing_stories',
+                     message='⏳ Meta processando vídeo stories...', polling=True)
+                uploader.wait_for_video_ready(stories_media['id'])
+                _evt('progress', percent=75, stage='meta_processing_stories_done',
+                     message='✅ Vídeo stories pronto.')
+
+        _evt('progress', percent=82, stage='create_creative',
+             message='🎨 Criando criativo...')
+        if tipo_criativo == 'carousel':
+            creative_id = uploader.create_carousel_creative(
+                page_id=page_id,
+                cards=carousel_media,
+                link_url_fallback=url_destino,
+                primary_texts=textos,
+                headlines=titulos,
+                cta_type=cta,
+                instagram_user_id=instagram_actor_id,
+                url_tags=utm_pattern,
+                lead_gen_form_id=lead_gen_form_id,
+            )
+        else:
+            creative_id = uploader.create_creative_with_placements(
+                page_id=page_id,
+                feed_media=feed_media,
+                stories_media=stories_media,
+                link_url=url_destino,
+                primary_texts=textos,
+                headlines=titulos,
+                cta_type=cta,
+                instagram_user_id=instagram_actor_id,
+                url_tags=utm_pattern,
+                lead_gen_form_id=lead_gen_form_id,
+            )
+        uploader.smart_delay()
+
+        _evt('progress', percent=92, stage='create_ad',
+             message='📢 Criando anúncio...')
+        ad_id = uploader.create_ad(actual_adset_id, creative_id, ad_name,
+                                   pixel_id=pixel_id, ad_status=ad_status)
+
+        # v2.11.1: emite 'done' ANTES das escritas no banco (bookkeeping).
+        # O anúncio já existe na Meta; o SW só precisa do ad_id. Se o banco
+        # estiver lento/stale, NÃO pode travar o pipeline visível — era o que
+        # congelava entre "Ad criado" e o 'done' (sem erro, sem progresso),
+        # porque um socket Postgres morto fica pendurado sem timeout.
+        _evt('done', percent=100, success=True, ad_id=ad_id,
+             message=f'✅ Anúncio "{ad_name}" criado com sucesso.',
+             logs=uploader.logs)
+
+        # Bookkeeping best-effort — NUNCA bloqueia o 'done' acima.
+        if user_id:
+            try:
+                save_upload_assets(user_id, account_id, {
+                    'page_id': page_id,
+                    'instagram_id': instagram_actor_id,
+                    'pixel_id': pixel_id,
+                    'primary_texts': textos,
+                    'headlines': titulos,
+                    'url': url_destino,
+                    'utm': utm_pattern,
+                    'cta': cta,
+                })
+            except Exception as _bk_err:
+                print(f"⚠️ save_upload_assets falhou (ignorado): {_bk_err}")
+            try:
+                save_upload_history(
+                    user_id, account_id,
+                    campaign_name=campaign_id,
+                    ad_name=ad_name,
+                    strategy=estrategia,
+                    success=True
+                )
+            except Exception as _bk_err:
+                print(f"⚠️ save_upload_history falhou (ignorado): {_bk_err}")
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        try:
+            if user_id and account_id:
+                save_upload_history(
+                    user_id, account_id,
+                    campaign_name=campaign_id,
+                    ad_name=ad_name,
+                    strategy=estrategia,
+                    success=False,
+                    error_message=str(e)[:500]
+                )
+        except Exception:
+            pass
+        emit('error', message=str(e),
+             logs=uploader.logs if uploader else [])
+    finally:
+        # v2.9.14: cleanup do temp_dir SEMPRE (sucesso ou falha) — antes era só
+        # no caminho feliz, e cada exceção vazava um diretório no /tmp da VPS.
+        try:
+            if feed_path and os.path.exists(feed_path):
+                try: os.remove(feed_path)
+                except OSError: pass
+            if stories_path and os.path.exists(stories_path):
+                try: os.remove(stories_path)
+                except OSError: pass
+            for c in carousel_cards:
+                cp = c.get('local_path')
+                if cp and os.path.exists(cp):
+                    try: os.remove(cp)
+                    except OSError: pass
+            if temp_dir and os.path.exists(temp_dir):
+                try: os.rmdir(temp_dir)
+                except OSError: pass
+        except Exception:
+            pass
+
+
+# ======================== UPLOAD: START + POLL (v2.12.0) ========================
+
+@app.route('/campanha/<campaign_id>/upload/start', methods=['POST'])
+def upload_start(campaign_id):
+    """Inicia o upload de UM anúncio em background e devolve job_id imediatamente.
+    Idempotente via job_key: um retry NUNCA recria o anúncio. O progresso é gravado
+    no arquivo de estado do job (STAGE_DIR), lido pelo /upload/status/<job_id>."""
+    access_token = obter_token()
+    if not access_token:
+        return jsonify({'success': False, 'error': 'Não autenticado'}), 401
+
+    raw_key = (request.form.get('job_key') or '').strip()
+    job_id = os.path.basename(raw_key) if raw_key else uuid.uuid4().hex
+
+    # --- Idempotência ---
+    existing = _job_read(job_id)
+    if existing:
+        st = existing.get('status')
+        if st == 'done':
+            return jsonify({'success': True, 'job_id': job_id, 'status': 'done',
+                            'ad_id': existing.get('ad_id'), 'resumed': True})
+        if st == 'running' and (time.time() - existing.get('updated_at', 0) < 180):
+            # Thread ainda viva em algum worker (heartbeat < 180s). O cliente só faz polling.
+            return jsonify({'success': True, 'job_id': job_id, 'status': 'running', 'resumed': True})
+        # st == 'error' (nenhum anúncio criado — 'done' é emitido antes de qualquer
+        # falha pós-criação) OU 'running' obsoleto (worker morto) → reprocessa.
+
+    params, err = _parse_upload_params(campaign_id, access_token)
+    if err:
+        resp, code = err
+        return resp, code
+
+    emit = _make_job_emit(job_id)
+
+    def _thread():
+        _run_upload_core(params, emit)
+
+    threading.Thread(target=_thread, daemon=True).start()
+    return jsonify({'success': True, 'job_id': job_id, 'status': 'running'})
+
+
+@app.route('/campanha/<campaign_id>/upload/status/<job_id>', methods=['GET'])
+def upload_status(campaign_id, job_id):
+    """Polling do estado do job. Sobrevive à morte do Service Worker porque o estado
+    mora em disco compartilhado (não na memória do worker nem na conexão HTTP)."""
+    data = _job_read(job_id)
+    if not data:
+        return jsonify({'success': False, 'status': 'unknown',
+                        'error': 'job não encontrado'}), 404
+    return jsonify({'success': True, **data})
+
+
+# ======================== UPLOAD: SSE (legado, v2.11.x) ========================
+
+@app.route('/campanha/<campaign_id>/upload', methods=['POST'])
+def upload_single(campaign_id):
+    """Upload de um único anúncio via SSE stream (legado). Mantido como fallback;
+    o caminho padrão do Service Worker agora é /upload/start + /upload/status."""
+    access_token = obter_token()
+    if not access_token:
+        return jsonify({'success': False, 'error': 'Não autenticado'}), 401
+
+    params, err = _parse_upload_params(campaign_id, access_token)
+    if err:
+        resp, code = err
+        return resp, code
 
     msg_queue = queue.Queue()
 
-    def _run_upload():
-        uploader = None
+    def emit(etype, **kw):
+        msg_queue.put({'type': etype, **kw})
+
+    def _thread():
         try:
-            def _evt(type, **kw):
-                msg_queue.put({'type': type, **kw})
-
-            uploader = MetaUploader(account_id, access_token, APP_ID, APP_SECRET)
-            uploader.set_callback(lambda msg: _evt('log', message=msg))
-
-            target_adset_id = adset_existente or adset_modelo
-            if not target_adset_id:
-                raise ValueError('Nenhum Ad Set selecionado')
-            if not page_id:
-                raise ValueError('Página do Facebook Obrigatória')
-
-            carousel_media = []  # ordered list of media dicts (para carrossel)
-            feed_media = None
-            stories_media = None
-
-            if tipo_criativo == 'carousel':
-                total_cards = len(carousel_cards)
-                for idx, c in enumerate(carousel_cards):
-                    pct = 10 + int((idx / max(1, total_cards)) * 35)
-                    _evt('progress', percent=pct, stage=f'upload_card_{idx}',
-                         message=f'📤 Enviando card {idx+1}/{total_cards} para Meta...')
-                    if c.get('url_remote'):
-                        m = uploader.upload_media(url=c['url_remote'])
-                    else:
-                        m = uploader.upload_media(file_path=c['local_path'])
-                    carousel_media.append({'media': m, 'link': c.get('link')})
-                    uploader.smart_delay()
-            else:
-                _evt('progress', percent=10, stage='upload_feed',
-                     message='📤 Enviando mídia feed para Meta...')
-
-                if url_feed_remote:
-                    feed_media = uploader.upload_media(url=url_feed_remote)
-                    uploader.smart_delay()
-                elif feed_path:
-                    feed_media = uploader.upload_media(file_path=feed_path)
-                    uploader.smart_delay()
-
-                has_stories = url_stories_remote or stories_path
-                if has_stories:
-                    _evt('progress', percent=30, stage='upload_stories',
-                         message='📤 Enviando mídia stories para Meta...')
-                    if url_stories_remote:
-                        stories_media = uploader.upload_media(url=url_stories_remote)
-                        uploader.smart_delay()
-                    elif stories_path:
-                        stories_media = uploader.upload_media(file_path=stories_path)
-                        uploader.smart_delay()
-
-            actual_adset_id = target_adset_id
-            if destino == 'duplicar' and estrategia == 'agrupado':
-                try:
-                    actual_adset_id = uploader.duplicate_adset(
-                        target_adset_id,
-                        excluded_countries=excluded_countries)
-                except GeoComplianceError as geo_err:
-                    _evt('geo_compliance_error', **{
-                        'country_code': geo_err.country_code,
-                        'country_name': geo_err.country_name,
-                        'message': str(geo_err),
-                    })
-                    return
-                uploader.smart_delay()
-
-            # Aguardar processamento de vídeos
-            if tipo_criativo == 'carousel':
-                for idx, entry in enumerate(carousel_media):
-                    m = entry['media']
-                    if m and m.get('type') == 'video' and m.get('id'):
-                        _evt('progress', percent=50 + idx, stage=f'meta_processing_card_{idx}',
-                             message=f'⏳ Meta processando vídeo do card {idx+1}...', polling=True)
-                        uploader.wait_for_video_ready(m['id'])
-            else:
-                if feed_media and feed_media.get('type') == 'video' and feed_media.get('id'):
-                    _evt('progress', percent=45, stage='meta_processing',
-                         message='⏳ Meta processando vídeo do feed...', polling=True)
-                    uploader.wait_for_video_ready(feed_media['id'])
-                    _evt('progress', percent=60, stage='meta_processing_done',
-                         message='✅ Vídeo feed pronto.')
-
-                if stories_media and stories_media.get('type') == 'video' and stories_media.get('id'):
-                    _evt('progress', percent=65, stage='meta_processing_stories',
-                         message='⏳ Meta processando vídeo stories...', polling=True)
-                    uploader.wait_for_video_ready(stories_media['id'])
-                    _evt('progress', percent=75, stage='meta_processing_stories_done',
-                         message='✅ Vídeo stories pronto.')
-
-            _evt('progress', percent=82, stage='create_creative',
-                 message='🎨 Criando criativo...')
-            if tipo_criativo == 'carousel':
-                creative_id = uploader.create_carousel_creative(
-                    page_id=page_id,
-                    cards=carousel_media,
-                    link_url_fallback=url_destino,
-                    primary_texts=textos,
-                    headlines=titulos,
-                    cta_type=cta,
-                    instagram_user_id=instagram_actor_id,
-                    url_tags=utm_pattern,
-                    lead_gen_form_id=lead_gen_form_id,
-                )
-            else:
-                creative_id = uploader.create_creative_with_placements(
-                    page_id=page_id,
-                    feed_media=feed_media,
-                    stories_media=stories_media,
-                    link_url=url_destino,
-                    primary_texts=textos,
-                    headlines=titulos,
-                    cta_type=cta,
-                    instagram_user_id=instagram_actor_id,
-                    url_tags=utm_pattern,
-                    lead_gen_form_id=lead_gen_form_id,
-                )
-            uploader.smart_delay()
-
-            _evt('progress', percent=92, stage='create_ad',
-                 message='📢 Criando anúncio...')
-            ad_id = uploader.create_ad(actual_adset_id, creative_id, ad_name,
-                                       pixel_id=pixel_id, ad_status=ad_status)
-
-            # v2.11.1: emite 'done' ANTES das escritas no banco (bookkeeping).
-            # O anúncio já existe na Meta; o SW só precisa do ad_id. Se o banco
-            # estiver lento/stale, NÃO pode travar o pipeline visível — era o que
-            # congelava entre "Ad criado" e o 'done' (sem erro, sem progresso),
-            # porque um socket Postgres morto fica pendurado sem timeout.
-            _evt('done', percent=100, success=True, ad_id=ad_id,
-                 message=f'✅ Anúncio "{ad_name}" criado com sucesso.',
-                 logs=uploader.logs)
-
-            # Bookkeeping best-effort — NUNCA bloqueia o 'done' acima.
-            if user_id:
-                try:
-                    save_upload_assets(user_id, account_id, {
-                        'page_id': page_id,
-                        'instagram_id': instagram_actor_id,
-                        'pixel_id': pixel_id,
-                        'primary_texts': textos,
-                        'headlines': titulos,
-                        'url': url_destino,
-                        'utm': utm_pattern,
-                        'cta': cta,
-                    })
-                except Exception as _bk_err:
-                    print(f"⚠️ save_upload_assets falhou (ignorado): {_bk_err}")
-                try:
-                    save_upload_history(
-                        user_id, account_id,
-                        campaign_name=campaign_id,
-                        ad_name=ad_name,
-                        strategy=estrategia,
-                        success=True
-                    )
-                except Exception as _bk_err:
-                    print(f"⚠️ save_upload_history falhou (ignorado): {_bk_err}")
-
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            try:
-                if user_id and account_id:
-                    save_upload_history(
-                        user_id, account_id,
-                        campaign_name=campaign_id,
-                        ad_name=ad_name,
-                        strategy=estrategia,
-                        success=False,
-                        error_message=str(e)[:500]
-                    )
-            except Exception:
-                pass
-            msg_queue.put({'type': 'error', 'message': str(e),
-                           'logs': uploader.logs if uploader else []})
+            _run_upload_core(params, emit)
         finally:
-            # v2.9.14: cleanup do temp_dir SEMPRE (sucesso ou falha) — antes era só
-            # no caminho feliz, e cada exceção vazava um diretório no /tmp da VPS.
-            try:
-                if feed_path and os.path.exists(feed_path):
-                    try: os.remove(feed_path)
-                    except OSError: pass
-                if stories_path and os.path.exists(stories_path):
-                    try: os.remove(stories_path)
-                    except OSError: pass
-                for c in carousel_cards:
-                    cp = c.get('local_path')
-                    if cp and os.path.exists(cp):
-                        try: os.remove(cp)
-                        except OSError: pass
-                if temp_dir and os.path.exists(temp_dir):
-                    try: os.rmdir(temp_dir)
-                    except OSError: pass
-            except Exception:
-                pass
             msg_queue.put(None)  # sentinel
 
-    thread = threading.Thread(target=_run_upload, daemon=True)
+    thread = threading.Thread(target=_thread, daemon=True)
 
     def _generate():
         thread.start()

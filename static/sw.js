@@ -12,7 +12,7 @@
  * - Registra histórico ao final (/api/upload-history/add)
  */
 
-const SW_VERSION = 'v2.11.1';
+const SW_VERSION = 'v2.12.0';
 const DB_NAME = 'optimizer-uploads';
 const DB_VERSION = 1;
 const STORE_JOBS = 'jobs';
@@ -357,6 +357,11 @@ async function uploadItem(job, item, preDupMap, index) {
     if (ctx.pixelId) fd.append('pixel_id', ctx.pixelId);
     if (ctx.leadFormId) fd.append('lead_gen_form_id', ctx.leadFormId);
 
+    // v2.12.0: idempotência — chave estável por item (sobrevive à morte do SW).
+    // Um retry com a mesma job_key NUNCA recria o anúncio (servidor devolve 'done').
+    const jobKey = `${job.id}__${index}`;
+    fd.append('job_key', jobKey);
+
     const tStart = Date.now();
     appendLog(job, `📤 Iniciando "${item.adName}" (${index + 1}/${job.items.length})`, 'info');
     await idbPut(job);
@@ -365,93 +370,48 @@ async function uploadItem(job, item, preDupMap, index) {
     let uploadResult = null;
     let authExpired = false; // Fix #1: sinaliza para parar cascata
 
-    // Watchdog: aborta o upload se não chegar nenhum evento SSE por 3 minutos.
-    // Protege contra travamento quando a Meta engasga no meio de um chunk e o
-    // Flask fica pendurado sem responder. Bate com o Gunicorn timeout (300s).
-    const WATCHDOG_MS = 180000; // 3 minutos
-    const controller = new AbortController();
-    let lastEventAt = Date.now();
-    let watchdogTimedOut = false;
-    const watchdogId = setInterval(() => {
-        if (Date.now() - lastEventAt > WATCHDOG_MS) {
-            watchdogTimedOut = true;
-            try { controller.abort(); } catch (_) {}
-        }
-    }, 30000);
+    const isAuthFail = (r) => r.status === 401 || r.status === 403
+        || r.type === 'opaqueredirect'
+        || (r.status >= 300 && r.status < 400)
+        || (r.redirected && /\/login/i.test(r.url));
 
     try {
-        const r = await fetch(`/campanha/${ctx.campaignId}/upload`, {
+        // 1) START — dispara o job no servidor e recebe job_id NA HORA.
+        // v2.12.0: não há mais stream de minutos preso a esta conexão. O servidor
+        // roda em background gravando estado em disco; nós só fazemos polling curto.
+        const startResp = await fetch(`/campanha/${ctx.campaignId}/upload/start`, {
             method: 'POST',
             body: fd,
             credentials: 'include',
             redirect: 'manual',
-            signal: controller.signal,
         });
-        // Fix #1: detecta 401/403/redirect para login (Flask @require_login normalmente devolve 302)
-        const isAuthFail = r.status === 401 || r.status === 403
-            || r.type === 'opaqueredirect'
-            || (r.status >= 300 && r.status < 400)
-            || (r.redirected && /\/login/i.test(r.url));
-        if (isAuthFail) {
+        if (isAuthFail(startResp)) {
             authExpired = true;
             broadcast('auth-expired', { jobId: job.id });
             throw new Error('Sessão expirada — faça login novamente');
         }
-        if (!r.ok || !r.body) throw new Error(`HTTP ${r.status}`);
+        if (!startResp.ok) throw new Error(`start HTTP ${startResp.status}`);
+        const startData = await startResp.json();
+        if (!startData || !startData.success) {
+            throw new Error((startData && startData.error) || 'start falhou');
+        }
+        const serverJobId = startData.job_id;
 
-        const reader = r.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            // v2.9.14: NÃO resetamos lastEventAt aqui — keepalive (": keepalive\n\n")
-            // chega como chunk e antes mascarava travamento real do backend. Agora o
-            // reset acontece somente quando processamos um evento `data:` real abaixo.
-            buffer += decoder.decode(value, { stream: true });
-            const blocks = buffer.split('\n\n');
-            buffer = blocks.pop();
-            for (const block of blocks) {
-                const line = block.split('\n').find(l => l.startsWith('data: '));
-                if (!line) continue;
-                lastEventAt = Date.now(); // reset apenas em evento real (não-keepalive)
-                let evt;
-                try { evt = JSON.parse(line.slice(6)); } catch { continue; }
-
-                if (evt.type === 'progress') {
-                    const base = index / job.items.length;
-                    const step = 1 / job.items.length;
-                    job.progress = Math.floor((base + (evt.percent / 100) * step) * 100);
-                    job.currentMessage = evt.message;
-                    job.currentItemIndex = index;
-                } else if (evt.type === 'log') {
-                    appendLog(job, evt.message, classifyLevel(evt.message));
-                } else if (evt.type === 'done') {
-                    uploadResult = evt;
-                    if (evt.logs) evt.logs.forEach(l => appendLog(job, l, classifyLevel(l)));
-                    appendLog(job, `✅ "${item.adName}" criado — ID: ${evt.ad_id}`, 'success');
-                } else if (evt.type === 'error') {
-                    uploadResult = { success: false, error: evt.message };
-                    if (evt.logs) evt.logs.forEach(l => appendLog(job, l, classifyLevel(l)));
-                    appendLog(job, `❌ "${item.adName}": ${evt.message}`, 'error');
-                }
-                await idbPut(job);
-                broadcastDebounced(job.id, job); // Fix H2: debounce evita spam no loop SSE
-            }
+        if (startData.status === 'done' && startData.ad_id) {
+            // Idempotência: item já concluído (retry/resume) — não recria.
+            uploadResult = { success: true, ad_id: startData.ad_id };
+            appendLog(job, `✅ "${item.adName}" já criado — ID: ${startData.ad_id}`, 'success');
+        } else {
+            // 2) POLL — requests curtos que sobrevivem à morte do SW.
+            uploadResult = await pollUploadStatus(job, item, index, ctx.campaignId, serverJobId);
+            if (uploadResult && uploadResult.authExpired) authExpired = true;
         }
     } catch (e) {
-        if (watchdogTimedOut) {
-            uploadResult = { success: false, error: 'Inatividade de 3min — upload abortado pelo watchdog (próximo item será tentado)' };
-            appendLog(job, `⏱ "${item.adName}": sem resposta há 3min — abortado, seguindo para o próximo`, 'warning');
-        } else {
-            uploadResult = { success: false, error: e.message };
-            appendLog(job, `❌ Erro rede "${item.adName}": ${e.message}`, 'error');
-        }
-    } finally {
-        clearInterval(watchdogId);
+        uploadResult = { success: false, error: e.message };
+        appendLog(job, `❌ Erro "${item.adName}": ${e.message}`, 'error');
     }
 
-    // Fix #7: flush do debounce pendente — garante que último update chegue antes de job-finished
+    // Flush do debounce pendente — garante que último update chegue antes de job-finished
     if (_broadcastDebounce.has(job.id)) {
         clearTimeout(_broadcastDebounce.get(job.id));
         _broadcastDebounce.delete(job.id);
@@ -484,6 +444,102 @@ async function uploadItem(job, item, preDupMap, index) {
     } catch (_) {}
 
     return uploadResult || { success: false, error: 'sem resposta' };
+}
+
+// v2.12.0: polling do estado do job no servidor. Requests curtos (~2s) — o que
+// mantém o SW vivo MUITO melhor que um único stream de minutos, e sobrevive à
+// morte do SW: o estado mora no servidor (arquivo em disco), então ao reacordar
+// retomamos o polling do mesmo job_id (resumeOnStart re-enfileira o job).
+async function pollUploadStatus(job, item, index, campaignId, serverJobId) {
+    const POLL_INTERVAL_MS = 2000;
+    const STALE_MS = 300000; // 5min sem progresso no servidor → desiste deste item
+    let lastLogCount = 0;
+    let lastProgressAt = Date.now();
+    let lastSeenUpdatedAt = 0;
+
+    while (true) {
+        // job pode ter sido cancelado externamente
+        const fresh = await idbGet(job.id);
+        if (fresh && fresh.status === 'cancelled') {
+            return { success: false, error: 'cancelado' };
+        }
+
+        await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
+
+        let resp;
+        try {
+            resp = await fetch(`/campanha/${campaignId}/upload/status/${serverJobId}`, {
+                method: 'GET',
+                credentials: 'include',
+                redirect: 'manual',
+            });
+        } catch (netErr) {
+            // erro de rede transitório → continua tentando até STALE_MS
+            if (Date.now() - lastProgressAt > STALE_MS) {
+                return { success: false, error: 'sem resposta do servidor (5min)' };
+            }
+            continue;
+        }
+
+        if (resp.status === 401 || resp.status === 403 || resp.type === 'opaqueredirect'
+            || (resp.status >= 300 && resp.status < 400)
+            || (resp.redirected && /\/login/i.test(resp.url))) {
+            broadcast('auth-expired', { jobId: job.id });
+            return { success: false, error: 'sessão expirada', authExpired: true };
+        }
+        if (resp.status === 404) {
+            // arquivo de estado sumiu (sweep ou worker reiniciado sem o job)
+            if (Date.now() - lastProgressAt > STALE_MS) {
+                return { success: false, error: 'job perdido no servidor' };
+            }
+            continue;
+        }
+        if (!resp.ok) continue;
+
+        let st;
+        try { st = await resp.json(); } catch (_) { continue; }
+
+        // Novas linhas de log (delta sobre o que já mostramos)
+        if (Array.isArray(st.logs) && st.logs.length > lastLogCount) {
+            for (let k = lastLogCount; k < st.logs.length; k++) {
+                appendLog(job, st.logs[k], classifyLevel(st.logs[k]));
+            }
+            lastLogCount = st.logs.length;
+        }
+
+        // Progresso na barra
+        if (typeof st.percent === 'number') {
+            const base = index / job.items.length;
+            const step = 1 / job.items.length;
+            job.progress = Math.floor((base + (st.percent / 100) * step) * 100);
+            job.currentMessage = st.message;
+            job.currentItemIndex = index;
+            await idbPut(job);
+            broadcastDebounced(job.id, job);
+        }
+
+        // Heartbeat do servidor: updated_at avançou → thread viva. Congelou por
+        // 5min → thread morta no servidor (raro) → desiste deste item.
+        if (st.updated_at && st.updated_at !== lastSeenUpdatedAt) {
+            lastSeenUpdatedAt = st.updated_at;
+            lastProgressAt = Date.now();
+        } else if (Date.now() - lastProgressAt > STALE_MS) {
+            return { success: false, error: 'servidor sem progresso há 5min' };
+        }
+
+        if (st.status === 'done') {
+            appendLog(job, `✅ "${item.adName}" criado — ID: ${st.ad_id}`, 'success');
+            return { success: true, ad_id: st.ad_id };
+        }
+        if (st.status === 'error') {
+            if (st.geo) {
+                broadcast('geo-compliance-error', { jobId: job.id, ...st.geo });
+            }
+            appendLog(job, `❌ "${item.adName}": ${st.error || 'erro'}`, 'error');
+            return { success: false, error: st.error || 'erro' };
+        }
+        // status 'running' → continua o loop de polling
+    }
 }
 
 function classifyLevel(msg) {
@@ -580,19 +636,31 @@ async function processNext() {
     }
 }
 
+let _resumed = false; // garante que a retomada rode no máximo 1x por lifetime do SW
+
+async function ensureResumed() {
+    if (_resumed) return;
+    _resumed = true;
+    try { await resumeOnStart(); } catch (_) {}
+}
+
 async function resumeOnStart() {
-    // Ao reativar o SW, verifica se havia jobs em "running" (interrompidos)
+    // v2.12.0: o SW pode ter sido MORTO pelo Chrome no meio de um lote (o vetor de
+    // travamento que perseguíamos). Como o estado real do upload agora mora no
+    // SERVIDOR e cada item é idempotente (job_key), ao reacordar nós re-enfileiramos
+    // o job em andamento e re-processamos do início: itens já concluídos retornam
+    // 'done' na hora (sem recriar o anúncio), e o item interrompido é retomado via
+    // polling. NÃO mexemos no job que ESTE lifetime já está processando (processing).
     const all = await idbAll();
     for (const j of all) {
         if (j.status === 'queued') {
-            queue.push(j.id);
-        } else if (j.status === 'running') {
-            // Marca como interrompido — SW foi terminado mid-upload
-            j.status = 'interrupted';
-            j.interruptedAt = Date.now();
-            appendLog(j, `⚠️ Upload interrompido (SW terminou). ${j.currentItemIndex || 0}/${j.items.length} processados.`, 'warning');
+            if (!queue.includes(j.id)) queue.push(j.id);
+        } else if (j.status === 'running' && !processing && !queue.includes(j.id)) {
+            appendLog(j, `🔄 Retomando upload após reativação do SW (${j.currentItemIndex || 0}/${j.items.length})...`, 'info');
+            j.status = 'queued';
             await idbPut(j);
             broadcast('job-update', { job: j });
+            queue.push(j.id);
         }
     }
     if (queue.length > 0) processNext();
@@ -606,12 +674,22 @@ self.addEventListener('install', (e) => {
 self.addEventListener('activate', (e) => {
     e.waitUntil((async () => {
         await self.clients.claim();
-        await resumeOnStart();
+        await ensureResumed();
     })());
 });
 
 // ==================== Message handler ====================
 self.addEventListener('message', async (e) => {
+    // v2.12.0: qualquer mensagem da página (ping/get-jobs/enqueue) acorda o SW —
+    // aproveitamos para retomar jobs órfãos de um lifetime anterior morto pelo Chrome.
+    // waitUntil estende a vida do SW durante o resume (best-effort) para o batch
+    // retomado não morrer de novo no mesmo evento.
+    if (e.waitUntil) {
+        e.waitUntil(ensureResumed());
+    } else {
+        ensureResumed();
+    }
+
     const { type, payload } = e.data || {};
 
     if (type === 'enqueue') {
@@ -629,7 +707,13 @@ self.addEventListener('message', async (e) => {
         queue.push(job.id);
         broadcast('job-enqueued', { job });
         broadcast('job-update', { job });
-        processNext();
+        // v2.12.0: waitUntil estende a vida do SW pelo lote inteiro (best-effort).
+        // Se o Chrome matar mesmo assim, resumeOnStart retoma na próxima mensagem.
+        if (e.waitUntil) {
+            e.waitUntil(processNext());
+        } else {
+            processNext();
+        }
         if (e.source) e.source.postMessage({ type: 'enqueued', jobId: job.id });
 
     } else if (type === 'get-jobs') {

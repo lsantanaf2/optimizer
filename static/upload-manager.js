@@ -474,6 +474,31 @@
         }
     });
 
+    // v2.12.0: Heartbeat — mantém o SW "quente" e re-acorda um SW que o Chrome
+    // matou no meio do batch. Enquanto houver jobs ativos (queued/running), a
+    // página faz um ping leve a cada 15s. O simples ato de postMessage pro SW
+    // respawna ele se estiver morto, e o handler de 'message' do SW chama
+    // ensureResumed() → re-enfileira jobs 'running' órfãos (resume-on-wake).
+    // Isso fecha o buraco: antes, se o usuário não interagisse, um SW morto
+    // ficava morto e a fila travava silenciosamente.
+    let _heartbeatTimer = null;
+    async function _heartbeat() {
+        try {
+            const jobs = await getJobs();
+            const hasActive = Array.isArray(jobs) && jobs.some(
+                j => j.status === 'queued' || j.status === 'running'
+            );
+            if (hasActive) {
+                // get-jobs já acorda o SW e dispara ensureResumed() lá dentro;
+                // este ping extra garante o wake mesmo se getJobs vier de cache.
+                _sendToSw({ type: 'ping' }).catch(() => {});
+            }
+        } catch (e) {
+            // SW pode estar reativando — tenta re-registrar silenciosamente
+            try { await registerSw(); } catch (_) {}
+        }
+    }
+
     // Inicializa no load
     async function init() {
         _injectPanel();
@@ -482,6 +507,10 @@
             await _refresh();
         } catch (e) {
             console.warn('[UploadManager] SW não disponível:', e.message);
+        }
+        // v2.12.0: liga o heartbeat (idempotente)
+        if (!_heartbeatTimer) {
+            _heartbeatTimer = setInterval(_heartbeat, 15000);
         }
     }
 
