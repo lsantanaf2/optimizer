@@ -11,8 +11,13 @@
     <div class="card-title">
         🚀 Campanhas
         <span class="badge badge-purple" id="campaign-count">Carregando...</span>
+        <button onclick="openPresetModal()" id="btn-open-presets"
+            style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; background: var(--accent-glow); color: var(--accent); border: 1px solid var(--accent); border-radius: var(--radius-sm); font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s;"
+            onmouseover="this.style.background='var(--accent)'; this.style.color='var(--bg-deep)';"
+            onmouseout="this.style.background='var(--accent-glow)'; this.style.color='var(--accent)';">
+            🎯 Presets da Conta</button>
         <a href="{{ url_for('listar_contas', next='upload') }}"
-            style="margin-left: auto; color: var(--text-muted); text-decoration: none; font-size: 12px;">←
+            style="margin-left: 12px; color: var(--text-muted); text-decoration: none; font-size: 12px;">←
             Trocar Conta</a>
     </div>
     <div class="card-desc">
@@ -50,6 +55,56 @@
         <div style="font-size:13px; color:var(--text-muted);">⏳ Carregando mais campanhas...</div>
     </div>
 </div>
+
+<!-- ===== Modal de Presets da Conta ===== -->
+<div id="preset-modal-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:1000; align-items:flex-start; justify-content:center; padding:40px 16px; overflow-y:auto;"
+    onclick="if(event.target===this) closePresetModal()">
+    <div style="background:var(--bg-card, #16161a); border:1px solid var(--border); border-radius:var(--radius); width:100%; max-width:720px; box-shadow:0 12px 48px rgba(0,0,0,0.5); animation:presetModalIn .18s ease;">
+        <!-- Header -->
+        <div style="display:flex; align-items:center; justify-content:space-between; padding:18px 22px; border-bottom:1px solid var(--border);">
+            <div style="display:flex; align-items:center; gap:10px;">
+                <span style="font-size:20px;">🎯</span>
+                <div>
+                    <div style="font-weight:700; font-size:15px; color:var(--text-primary);">Presets da Conta de Anúncios</div>
+                    <div style="font-size:11px; color:var(--text-muted); font-family:var(--font-mono);">{{ account_id }}</div>
+                </div>
+            </div>
+            <button onclick="closePresetModal()" style="background:none; border:none; color:var(--text-muted); font-size:24px; cursor:pointer; line-height:1; padding:0 4px;"
+                onmouseover="this.style.color='var(--text-primary)'" onmouseout="this.style.color='var(--text-muted)'">&times;</button>
+        </div>
+
+        <!-- Body -->
+        <div style="padding:22px; max-height:calc(100vh - 200px); overflow-y:auto;">
+            <div id="preset-modal-loading" style="text-align:center; padding:32px; color:var(--text-muted); font-size:13px;">⏳ Carregando presets...</div>
+
+            <div id="preset-modal-content" style="display:none;">
+                <!-- CAC Target -->
+                <div style="margin-bottom:24px; padding:16px; background:var(--bg-surface); border-radius:var(--radius-sm); border:1px solid var(--border);">
+                    <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
+                        <span style="font-size:16px;">🎯</span>
+                        <span style="font-weight:600; font-size:14px; color:var(--text-primary);">CAC Máximo</span>
+                    </div>
+                    <div style="display:flex; gap:8px; align-items:center;">
+                        <span style="color:var(--text-muted); font-size:13px;">R$</span>
+                        <input type="number" id="cac-target" step="0.01" min="0" placeholder="Ex: 45.00"
+                            style="padding:8px 12px; background:var(--bg-deep); border:1px solid var(--border); border-radius:var(--radius-sm); color:var(--text-primary); font-size:13px; width:140px;">
+                        <button id="btn-save-cac" onclick="saveCac(this)" style="padding:8px 16px; background:var(--accent); color:var(--bg-deep); border:none; border-radius:var(--radius-sm); font-size:13px; font-weight:600; cursor:pointer;">Salvar</button>
+                    </div>
+                    <div style="font-size:11px; color:var(--text-muted); margin-top:6px;">Usado como referência na Turbinada para destacar ads acima deste custo.</div>
+                </div>
+
+                <!-- Categorias de assets -->
+                <div id="preset-sections"></div>
+            </div>
+        </div>
+    </div>
+</div>
+<style>
+    @keyframes presetModalIn {
+        from { opacity:0; transform:translateY(-12px); }
+        to { opacity:1; transform:translateY(0); }
+    }
+</style>
 {% endblock %}
 
 {% block scripts %}
@@ -215,5 +270,174 @@
 
     // Carregar só ativas ao entrar na página
     document.addEventListener('DOMContentLoaded', carregarAtivas);
+
+    // ===================== Presets da Conta (modal) =====================
+    // Reaproveita os mesmos endpoints da tela "Minha Conta › Presets", porém
+    // fixando a conta atual (ACCOUNT_ID) — sem seletor de conta.
+    const ASSET_CATEGORIES = [
+        { key: 'facebook_pages', label: 'Páginas do Facebook', keyField: 'id', displayFn: i => i.name || i.id, icon: '📘' },
+        { key: 'instagram_profiles', label: 'Perfis do Instagram', keyField: 'id', displayFn: i => i.name || `@${i.username || i.id}`, icon: '📷' },
+        { key: 'pixels', label: 'Pixels de Rastreamento', keyField: 'id', displayFn: i => i.name || i.id, icon: '📊' },
+        { key: 'primary_texts', label: 'Textos Principais', keyField: 'text', displayFn: i => i.text, icon: '📝' },
+        { key: 'headlines', label: 'Títulos (Headlines)', keyField: 'text', displayFn: i => i.text, icon: '🏷️' },
+        { key: 'urls', label: 'URLs de Destino', keyField: 'url', displayFn: i => i.url, icon: '🔗' },
+        { key: 'utms', label: 'Padrões de UTM', keyField: 'pattern', displayFn: i => i.pattern, icon: '📐' },
+    ];
+
+    const _currentAccount = ACCOUNT_ID;
+    let _currentAssets = {};
+    let _presetsLoaded = false;
+
+    function openPresetModal() {
+        document.getElementById('preset-modal-overlay').style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+        if (!_presetsLoaded) loadPresets();
+    }
+
+    function closePresetModal() {
+        document.getElementById('preset-modal-overlay').style.display = 'none';
+        document.body.style.overflow = '';
+    }
+
+    // Fecha com ESC
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && document.getElementById('preset-modal-overlay').style.display === 'flex') {
+            closePresetModal();
+        }
+    });
+
+    async function loadPresets() {
+        const loading = document.getElementById('preset-modal-loading');
+        const content = document.getElementById('preset-modal-content');
+        loading.style.display = 'block';
+        content.style.display = 'none';
+        try {
+            const resp = await fetch(`/api/conta/${_currentAccount}/saved-assets`);
+            const data = await resp.json();
+            _currentAssets = data.saved_assets || {};
+            document.getElementById('cac-target').value = data.cac_target_value || '';
+            renderSections();
+            loading.style.display = 'none';
+            content.style.display = 'block';
+            _presetsLoaded = true;
+        } catch (e) {
+            console.error('Erro ao carregar presets:', e);
+            loading.textContent = '❌ Erro ao carregar presets.';
+        }
+    }
+
+    function renderSections() {
+        const container = document.getElementById('preset-sections');
+        container.innerHTML = '';
+        ASSET_CATEGORIES.forEach(cat => {
+            const items = _currentAssets[cat.key] || [];
+            const section = document.createElement('div');
+            section.style.cssText = 'margin-bottom: 20px; padding: 16px; background: var(--bg-surface); border-radius: var(--radius-sm); border: 1px solid var(--border);';
+            section.innerHTML = `
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 16px;">${cat.icon}</span>
+                        <span style="font-weight: 600; font-size: 14px; color: var(--text-primary);">${cat.label}</span>
+                        <span style="font-size: 11px; color: var(--text-muted); background: var(--bg-deep); padding: 2px 8px; border-radius: 10px;">${items.length}</span>
+                    </div>
+                    <button onclick="showAddForm('${cat.key}', '${cat.keyField}')" style="padding: 4px 12px; background: none; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-muted); font-size: 12px; cursor: pointer; transition: all 0.2s;"
+                        onmouseover="this.style.borderColor='var(--accent)'; this.style.color='var(--accent)'"
+                        onmouseout="this.style.borderColor='var(--border)'; this.style.color='var(--text-muted)'">+ Adicionar</button>
+                </div>
+                <div id="add-form-${cat.key}" style="display:none; margin-bottom: 10px;">
+                    <div style="display: flex; gap: 6px;">
+                        <input type="text" id="add-input-${cat.key}" placeholder="Novo valor..."
+                            style="flex:1; padding: 7px 10px; background: var(--bg-deep); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-primary); font-size: 13px;"
+                            onkeydown="if(event.key==='Enter') addPresetItem('${cat.key}', '${cat.keyField}')">
+                        <button onclick="addPresetItem('${cat.key}', '${cat.keyField}')"
+                            style="padding: 7px 14px; background: var(--accent); color: var(--bg-deep); border: none; border-radius: var(--radius-sm); font-size: 12px; font-weight: 600; cursor: pointer;">Salvar</button>
+                        <button onclick="document.getElementById('add-form-${cat.key}').style.display='none'"
+                            style="padding: 7px 10px; background: none; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-muted); font-size: 12px; cursor: pointer;">✕</button>
+                    </div>
+                </div>
+                <div id="items-${cat.key}"></div>
+            `;
+            container.appendChild(section);
+            renderItems(cat.key, cat.keyField, cat.displayFn, items);
+        });
+    }
+
+    function renderItems(catKey, keyField, displayFn, items) {
+        const el = document.getElementById(`items-${catKey}`);
+        if (items.length === 0) {
+            el.innerHTML = '<div style="font-size: 12px; color: var(--text-muted); padding: 8px 0;">Nenhum item salvo.</div>';
+            return;
+        }
+        items.sort((a, b) => (b.use_count || 0) - (a.use_count || 0));
+        el.innerHTML = items.map(item => {
+            const val = item[keyField] || '';
+            const label = displayFn(item);
+            const count = item.use_count || 0;
+            return `
+                <div style="display: flex; align-items: center; gap: 8px; padding: 7px 0; border-bottom: 1px solid var(--border-subtle); font-size: 13px;">
+                    <span style="color: #f59e0b; font-size: 12px;">★</span>
+                    <span style="flex: 1; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(label)}">${escapeHtml(label.length > 70 ? label.substring(0,70) + '...' : label)}</span>
+                    <span style="font-size: 11px; color: var(--text-muted); white-space: nowrap;">${count}x usado</span>
+                    <button onclick="removePresetItem('${catKey}', '${keyField}', '${escapeHtml(val)}', this)"
+                        style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 14px; padding: 2px 6px; opacity: 0.5; transition: all 0.15s;"
+                        onmouseover="this.style.opacity='1'; this.style.color='var(--danger)'"
+                        onmouseout="this.style.opacity='0.5'; this.style.color='var(--text-muted)'"
+                        title="Remover">✕</button>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g, '&#39;');
+    }
+
+    function showAddForm(catKey) {
+        const form = document.getElementById(`add-form-${catKey}`);
+        form.style.display = 'block';
+        document.getElementById(`add-input-${catKey}`).focus();
+    }
+
+    async function addPresetItem(catKey, keyField) {
+        const input = document.getElementById(`add-input-${catKey}`);
+        const value = input.value.trim();
+        if (!value) return;
+        await fetch(`/api/conta/${_currentAccount}/save-asset`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({asset_type: catKey, key_field: keyField, value})
+        });
+        if (!_currentAssets[catKey]) _currentAssets[catKey] = [];
+        _currentAssets[catKey].push({[keyField]: value, use_count: 0});
+        input.value = '';
+        document.getElementById(`add-form-${catKey}`).style.display = 'none';
+        renderSections();
+    }
+
+    async function removePresetItem(catKey, keyField, value, btn) {
+        await fetch(`/api/conta/${_currentAccount}/remove-asset`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({asset_type: catKey, key_field: keyField, value})
+        });
+        if (_currentAssets[catKey]) {
+            _currentAssets[catKey] = _currentAssets[catKey].filter(i => String(i[keyField]) !== String(value));
+        }
+        renderSections();
+    }
+
+    async function saveCac(btn) {
+        const value = document.getElementById('cac-target').value;
+        await fetch(`/api/conta/${_currentAccount}/save-cac`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({cac_target_value: value || null})
+        });
+        mostrarToast('✅ CAC Máximo salvo com sucesso!');
+        if (btn) {
+            const orig = btn.textContent;
+            btn.textContent = '✓ Salvo';
+            btn.style.background = 'var(--success)';
+            setTimeout(() => { btn.textContent = orig; btn.style.background = 'var(--accent)'; }, 1500);
+        }
+    }
 </script>
 {% endblock %}
