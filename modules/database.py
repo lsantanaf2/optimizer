@@ -26,10 +26,21 @@ def init_db():
         return
 
     try:
+        # v2.11.1: timeouts + TCP keepalive para que um socket Postgres "stale"
+        # (Supabase derruba conexões ociosas) ERRE rápido em vez de pendurar o
+        # execute() pra sempre — era um dos vetores de travamento silencioso do
+        # upload (a thread parava num socket morto, sem done e sem error).
         _pool = pool.ThreadedConnectionPool(
             minconn=1,
             maxconn=5,
-            dsn=db_url
+            dsn=db_url,
+            connect_timeout=10,
+            keepalives=1,
+            keepalives_idle=30,
+            keepalives_interval=10,
+            keepalives_count=3,
+            # statement_timeout no servidor: aborta qualquer query > 30s
+            options='-c statement_timeout=30000'
         )
         logger.info("Pool de conexões PostgreSQL inicializado")
     except Exception as e:

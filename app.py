@@ -73,7 +73,7 @@ from modules.account_settings import (
 import atexit
 atexit.register(close_db)
 
-VERSION = "v2.11.0"
+VERSION = "v2.11.1"
 
 # ======================== STAGING DE UPLOAD (v2.11.0) ========================
 # Desacoplamento: o Service Worker sobe cada arquivo UMA vez para a VPS (staging),
@@ -1642,29 +1642,40 @@ def upload_single(campaign_id):
             ad_id = uploader.create_ad(actual_adset_id, creative_id, ad_name,
                                        pixel_id=pixel_id, ad_status=ad_status)
 
-            # Squad 2 — salvar assets
-            if user_id:
-                save_upload_assets(user_id, account_id, {
-                    'page_id': page_id,
-                    'instagram_id': instagram_actor_id,
-                    'pixel_id': pixel_id,
-                    'primary_texts': textos,
-                    'headlines': titulos,
-                    'url': url_destino,
-                    'utm': utm_pattern,
-                    'cta': cta,
-                })
-                save_upload_history(
-                    user_id, account_id,
-                    campaign_name=campaign_id,
-                    ad_name=ad_name,
-                    strategy=estrategia,
-                    success=True
-                )
-
+            # v2.11.1: emite 'done' ANTES das escritas no banco (bookkeeping).
+            # O anúncio já existe na Meta; o SW só precisa do ad_id. Se o banco
+            # estiver lento/stale, NÃO pode travar o pipeline visível — era o que
+            # congelava entre "Ad criado" e o 'done' (sem erro, sem progresso),
+            # porque um socket Postgres morto fica pendurado sem timeout.
             _evt('done', percent=100, success=True, ad_id=ad_id,
                  message=f'✅ Anúncio "{ad_name}" criado com sucesso.',
                  logs=uploader.logs)
+
+            # Bookkeeping best-effort — NUNCA bloqueia o 'done' acima.
+            if user_id:
+                try:
+                    save_upload_assets(user_id, account_id, {
+                        'page_id': page_id,
+                        'instagram_id': instagram_actor_id,
+                        'pixel_id': pixel_id,
+                        'primary_texts': textos,
+                        'headlines': titulos,
+                        'url': url_destino,
+                        'utm': utm_pattern,
+                        'cta': cta,
+                    })
+                except Exception as _bk_err:
+                    print(f"⚠️ save_upload_assets falhou (ignorado): {_bk_err}")
+                try:
+                    save_upload_history(
+                        user_id, account_id,
+                        campaign_name=campaign_id,
+                        ad_name=ad_name,
+                        strategy=estrategia,
+                        success=True
+                    )
+                except Exception as _bk_err:
+                    print(f"⚠️ save_upload_history falhou (ignorado): {_bk_err}")
 
         except Exception as e:
             import traceback

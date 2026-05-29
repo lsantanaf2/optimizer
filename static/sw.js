@@ -12,7 +12,7 @@
  * - Registra histórico ao final (/api/upload-history/add)
  */
 
-const SW_VERSION = 'v2.11.0';
+const SW_VERSION = 'v2.11.1';
 const DB_NAME = 'optimizer-uploads';
 const DB_VERSION = 1;
 const STORE_JOBS = 'jobs';
@@ -222,12 +222,33 @@ async function duplicarGarimpo(job, item) {
 async function stageFile(campaignId, file, displayName) {
     const fd = new FormData();
     fd.append('file', file, displayName || 'media');
-    const r = await fetch(`/campanha/${campaignId}/upload/stage`, {
-        method: 'POST',
-        body: fd,
-        credentials: 'include',
-        redirect: 'manual',
-    });
+
+    // v2.11.1: watchdog no staging (o SSE já tinha; o staging não). Sem isso, um
+    // upload browser→VPS que estagna ficava pendurado pra sempre, sem erro nem
+    // progresso. Timeout dimensionado pelo tamanho (mín 3min, +1min por 50MB).
+    const sizeMb = (file && file.size ? file.size : 0) / (1024 * 1024);
+    const timeoutMs = Math.max(180000, Math.ceil(sizeMb / 50) * 60000 + 120000);
+    const controller = new AbortController();
+    const timerId = setTimeout(() => { try { controller.abort(); } catch (_) {} }, timeoutMs);
+
+    let r;
+    try {
+        r = await fetch(`/campanha/${campaignId}/upload/stage`, {
+            method: 'POST',
+            body: fd,
+            credentials: 'include',
+            redirect: 'manual',
+            signal: controller.signal,
+        });
+    } catch (netErr) {
+        clearTimeout(timerId);
+        if (netErr && netErr.name === 'AbortError') {
+            throw new Error(`staging abortado por inatividade (${Math.round(timeoutMs / 1000)}s)`);
+        }
+        throw netErr;
+    }
+    clearTimeout(timerId);
+
     if (r.status === 401 || r.status === 403 || r.type === 'opaqueredirect'
         || (r.status >= 300 && r.status < 400)
         || (r.redirected && /\/login/i.test(r.url))) {
