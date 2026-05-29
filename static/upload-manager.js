@@ -105,8 +105,22 @@
             await registerSw();
             const id = 'job_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
             const payload = { ...job, id };
-            const res = await _request({ type: 'enqueue', payload }, 'enqueued', 10000);
-            return res.jobId || id;
+            // O SW só responde 'enqueued' DEPOIS de persistir todos os blobs no IDB
+            // (await idbPut). Com vários vídeos grandes isso pode passar de 10s, então
+            // damos uma janela generosa (60s) para o ack.
+            try {
+                const res = await _request({ type: 'enqueue', payload }, 'enqueued', 60000);
+                return res.jobId || id;
+            } catch (err) {
+                // Fallback: o ack pode atrasar/perder-se enquanto o SW grava no IDB,
+                // mesmo com o job já enfileirado. Antes de declarar falha (o que deixaria
+                // a fila local presa na tela), confirma se o job realmente entrou.
+                try {
+                    const jobs = await getJobs();
+                    if (Array.isArray(jobs) && jobs.some(j => j.id === id)) return id;
+                } catch (_) { /* ignora — cai no throw abaixo */ }
+                throw err;
+            }
         } finally {
             _enqueueing = false;
         }
