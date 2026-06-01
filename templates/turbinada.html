@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Turbinada — OPTIMIZER{% endblock %}
+{% block title %}{% if account_name %}{{ account_name }} - OPTIMIZER{% else %}Turbinada — OPTIMIZER{% endif %}{% endblock %}
 
 {% block breadcrumb %}
 <a href="{{ url_for('listar_contas', next='optimize') }}">Trocar Conta</a> / <span>Otimização Turbinada</span>

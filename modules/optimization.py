@@ -174,6 +174,7 @@ def turbinada_page(account_id):
 
     # Buscar CAC máximo salvo no banco
     cac_max = 150  # fallback padrão
+    account_name = None
     user_id = session.get('user_id')
     if user_id:
         try:
@@ -184,7 +185,18 @@ def turbinada_page(account_id):
         except Exception:
             pass
 
-    return render_template('turbinada.html', account_id=account_id, cac_max=cac_max)
+        # Nome da conta de anúncios (para o título da aba do navegador)
+        try:
+            from modules.account_settings import list_imported_accounts
+            clean = str(account_id).replace('act_', '')
+            for a in list_imported_accounts(user_id):
+                if str(a.get('meta_account_id')) == clean:
+                    account_name = a.get('account_name') or None
+                    break
+        except Exception:
+            pass
+
+    return render_template('turbinada.html', account_id=account_id, cac_max=cac_max, account_name=account_name)
 
 @optimization_bp.route('/api/account/<account_id>/turbinada/<level>')
 def api_turbinada(account_id, level):
