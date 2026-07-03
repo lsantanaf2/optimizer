@@ -325,7 +325,24 @@ def fetch_meta_ads_daily(account_id, access_token, conversion_event,
     Onde revenue_real é o valor reportado pelo Pixel via action_values[conversion_event].
     """
     from modules.cruzamento import preset_to_dates
+    from modules.meta_cache import get_or_fetch, ttl_for_period
 
+    # Resolve o período ANTES para servir de chave de cache
+    if not (since and until):
+        since_d, until_d = preset_to_dates(date_preset)
+        if since_d and until_d:
+            since, until = str(since_d), str(until_d)
+
+    cache_key = ('dash_daily', account_id, conversion_event, since, until, date_preset)
+    return get_or_fetch(cache_key, ttl_for_period(until),
+                        lambda: _fetch_meta_ads_daily_live(
+                            account_id, access_token, conversion_event,
+                            date_preset, since, until))
+
+
+def _fetch_meta_ads_daily_live(account_id, access_token, conversion_event,
+                               date_preset, since, until):
+    """Fetch real (sem cache) — chamado apenas em cache miss."""
     base_url = f'https://graph.facebook.com/v22.0/{account_id}/insights'
     params = {
         'access_token':   access_token,
@@ -338,11 +355,7 @@ def fetch_meta_ads_daily(account_id, access_token, conversion_event,
     if since and until:
         params['time_range'] = json.dumps({'since': since, 'until': until}, separators=(',', ':'))
     else:
-        since_d, until_d = preset_to_dates(date_preset)
-        if since_d and until_d:
-            params['time_range'] = json.dumps({'since': str(since_d), 'until': str(until_d)}, separators=(',', ':'))
-        else:
-            params['date_preset'] = 'last_30d'
+        params['date_preset'] = 'last_30d'
 
     by_day = {}
     url = base_url
@@ -389,7 +402,24 @@ def fetch_meta_ads_top(account_id, access_token, conversion_event,
           conversions, revenue_real, roas, cpa }
     """
     from modules.cruzamento import preset_to_dates
+    from modules.meta_cache import get_or_fetch, ttl_for_period
 
+    # Resolve o período ANTES para servir de chave de cache
+    if not (since and until):
+        since_d, until_d = preset_to_dates(date_preset)
+        if since_d and until_d:
+            since, until = str(since_d), str(until_d)
+
+    cache_key = ('dash_top', account_id, conversion_event, since, until, date_preset, limit)
+    return get_or_fetch(cache_key, ttl_for_period(until),
+                        lambda: _fetch_meta_ads_top_live(
+                            account_id, access_token, conversion_event,
+                            since, until, limit))
+
+
+def _fetch_meta_ads_top_live(account_id, access_token, conversion_event,
+                             since, until, limit):
+    """Fetch real (sem cache) — chamado apenas em cache miss."""
     base_url = f'https://graph.facebook.com/v22.0/{account_id}/insights'
     params = {
         'access_token': access_token,
@@ -403,11 +433,7 @@ def fetch_meta_ads_top(account_id, access_token, conversion_event,
     if since and until:
         params['time_range'] = json.dumps({'since': since, 'until': until}, separators=(',', ':'))
     else:
-        since_d, until_d = preset_to_dates(date_preset)
-        if since_d and until_d:
-            params['time_range'] = json.dumps({'since': str(since_d), 'until': str(until_d)}, separators=(',', ':'))
-        else:
-            params['date_preset'] = 'last_30d'
+        params['date_preset'] = 'last_30d'
 
     by_ad = {}
     url = base_url

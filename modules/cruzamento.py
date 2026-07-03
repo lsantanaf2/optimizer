@@ -264,6 +264,22 @@ def fetch_fb_insights(account_id, access_token, date_preset='last_30d', since=No
     Retorna lista de dicts com: campaign_id, campaign_name, adset_id, adset_name,
                                 ad_id, ad_name, spend, impressions, clicks
     """
+    from modules.meta_cache import get_or_fetch, ttl_for_period
+
+    # Resolve o período ANTES para servir de chave de cache
+    if not (since and until):
+        # Converte preset interno em datas reais (Meta API usa last_7d, não last_7_days)
+        since_d, until_d = preset_to_dates(date_preset)
+        if since_d and until_d:
+            since, until = str(since_d), str(until_d)
+
+    cache_key = ('fb_insights', account_id, since, until, date_preset)
+    return get_or_fetch(cache_key, ttl_for_period(until),
+                        lambda: _fetch_fb_insights_live(account_id, access_token, since, until))
+
+
+def _fetch_fb_insights_live(account_id, access_token, since, until):
+    """Fetch real (sem cache) — chamado apenas em cache miss."""
     base_url = f"https://graph.facebook.com/v22.0/{account_id}/insights"
 
     params = {
@@ -277,12 +293,7 @@ def fetch_fb_insights(account_id, access_token, date_preset='last_30d', since=No
     if since and until:
         params['time_range'] = json.dumps({'since': since, 'until': until})
     else:
-        # Converte preset interno em datas reais (Meta API usa last_7d, não last_7_days)
-        since_d, until_d = preset_to_dates(date_preset)
-        if since_d and until_d:
-            params['time_range'] = json.dumps({'since': str(since_d), 'until': str(until_d)})
-        else:
-            params['date_preset'] = 'last_30d'  # fallback seguro
+        params['date_preset'] = 'last_30d'  # fallback seguro
 
     ads = []
     url = base_url
@@ -423,43 +434,58 @@ def fetch_vinci_daily(since_dt=None, until_dt=None):
 def fetch_ads_status(account_id, access_token):
     """Busca o status (ACTIVE, PAUSED, etc) de todos os ads."""
     from modules.meta_client import meta_get_paginated
-    base_url = f"https://graph.facebook.com/v22.0/{account_id}/ads"
-    params = {'access_token': access_token, 'fields': 'id,status', 'limit': 1000}
-    status_map = {}
-    try:
-        for item in meta_get_paginated(base_url, params):
-            status_map[item['id']] = item.get('status', 'UNKNOWN')
-    except Exception as e:
-        print(f"⚠️ Erro ao buscar status dos ads: {e}")
-    return status_map
+    from modules.meta_cache import get_or_fetch, TTL_LIVE
+
+    def _fetch():
+        base_url = f"https://graph.facebook.com/v22.0/{account_id}/ads"
+        params = {'access_token': access_token, 'fields': 'id,status', 'limit': 1000}
+        status_map = {}
+        try:
+            for item in meta_get_paginated(base_url, params):
+                status_map[item['id']] = item.get('status', 'UNKNOWN')
+        except Exception as e:
+            print(f"⚠️ Erro ao buscar status dos ads: {e}")
+        return status_map
+
+    return get_or_fetch(('ads_status', account_id), TTL_LIVE, _fetch)
 
 
 def fetch_campaigns_status(account_id, access_token):
     """Busca o effective_status de todas as campanhas da conta."""
     from modules.meta_client import meta_get_paginated
-    base_url = f"https://graph.facebook.com/v22.0/{account_id}/campaigns"
-    params = {'access_token': access_token, 'fields': 'id,effective_status', 'limit': 500}
-    status_map = {}
-    try:
-        for item in meta_get_paginated(base_url, params):
-            status_map[item['id']] = item.get('effective_status', 'UNKNOWN')
-    except Exception as e:
-        print(f"⚠️ Erro ao buscar status das campanhas: {e}")
-    return status_map
+    from modules.meta_cache import get_or_fetch, TTL_LIVE
+
+    def _fetch():
+        base_url = f"https://graph.facebook.com/v22.0/{account_id}/campaigns"
+        params = {'access_token': access_token, 'fields': 'id,effective_status', 'limit': 500}
+        status_map = {}
+        try:
+            for item in meta_get_paginated(base_url, params):
+                status_map[item['id']] = item.get('effective_status', 'UNKNOWN')
+        except Exception as e:
+            print(f"⚠️ Erro ao buscar status das campanhas: {e}")
+        return status_map
+
+    return get_or_fetch(('campaigns_status', account_id), TTL_LIVE, _fetch)
 
 
 def fetch_adsets_status(account_id, access_token):
     """Busca o effective_status de todos os adsets da conta."""
     from modules.meta_client import meta_get_paginated
-    base_url = f"https://graph.facebook.com/v22.0/{account_id}/adsets"
-    params = {'access_token': access_token, 'fields': 'id,effective_status', 'limit': 500}
-    status_map = {}
-    try:
-        for item in meta_get_paginated(base_url, params):
-            status_map[item['id']] = item.get('effective_status', 'UNKNOWN')
-    except Exception as e:
-        print(f"⚠️ Erro ao buscar status dos adsets: {e}")
-    return status_map
+    from modules.meta_cache import get_or_fetch, TTL_LIVE
+
+    def _fetch():
+        base_url = f"https://graph.facebook.com/v22.0/{account_id}/adsets"
+        params = {'access_token': access_token, 'fields': 'id,effective_status', 'limit': 500}
+        status_map = {}
+        try:
+            for item in meta_get_paginated(base_url, params):
+                status_map[item['id']] = item.get('effective_status', 'UNKNOWN')
+        except Exception as e:
+            print(f"⚠️ Erro ao buscar status dos adsets: {e}")
+        return status_map
+
+    return get_or_fetch(('adsets_status', account_id), TTL_LIVE, _fetch)
 
 # ── Processamento: Duplo Join em Memória ──────────────────────────────────────
 def processar_cruzamento(fb_ads, mqls_rows, wons_rows, mqls_all=None, excluded_patterns=None):
