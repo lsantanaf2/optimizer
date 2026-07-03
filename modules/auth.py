@@ -34,8 +34,11 @@ def hash_password(password):
 
 
 def verify_password(password, stored_hash):
-    """Verifica senha contra hash armazenado."""
-    salt, hashed = stored_hash.split(':')
+    """Verifica senha contra hash armazenado.
+    Defensivo: hash NULL/malformado (sem ':') retorna False em vez de crashar."""
+    if not stored_hash or ':' not in stored_hash:
+        return False
+    salt, hashed = stored_hash.split(':', 1)
     return hashlib.sha256(f"{salt}{password}".encode()).hexdigest() == hashed
 
 
@@ -89,43 +92,46 @@ def login_submit():
     session['user_id'] = str(user['id'])
     session['user_email'] = user['email']
 
-    # Verificar se tem Meta token no banco (decifra se necessário)
-    token_row = fetch_one(
-        "SELECT access_token, expires_at FROM user_meta_tokens WHERE user_id = %s",
-        (user['id'],)
-    )
-    if token_row and token_row.get('expires_at') and \
-            token_row['expires_at'].replace(tzinfo=None) < datetime.utcnow():
-        # Platform Terms 3.d.ii: token expirado não deve ser retido — deleta e
-        # manda reconectar (o token não funcionaria de qualquer forma)
-        logger.info(f"Token Meta expirado para user {user['id']} — removendo do banco.")
-        try:
-            execute("DELETE FROM user_meta_tokens WHERE user_id = %s", (user['id'],))
-        except Exception as e:
-            logger.error(f"Falha ao remover token expirado: {e}")
-        return redirect(url_for('auth.connect_meta_page'))
-    if token_row:
-        stored = token_row['access_token']
-        # Re-criptografa tokens legados em plaintext encontrados no banco
-        if not is_encrypted(stored):
-            try:
-                execute(
-                    "UPDATE user_meta_tokens SET access_token = %s WHERE user_id = %s",
-                    (encrypt_token(stored), user['id'])
-                )
-            except Exception as e:
-                logger.warning(f"Falha ao re-criptografar token legado: {e}")
-        try:
-            session['access_token'] = decrypt_token(stored)
-            return redirect(url_for('index'))
-        except Exception as e:
-            # Token cifrado com APP_SECRET antigo ou corrompido → remove e manda reconectar
-            logger.warning(f"Token Meta corrompido/incompatível para user {user['id']}: {e}. Removendo e pedindo reconexão.")
+    # Verificar se tem Meta token no banco (decifra se necessário).
+    # Defense in depth: NADA neste bloco pode derrubar o login — pior caso,
+    # o usuário é mandado reconectar o Meta.
+    try:
+        token_row = fetch_one(
+            "SELECT access_token, expires_at FROM user_meta_tokens WHERE user_id = %s",
+            (user['id'],)
+        )
+        if token_row and token_row.get('expires_at') and \
+                token_row['expires_at'].replace(tzinfo=None) < datetime.utcnow():
+            # Platform Terms 3.d.ii: token expirado não deve ser retido — deleta e
+            # manda reconectar (o token não funcionaria de qualquer forma)
+            logger.info(f"Token Meta expirado para user {user['id']} — removendo do banco.")
             try:
                 execute("DELETE FROM user_meta_tokens WHERE user_id = %s", (user['id'],))
-            except Exception as ee:
-                logger.error(f"Falha ao remover token corrompido: {ee}")
+            except Exception as e:
+                logger.error(f"Falha ao remover token expirado: {e}")
             return redirect(url_for('auth.connect_meta_page'))
+        if token_row:
+            stored = token_row['access_token']
+            # Re-criptografa tokens legados em plaintext encontrados no banco
+            if not is_encrypted(stored):
+                try:
+                    execute(
+                        "UPDATE user_meta_tokens SET access_token = %s WHERE user_id = %s",
+                        (encrypt_token(stored), user['id'])
+                    )
+                except Exception as e:
+                    logger.warning(f"Falha ao re-criptografar token legado: {e}")
+            session['access_token'] = decrypt_token(stored)
+            return redirect(url_for('index'))
+    except Exception as e:
+        # Token cifrado com APP_SECRET antigo, corrompido, ou erro inesperado →
+        # remove e manda reconectar. Loga o traceback para diagnóstico.
+        logger.exception(f"Falha no bloco de token Meta do login para user {user['id']}: {e}")
+        try:
+            execute("DELETE FROM user_meta_tokens WHERE user_id = %s", (user['id'],))
+        except Exception as ee:
+            logger.error(f"Falha ao remover token problemático: {ee}")
+        return redirect(url_for('auth.connect_meta_page'))
 
     # Sem Meta conectado — redirecionar para conectar
     return redirect(url_for('auth.connect_meta_page'))
