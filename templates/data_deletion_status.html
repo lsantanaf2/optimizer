@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Data Deletion — Optimizer</title>
+<style>
+  body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; background: #0f1117; color: #e2e8f0;
+         max-width: 560px; margin: 0 auto; padding: 60px 24px; line-height: 1.7; text-align: center; }
+  h1 { color: #fff; font-size: 1.5rem; }
+  .code { font-family: monospace; background: #1e2430; padding: 8px 16px; border-radius: 8px;
+          display: inline-block; margin: 12px 0; color: #4ade80; }
+  .muted { color: #94a3b8; font-size: .9rem; }
+  a { color: #60a5fa; }
+</style>
+</head>
+<body>
+<h1>✅ Data Deletion Completed</h1>
+<p>All Platform Data associated with your Facebook account has been permanently
+deleted from Optimizer, including your access token and imported ad account records.</p>
+{% if code %}
+<p>Confirmation code:</p>
+<div class="code">{{ code }}</div>
+{% endif %}
+<p class="muted">Questions? Contact <a href="mailto:ads.lsantanaf@gmail.com">ads.lsantanaf@gmail.com</a><br>
+<a href="/privacy">Privacy Policy</a> · <a href="/terms">Terms of Service</a></p>
+</body>
+</html>

@@ -63,6 +63,9 @@ app.register_blueprint(instagram_dl_bp)
 from modules.auth import auth_bp, login_required, meta_required
 app.register_blueprint(auth_bp)
 
+from modules.meta_compliance import compliance_bp
+app.register_blueprint(compliance_bp)
+
 from modules.database import init_db, close_db
 from modules.account_settings import (
     get_or_create_imported_account,
@@ -73,7 +76,7 @@ from modules.account_settings import (
 import atexit
 atexit.register(close_db)
 
-VERSION = "v2.19.0"
+VERSION = "v2.20.0"
 
 # ======================== STAGING DE UPLOAD (v2.11.0) ========================
 # Desacoplamento: o Service Worker sobe cada arquivo UMA vez para a VPS (staging),
@@ -118,10 +121,26 @@ def service_worker():
     resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
     return resp
 
+_expired_tokens_swept = False
+
 @app.before_request
 def ensure_db():
-    """Inicializa pool de DB no primeiro request de cada worker."""
+    """Inicializa pool de DB no primeiro request de cada worker.
+    No primeiro request, também varre tokens Meta expirados (Platform Terms
+    3.d.ii — Platform Data não deve ser retida além do necessário)."""
+    global _expired_tokens_swept
     init_db()
+    if not _expired_tokens_swept:
+        _expired_tokens_swept = True
+        try:
+            from modules.database import execute
+            removed = execute(
+                "DELETE FROM user_meta_tokens WHERE expires_at IS NOT NULL AND expires_at < NOW()"
+            )
+            if removed:
+                print(f"🧹 Sweep: {removed} token(s) Meta expirado(s) removido(s) do banco.")
+        except Exception as e:
+            print(f"⚠️ Sweep de tokens expirados falhou (não-fatal): {e}")
 
 @app.context_processor
 def inject_version():
