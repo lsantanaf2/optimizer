@@ -1,0 +1,11 @@
+[Unit]
+Description=Optimizer auto-deploy (checa git e deploya se houver mudança)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/var/www/optimizer/deploy/autodeploy.sh
+WorkingDirectory=/var/www/optimizer
+# Timeout generoso: build Docker + restart pode demorar
+TimeoutStartSec=900

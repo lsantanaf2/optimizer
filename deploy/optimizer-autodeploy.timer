@@ -1,0 +1,11 @@
+[Unit]
+Description=Roda o auto-deploy do Optimizer a cada 60s
+
+[Timer]
+OnBootSec=60
+OnUnitActiveSec=60
+# Se o service ainda estiver rodando (deploy em andamento), o timer espera
+# ele terminar — nunca sobrepõe execuções.
+
+[Install]
+WantedBy=timers.target
