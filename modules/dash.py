@@ -58,7 +58,10 @@ def _require_client(slug: str):
     """
     Extrai ?t=<token> do request e valida.
     Retorna client dict ou aborta com 403.
+    Rate limit ANTES da validação: também frena tentativas de enumeração de token.
     """
+    from modules.rate_limiter import check_rate_limit
+    check_rate_limit(f'dash-api:{slug}')
     token = request.args.get('t', '').strip()
     if not token:
         abort(403, 'Token obrigatório (?t=<token>)')
@@ -495,6 +498,9 @@ def dash_view(slug):
     View pública do dashboard de um cliente.
     Requer ?t=<public_link_token>.
     """
+    from modules.rate_limiter import check_rate_limit
+    check_rate_limit(f'dash-view:{slug}')
+
     token = request.args.get('t', '').strip()
     if not token:
         return render_template('dash_error.html',
