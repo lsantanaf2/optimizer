@@ -76,7 +76,7 @@ from modules.account_settings import (
 import atexit
 atexit.register(close_db)
 
-VERSION = "v2.20.0"
+VERSION = "v2.21.0"
 
 # ======================== STAGING DE UPLOAD (v2.11.0) ========================
 # Desacoplamento: o Service Worker sobe cada arquivo UMA vez para a VPS (staging),
@@ -121,26 +121,47 @@ def service_worker():
     resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
     return resp
 
-_expired_tokens_swept = False
+_compliance_swept = False
 
 @app.before_request
 def ensure_db():
     """Inicializa pool de DB no primeiro request de cada worker.
-    No primeiro request, também varre tokens Meta expirados (Platform Terms
-    3.d.ii — Platform Data não deve ser retida além do necessário)."""
-    global _expired_tokens_swept
+    No primeiro request, roda o sweep de conformidade (Platform Terms 3.d.ii —
+    retenção mínima de Platform Data) e migrações idempotentes leves."""
+    global _compliance_swept
     init_db()
-    if not _expired_tokens_swept:
-        _expired_tokens_swept = True
+    if not _compliance_swept:
+        _compliance_swept = True
+        from modules.database import execute
+        # Migrações idempotentes (CREATE/ALTER IF NOT EXISTS — seguras em 4 workers)
         try:
-            from modules.database import execute
-            removed = execute(
-                "DELETE FROM user_meta_tokens WHERE expires_at IS NOT NULL AND expires_at < NOW()"
-            )
-            if removed:
-                print(f"🧹 Sweep: {removed} token(s) Meta expirado(s) removido(s) do banco.")
+            execute("""
+                CREATE TABLE IF NOT EXISTS api_call_logs (
+                    id BIGSERIAL PRIMARY KEY,
+                    endpoint TEXT NOT NULL,
+                    response_code INT,
+                    usage_pct INT,
+                    called_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )""")
+            execute("CREATE INDEX IF NOT EXISTS idx_api_call_logs_called ON api_call_logs (called_at DESC)")
+            execute("ALTER TABLE app_users ADD COLUMN IF NOT EXISTS meta_consent_at TIMESTAMPTZ")
         except Exception as e:
-            print(f"⚠️ Sweep de tokens expirados falhou (não-fatal): {e}")
+            print(f"⚠️ Migração idempotente falhou (não-fatal): {e}")
+        # Sweep de retenção
+        for label, sql in (
+            ('tokens Meta expirados',
+             "DELETE FROM user_meta_tokens WHERE expires_at IS NOT NULL AND expires_at < NOW()"),
+            ('api_call_logs > 90 dias',
+             "DELETE FROM api_call_logs WHERE called_at < NOW() - INTERVAL '90 days'"),
+            ('upload_history > 90 dias',
+             "DELETE FROM upload_history WHERE created_at < NOW() - INTERVAL '90 days'"),
+        ):
+            try:
+                removed = execute(sql)
+                if removed:
+                    print(f"🧹 Sweep: {removed} registro(s) removido(s) — {label}.")
+            except Exception as e:
+                print(f"⚠️ Sweep '{label}' falhou (não-fatal): {e}")
 
 @app.context_processor
 def inject_version():

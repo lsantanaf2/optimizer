@@ -116,6 +116,24 @@ def _update_usage_state(headers):
     return pct
 
 
+def _log_api_call(url, status_code, usage_pct):
+    """Registra a chamada em api_call_logs (auditoria de conformidade).
+
+    Loga apenas o PATH (nunca query string — contém access_token).
+    Falha de log nunca afeta a chamada (best-effort).
+    """
+    try:
+        from urllib.parse import urlparse
+        endpoint = urlparse(url).path
+        from modules.database import execute
+        execute(
+            "INSERT INTO api_call_logs (endpoint, response_code, usage_pct) VALUES (%s, %s, %s)",
+            (endpoint, status_code, usage_pct)
+        )
+    except Exception:
+        pass  # log é best-effort — nunca derruba a chamada
+
+
 def _extract_error(resp):
     """Extrai (code, mensagem rica) do body de erro da Meta. Nunca levanta."""
     try:
@@ -141,7 +159,8 @@ def meta_get(url, params=None, *, timeout=30):
     for attempt in range(MAX_RETRIES + 1):
         _throttle()
         resp = requests.get(url, params=params, timeout=timeout)
-        _update_usage_state(resp.headers)
+        usage_pct = _update_usage_state(resp.headers)
+        _log_api_call(url, resp.status_code, usage_pct)
 
         if resp.ok:
             return resp.json()

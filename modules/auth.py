@@ -235,8 +235,22 @@ def meta_callback():
         logger.warning(f"Erro ao trocar token: {e}. Usando short-lived.")
 
     # Buscar meta_user_id
-    me = req.get(f"https://graph.facebook.com/v22.0/me?access_token={access_token}").json()
+    me = req.get(f"https://graph.facebook.com/v22.0/me?access_token={access_token}", timeout=15).json()
     meta_user_id = me.get('id', 'unknown')
+
+    # Buscar escopos efetivamente CONCEDIDOS pelo usuário (prova de consentimento
+    # granular — Platform Terms Seção 4: só usar permissões autorizadas)
+    token_scope = None
+    try:
+        perms = req.get(
+            f"https://graph.facebook.com/v22.0/me/permissions?access_token={access_token}",
+            timeout=15
+        ).json()
+        granted = [p['permission'] for p in perms.get('data', []) if p.get('status') == 'granted']
+        if granted:
+            token_scope = ','.join(sorted(granted))
+    except Exception as e:
+        logger.warning(f"Falha ao buscar permissões concedidas: {e}")
 
     # Upsert token no banco (criptografado em repouso)
     encrypted = encrypt_token(access_token)
@@ -245,16 +259,23 @@ def meta_callback():
         execute(
             """UPDATE user_meta_tokens
                SET access_token = %s, meta_user_id = %s, updated_at = NOW(),
-                   expires_at = %s
+                   expires_at = %s, token_scope = %s
                WHERE user_id = %s""",
-            (encrypted, meta_user_id, expires_at, user_id)
+            (encrypted, meta_user_id, expires_at, token_scope, user_id)
         )
     else:
         execute(
-            """INSERT INTO user_meta_tokens (user_id, meta_user_id, access_token, expires_at)
-               VALUES (%s, %s, %s, %s)""",
-            (user_id, meta_user_id, encrypted, expires_at)
+            """INSERT INTO user_meta_tokens (user_id, meta_user_id, access_token, expires_at, token_scope)
+               VALUES (%s, %s, %s, %s, %s)""",
+            (user_id, meta_user_id, encrypted, expires_at, token_scope)
         )
+
+    # Registra o momento do consentimento (usuário completou o diálogo OAuth da
+    # Meta, que exibe exatamente quais dados serão compartilhados)
+    try:
+        execute("UPDATE app_users SET meta_consent_at = NOW() WHERE id = %s", (user_id,))
+    except Exception as e:
+        logger.warning(f"Falha ao registrar consent (coluna pode não existir ainda): {e}")
 
     # Setar na sessão (plaintext — nunca armazenamos o token cifrado na sessão)
     session['access_token'] = access_token
