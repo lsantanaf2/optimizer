@@ -267,22 +267,10 @@ def fetch_client_sheet_campaigns(sheet_id, sheet_gid, filter_keyword, since_dt=N
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _meta_api_get(url, params, *, timeout=30):
-    """Wrapper para GET na Meta API com extração rica de erro."""
-    resp = _req.get(url, params=params, timeout=timeout)
-    try:
-        resp.raise_for_status()
-    except _req.HTTPError:
-        try:
-            err = (resp.json() or {}).get('error', {}) or {}
-            detail = err.get('error_user_msg') or err.get('message') or 'sem detalhe'
-            raise Exception(
-                f'Meta API: {detail} '
-                f'(code={err.get("code")}, subcode={err.get("error_subcode")}, '
-                f'type={err.get("type")}, fbtrace={err.get("fbtrace_id")})'
-            )
-        except ValueError:
-            raise
-    return resp.json()
+    """Wrapper para GET na Meta API — delega ao client central com throttle
+    global, monitor de usage headers e backoff (conformidade 7.e.i.2)."""
+    from modules.meta_client import meta_get
+    return meta_get(url, params, timeout=timeout)
 
 
 def _sum_action_value(actions, action_type):
@@ -1033,15 +1021,7 @@ def api_dash_debug_actions(slug):
     url = base_url
     try:
         while url:
-            resp = _req.get(url, params=params if url == base_url else None, timeout=30)
-            try:
-                resp.raise_for_status()
-            except _req.HTTPError:
-                err = (resp.json() or {}).get('error', {}) or {}
-                detail = err.get('error_user_msg') or err.get('message') or 'sem detalhe'
-                return f'<pre style="color:#f87171;padding:24px;font-family:monospace">Meta API: {detail}\n(code={err.get("code")}, subcode={err.get("error_subcode")}, fbtrace={err.get("fbtrace_id")})</pre>', 200
-
-            body = resp.json()
+            body = _meta_api_get(url, params if url == base_url else None)
             for item in body.get('data', []):
                 date = item.get('date_start', '')
                 for a in (item.get('actions') or []):

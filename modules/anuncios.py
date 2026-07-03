@@ -13,7 +13,6 @@ em paralelo com o request de vídeo.
 
 import json
 import concurrent.futures
-import requests
 
 from flask import Blueprint, jsonify, render_template, request, session, redirect, url_for
 
@@ -25,14 +24,14 @@ BASE_URL = 'https://graph.facebook.com/v22.0'
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _paginate(url, params, timeout=45):
-    """Itera paginação cursor da Meta API e retorna lista flat."""
+    """Itera paginação cursor da Meta API e retorna lista flat.
+    Passa pelo client central (throttle global + backoff — conformidade 7.e.i.2)."""
+    from modules.meta_client import meta_get
     results = []
     next_url = url
     cur_params = dict(params)
     while next_url:
-        resp = requests.get(next_url, params=cur_params, timeout=timeout)
-        resp.raise_for_status()
-        data = resp.json()
+        data = meta_get(next_url, cur_params, timeout=timeout)
         results.extend(data.get('data', []))
         paging  = data.get('paging', {})
         cursors = paging.get('cursors', {})
@@ -81,17 +80,16 @@ def _batch_effective_status(ad_ids, token, chunk_size=50):
     chunks = [ad_ids[i:i+chunk_size] for i in range(0, len(ad_ids), chunk_size)]
 
     def fetch_chunk(chunk):
-        resp = requests.get(
+        from modules.meta_client import meta_get
+        return meta_get(
             BASE_URL,
-            params={
+            {
                 'ids':          ','.join(chunk),
                 'fields':       'id,effective_status',
                 'access_token': token,
             },
             timeout=30,
         )
-        resp.raise_for_status()
-        return resp.json()
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, len(chunks) or 1)) as ex:
         futures = [ex.submit(fetch_chunk, c) for c in chunks]

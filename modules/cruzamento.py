@@ -287,9 +287,8 @@ def fetch_fb_insights(account_id, access_token, date_preset='last_30d', since=No
     ads = []
     url = base_url
     while url:
-        resp = requests.get(url, params=params if url == base_url else None, timeout=30)
-        resp.raise_for_status()
-        body = resp.json()
+        from modules.meta_client import meta_get
+        body = meta_get(url, params if url == base_url else None)
 
         for item in body.get('data', []):
             actions = item.get('actions', [])
@@ -423,21 +422,13 @@ def fetch_vinci_daily(since_dt=None, until_dt=None):
 
 def fetch_ads_status(account_id, access_token):
     """Busca o status (ACTIVE, PAUSED, etc) de todos os ads."""
+    from modules.meta_client import meta_get_paginated
     base_url = f"https://graph.facebook.com/v22.0/{account_id}/ads"
     params = {'access_token': access_token, 'fields': 'id,status', 'limit': 1000}
     status_map = {}
-    url = base_url
     try:
-        while url:
-            resp = requests.get(url, params=params if url == base_url else None, timeout=30)
-            if resp.status_code != 200:
-                print(f"⚠️ Aviso: Falha ao buscar status dos ads na URL {url}: {resp.text}")
-                break
-            body = resp.json()
-            for item in body.get('data', []):
-                status_map[item['id']] = item.get('status', 'UNKNOWN')
-            url = body.get('paging', {}).get('next')
-            params = None
+        for item in meta_get_paginated(base_url, params):
+            status_map[item['id']] = item.get('status', 'UNKNOWN')
     except Exception as e:
         print(f"⚠️ Erro ao buscar status dos ads: {e}")
     return status_map
@@ -445,20 +436,13 @@ def fetch_ads_status(account_id, access_token):
 
 def fetch_campaigns_status(account_id, access_token):
     """Busca o effective_status de todas as campanhas da conta."""
+    from modules.meta_client import meta_get_paginated
     base_url = f"https://graph.facebook.com/v22.0/{account_id}/campaigns"
     params = {'access_token': access_token, 'fields': 'id,effective_status', 'limit': 500}
     status_map = {}
-    url = base_url
     try:
-        while url:
-            resp = requests.get(url, params=params if url == base_url else None, timeout=30)
-            if resp.status_code != 200:
-                break
-            body = resp.json()
-            for item in body.get('data', []):
-                status_map[item['id']] = item.get('effective_status', 'UNKNOWN')
-            url = body.get('paging', {}).get('next')
-            params = None
+        for item in meta_get_paginated(base_url, params):
+            status_map[item['id']] = item.get('effective_status', 'UNKNOWN')
     except Exception as e:
         print(f"⚠️ Erro ao buscar status das campanhas: {e}")
     return status_map
@@ -466,20 +450,13 @@ def fetch_campaigns_status(account_id, access_token):
 
 def fetch_adsets_status(account_id, access_token):
     """Busca o effective_status de todos os adsets da conta."""
+    from modules.meta_client import meta_get_paginated
     base_url = f"https://graph.facebook.com/v22.0/{account_id}/adsets"
     params = {'access_token': access_token, 'fields': 'id,effective_status', 'limit': 500}
     status_map = {}
-    url = base_url
     try:
-        while url:
-            resp = requests.get(url, params=params if url == base_url else None, timeout=30)
-            if resp.status_code != 200:
-                break
-            body = resp.json()
-            for item in body.get('data', []):
-                status_map[item['id']] = item.get('effective_status', 'UNKNOWN')
-            url = body.get('paging', {}).get('next')
-            params = None
+        for item in meta_get_paginated(base_url, params):
+            status_map[item['id']] = item.get('effective_status', 'UNKNOWN')
     except Exception as e:
         print(f"⚠️ Erro ao buscar status dos adsets: {e}")
     return status_map
@@ -1630,21 +1607,13 @@ def api_action_types():
             'time_range': json.dumps({'since': str(since_d), 'until': str(until_d)}),
         }
 
+        from modules.meta_client import meta_get_paginated
         totals = {}
-        url = base_url
-        while url:
-            resp = requests.get(url, params=params if url == base_url else None, timeout=30)
-            resp.raise_for_status()
-            body = resp.json()
-
-            for item in body.get('data', []):
-                for a in item.get('actions', []):
-                    at = a.get('action_type', '')
-                    val = int(float(a.get('value', 0) or 0))
-                    totals[at] = totals.get(at, 0) + val
-
-            url = body.get('paging', {}).get('next')
-            params = None
+        for item in meta_get_paginated(base_url, params):
+            for a in item.get('actions', []):
+                at = a.get('action_type', '')
+                val = int(float(a.get('value', 0) or 0))
+                totals[at] = totals.get(at, 0) + val
 
         # Ordena por valor desc e formata
         sorted_types = sorted(totals.items(), key=lambda x: -x[1])

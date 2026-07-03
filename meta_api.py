@@ -301,15 +301,8 @@ class MetaUploader:
             }
 
             try:
-                resp = requests.get(url, params=params, timeout=60)
-                data = resp.json().get('data', [])
-
-                # Paginação de insights
-                next_url = resp.json().get('paging', {}).get('next')
-                while next_url:
-                    resp2 = requests.get(next_url, timeout=60)
-                    data.extend(resp2.json().get('data', []))
-                    next_url = resp2.json().get('paging', {}).get('next')
+                from modules.meta_client import meta_get_paginated
+                data = meta_get_paginated(url, params, timeout=60)
 
                 for ins in data:
                     entity_id = ins.get(cfg['id_field'])
@@ -351,8 +344,8 @@ class MetaUploader:
                 }
 
                 try:
-                    resp = requests.get(batch_url, params=batch_params, timeout=60)
-                    resp_data = resp.json()
+                    from modules.meta_client import meta_get
+                    resp_data = meta_get(batch_url, batch_params, timeout=60)
                     # Batch lookup retorna {id: {fields...}, id2: {fields...}}
                     if isinstance(resp_data, dict):
                         for eid, item in resp_data.items():
