@@ -6,7 +6,7 @@ Usa pool de conexões para eficiência com Gunicorn (4 workers).
 import os
 import logging
 from contextlib import contextmanager
-from psycopg2 import pool, extras
+from psycopg2 import pool, extras, OperationalError, InterfaceError
 
 logger = logging.getLogger(__name__)
 
@@ -58,18 +58,36 @@ def close_db():
 
 @contextmanager
 def get_conn():
-    """Context manager que pega e devolve conexão do pool."""
+    """Context manager que pega e devolve conexão do pool.
+
+    Resiliência a conexões 'stale': o pooler do Supabase (e um pause do projeto
+    free-tier) derruba conexões ociosas, mas elas continuam no pool marcadas
+    como vivas. Se a query falha com erro de conexão, a conexão é DESCARTADA do
+    pool (close=True) em vez de devolvida morta — senão ela circula e derruba
+    requests seguintes, causando 403/500 intermitentes. Os helpers
+    (fetch_one/all/execute) fazem retry, pegando uma conexão nova/saudável.
+    """
     if _pool is None:
         raise RuntimeError("Banco não inicializado. Chame init_db() primeiro.")
     conn = _pool.getconn()
+    broken = False
     try:
         yield conn
         conn.commit()
+    except (OperationalError, InterfaceError):
+        broken = True  # conexão morta — não devolver ao pool
+        raise
     except Exception:
-        conn.rollback()
+        try:
+            conn.rollback()
+        except (OperationalError, InterfaceError):
+            broken = True
         raise
     finally:
-        _pool.putconn(conn)
+        try:
+            _pool.putconn(conn, close=broken)
+        except Exception:
+            pass
 
 
 @contextmanager
@@ -92,29 +110,54 @@ def get_cursor(dict_cursor=True):
 
 # --- Helpers genéricos ---
 
+def _with_conn_retry(op, attempts=3):
+    """Executa op() com retry quando a conexão vem morta do pool (stale).
+
+    Cada falha de conexão faz o get_conn descartar a conexão morta (close=True),
+    então a próxima tentativa pega uma conexão nova/saudável. attempts=3 cobre
+    até 2 conexões mortas antes de encontrar/criar uma viva.
+    """
+    last_exc = None
+    for attempt in range(attempts):
+        try:
+            return op()
+        except (OperationalError, InterfaceError) as e:
+            last_exc = e
+            continue  # conexão morta foi descartada; tenta com outra
+    raise last_exc
+
+
 def fetch_one(query, params=None):
     """Executa query e retorna um registro como dict (ou None)."""
-    with get_cursor() as cur:
-        cur.execute(query, params)
-        return cur.fetchone()
+    def _op():
+        with get_cursor() as cur:
+            cur.execute(query, params)
+            return cur.fetchone()
+    return _with_conn_retry(_op)
 
 
 def fetch_all(query, params=None):
     """Executa query e retorna lista de dicts."""
-    with get_cursor() as cur:
-        cur.execute(query, params)
-        return cur.fetchall()
+    def _op():
+        with get_cursor() as cur:
+            cur.execute(query, params)
+            return cur.fetchall()
+    return _with_conn_retry(_op)
 
 
 def execute(query, params=None):
     """Executa INSERT/UPDATE/DELETE e retorna rowcount."""
-    with get_cursor() as cur:
-        cur.execute(query, params)
-        return cur.rowcount
+    def _op():
+        with get_cursor() as cur:
+            cur.execute(query, params)
+            return cur.rowcount
+    return _with_conn_retry(_op)
 
 
 def execute_returning(query, params=None):
     """Executa INSERT/UPDATE com RETURNING e retorna o registro."""
-    with get_cursor() as cur:
-        cur.execute(query, params)
-        return cur.fetchone()
+    def _op():
+        with get_cursor() as cur:
+            cur.execute(query, params)
+            return cur.fetchone()
+    return _with_conn_retry(_op)
