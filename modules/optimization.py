@@ -162,6 +162,44 @@ def api_entity_budget(account_id):
         import traceback; traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
 
+
+@optimization_bp.route('/api/account/<account_id>/entity/budget-batch', methods=['POST'])
+def api_entity_budget_batch(account_id):
+    """Publica várias alterações de verba de uma vez via Graph Batch API
+    (até 50 operações por request HTTP — recomendação do manual da Meta)."""
+    from app import obter_token
+    from meta_api import MetaUploader
+
+    token = obter_token()
+    if not token:
+        return jsonify({"success": False, "error": "Não autenticado"}), 401
+
+    data = request.get_json()
+    changes = (data or {}).get('changes') or []
+    if not changes:
+        return jsonify({"success": False, "error": "Nenhuma alteração enviada"}), 400
+
+    # Validação de cada item antes de tocar a Meta
+    for ch in changes:
+        if not ch.get('entity_id') or ch.get('daily_budget') is None:
+            return jsonify({"success": False,
+                            "error": "Cada item precisa de entity_id e daily_budget"}), 400
+        try:
+            if float(ch['daily_budget']) <= 0:
+                return jsonify({"success": False,
+                                "error": f"Verba inválida para {ch['entity_id']}"}), 400
+        except (TypeError, ValueError):
+            return jsonify({"success": False,
+                            "error": f"Verba inválida para {ch['entity_id']}"}), 400
+
+    try:
+        uploader = MetaUploader(account_id, token, APP_ID, APP_SECRET)
+        result = uploader.update_budgets_batch(changes)
+        return jsonify(result)
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
 # ======================== TURBINADA ========================
 
 @optimization_bp.route('/account/<account_id>/turbinada')

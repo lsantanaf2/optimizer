@@ -498,6 +498,79 @@ class MetaUploader:
         print(f"✅ [update_budget] {entity_type} {entity_id} → R$ {daily_budget}/dia ({budget_cents} centavos)")
         return {'success': True, 'entity_id': entity_id, 'new_budget': float(daily_budget)}
 
+    def update_budgets_batch(self, changes):
+        """
+        Altera o orçamento diário de VÁRIAS entidades numa única chamada HTTP,
+        usando o Batch API oficial da Graph API (recomendação do manual da
+        Marketing API para múltiplas escritas: até 50 operações por request).
+
+        changes: lista de dicts {entity_id, entity_type, daily_budget (reais)}
+        Retorna: {'success': bool, 'results': [{entity_id, success, error?, new_budget?}]}
+
+        Conformidade:
+          - Chunks de 50 (limite do Batch API)
+          - smart_delay() entre chunks (nunca rajada)
+          - check_rate_limit() lê os headers de uso após cada chunk
+        """
+        BATCH_LIMIT = 50
+        results = []
+
+        for i in range(0, len(changes), BATCH_LIMIT):
+            chunk = changes[i:i + BATCH_LIMIT]
+            if i > 0:
+                self.smart_delay()
+
+            batch_payload = []
+            for ch in chunk:
+                budget_cents = int(float(ch['daily_budget']) * 100)
+                batch_payload.append({
+                    'method': 'POST',
+                    'relative_url': str(ch['entity_id']),
+                    'body': f'daily_budget={budget_cents}',
+                })
+
+            resp = requests.post(
+                'https://graph.facebook.com/v22.0/',
+                data={
+                    'access_token': self.access_token,
+                    'batch': json.dumps(batch_payload, separators=(',', ':')),
+                },
+                timeout=60,
+            )
+            self.check_rate_limit(resp.headers)
+
+            body = resp.json()
+            if isinstance(body, dict) and 'error' in body:
+                # Falha do request batch inteiro (ex: token inválido)
+                err = body['error'].get('message', 'Erro desconhecido')
+                for ch in chunk:
+                    results.append({'entity_id': ch['entity_id'], 'success': False, 'error': err})
+                continue
+
+            # Resposta é uma lista alinhada com o batch enviado; itens podem ser null
+            for ch, item in zip(chunk, body if isinstance(body, list) else []):
+                if item is None:
+                    results.append({'entity_id': ch['entity_id'], 'success': False,
+                                    'error': 'Sem resposta da Meta (timeout interno do batch)'})
+                    continue
+                try:
+                    item_body = json.loads(item.get('body') or '{}')
+                except (ValueError, TypeError):
+                    item_body = {}
+                if item.get('code') == 200 and not item_body.get('error'):
+                    results.append({'entity_id': ch['entity_id'], 'success': True,
+                                    'new_budget': float(ch['daily_budget'])})
+                    print(f"✅ [batch_budget] {ch.get('entity_type', '?')} {ch['entity_id']} → R$ {ch['daily_budget']}/dia")
+                else:
+                    err = (item_body.get('error') or {}).get('error_user_msg') or \
+                          (item_body.get('error') or {}).get('message') or f"HTTP {item.get('code')}"
+                    results.append({'entity_id': ch['entity_id'], 'success': False, 'error': err})
+                    print(f"❌ [batch_budget] {ch['entity_id']}: {err}")
+
+        ok = sum(1 for r in results if r['success'])
+        return {'success': ok == len(results), 'updated': ok,
+                'failed': len(results) - ok, 'results': results}
+
     def get_campaigns_list(self, date_preset='today', since=None, until=None):
         """
         Lista campanhas que tiveram GASTO no período, com status, budget e métricas.

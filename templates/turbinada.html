@@ -507,6 +507,9 @@
         <button id="btn-filter-selected"
             style="padding:5px 12px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--bg-card); color:var(--text-secondary); cursor:pointer; font-size:11px; font-weight:600; transition:all .15s;"
             onclick="toggleFilterSelected()">🔍 Filtrar selecionados</button>
+        <button id="btn-publish-all"
+            style="display:none; padding:5px 14px; border:1px solid var(--accent); border-radius:var(--radius-sm); background:var(--accent); color:#fff; cursor:pointer; font-size:11px; font-weight:700; transition:all .15s;"
+            onclick="publishAllBudgets()">🚀 Publicar alterações (<span id="publish-count">0</span>)</button>
         <button onclick="downloadTurbinadaMD()" title="Baixar dados como Markdown"
             style="padding:5px 8px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--bg-card); color:var(--text-secondary); cursor:pointer; font-size:11px; display:inline-flex; align-items:center;">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -757,18 +760,19 @@
         }
         const dates = calcPresetDates(presetKey);
         if (!dates) return;
-        columnPeriods.push({
+        const newPeriod = {
             id: nextPeriodId++,
             type: 'preset',
             key: presetKey,
             label: PRESET_DEFS[presetKey].label,
             since: dates.since,
             until: dates.until,
-        });
+        };
+        columnPeriods.push(newPeriod);
         sortPeriods();
         renderPills();
         closePeriodMenu();
-        loadData();
+        loadPeriodData(newPeriod);  // incremental: busca só a coluna nova
     }
 
     // Adicionar período customizado
@@ -791,20 +795,21 @@
             return;
         }
 
-        columnPeriods.push({
+        const newPeriod = {
             id: nextPeriodId++,
             type: 'custom',
             key: key,
             label: label,
             since: since,
             until: until,
-        });
+        };
+        columnPeriods.push(newPeriod);
         sortPeriods();
         renderPills();
         closePeriodMenu();
         startEl.value = '';
         endEl.value = '';
-        loadData();
+        loadPeriodData(newPeriod);  // incremental: busca só a coluna nova
     }
 
     // Remover período
@@ -1060,6 +1065,22 @@
     }
 
     // ===== Data Loading =====
+    // Contexto da última carga (para cargas incrementais reutilizarem o drill-down)
+    let lastParentIds = null;
+    let lastParentType = null;
+
+    function buildTurbinadaUrl(periodsJson) {
+        const onlyActive = document.getElementById('only-active').checked;
+        let url = `/api/account/${ACCOUNT_ID}/turbinada/${currentLevel}`;
+        const params = [];
+        if (lastParentIds && lastParentIds.length) params.push(`parent_ids=${lastParentIds.join(',')}`);
+        if (lastParentType) params.push(`parent_type=${lastParentType}`);
+        if (onlyActive) params.push(`status_filter=ACTIVE`);
+        if (periodsJson) params.push(`periods=${encodeURIComponent(periodsJson)}`);
+        if (params.length) url += '?' + params.join('&');
+        return url;
+    }
+
     async function loadData(parentIds, parentType) {
         const loading = document.getElementById('turb-loading');
         const table = document.getElementById('turb-table');
@@ -1068,14 +1089,9 @@
         table.style.display = 'none';
         noPeriods.style.display = 'none';
 
-        const onlyActive = document.getElementById('only-active').checked;
-        let url = `/api/account/${ACCOUNT_ID}/turbinada/${currentLevel}`;
-        const params = [];
-        if (parentIds && parentIds.length) params.push(`parent_ids=${parentIds.join(',')}`);
-        if (parentType) params.push(`parent_type=${parentType}`);
-        if (onlyActive) params.push(`status_filter=ACTIVE`);
-        if (columnPeriods.length > 0) params.push(`periods=${encodeURIComponent(buildPeriodsParam())}`);
-        if (params.length) url += '?' + params.join('&');
+        lastParentIds = parentIds || null;
+        lastParentType = parentType || null;
+        const url = buildTurbinadaUrl(columnPeriods.length > 0 ? buildPeriodsParam() : null);
 
         try {
             const resp = await fetch(url);
@@ -1094,6 +1110,44 @@
             loading.style.display = 'none';
             mostrarToast('❌ Erro ao carregar dados: ' + e.message);
             console.error('[turbinada] Fetch error:', e);
+        }
+    }
+
+    // Carga INCREMENTAL: busca só o período recém-adicionado e mescla nos dados
+    // existentes — a tabela permanece visível, sem "piscar" (v2.22.0).
+    async function loadPeriodData(period) {
+        // Sem dados carregados ainda → carga completa normal
+        if (!allData || !allData.length) { loadData(lastParentIds, lastParentType); return; }
+
+        const periodsJson = JSON.stringify({ [period.key]: { since: period.since, until: period.until } });
+        const url = buildTurbinadaUrl(periodsJson);
+        mostrarToast(`⏳ Carregando coluna "${period.label}"...`);
+
+        try {
+            const resp = await fetch(url);
+            const json = await resp.json();
+            if (!json.success) {
+                mostrarToast('❌ ' + json.error);
+                console.error('[turbinada] Erro (incremental):', json.error, json.traceback || '');
+                return;
+            }
+            // Mescla: linhas existentes ganham só a chave do período novo;
+            // entidades com gasto apenas no período novo entram na tabela
+            const byId = {};
+            allData.forEach(item => { byId[String(item.id)] = item; });
+            (json.data || []).forEach(row => {
+                const existing = byId[String(row.id)];
+                if (existing) {
+                    if (row[period.key] !== undefined) existing[period.key] = row[period.key];
+                } else {
+                    allData.push(row);
+                }
+            });
+            renderTable();
+            mostrarToast(`✅ Coluna "${period.label}" adicionada`);
+        } catch (e) {
+            mostrarToast('❌ Erro ao carregar período: ' + e.message);
+            console.error('[turbinada] Fetch error (incremental):', e);
         }
     }
 
@@ -1295,6 +1349,8 @@
 
         table.style.display = 'table';
         lastCheckboxIdx = -1;
+        // Re-render reconstrói os inputs de verba — ressincroniza o botão de publicar
+        if (typeof updatePublishAllButton === 'function') updatePublishAllButton();
     }
 
     function applyCAC() {
@@ -1378,6 +1434,93 @@
     function onBudgetEdit(input) {
         const saveBtn = input.parentElement.querySelector('.btn-save-budget');
         saveBtn.style.display = input.value !== input.dataset.original ? 'inline-block' : 'none';
+        updatePublishAllButton();
+    }
+
+    // Coleta todas as edições de verba pendentes (valor difere do original)
+    function getPendingBudgetChanges() {
+        const changes = [];
+        document.querySelectorAll('.budget-input').forEach(input => {
+            if (input.value === input.dataset.original) return;
+            const val = parseBRL(input.value);
+            if (isNaN(val) || val <= 0) return;
+            changes.push({
+                entity_id: input.dataset.id,
+                entity_type: input.dataset.type,
+                daily_budget: val,
+                _input: input,
+            });
+        });
+        return changes;
+    }
+
+    function updatePublishAllButton() {
+        const btn = document.getElementById('btn-publish-all');
+        const count = getPendingBudgetChanges().length;
+        document.getElementById('publish-count').textContent = count;
+        // Só mostra com 2+ pendências (com 1, o ✓ da linha resolve)
+        btn.style.display = count >= 2 ? 'inline-block' : 'none';
+    }
+
+    // Publica todas as alterações pendentes numa única chamada (Graph Batch API)
+    async function publishAllBudgets() {
+        const pending = getPendingBudgetChanges();
+        if (!pending.length) { mostrarToast('⚠️ Nenhuma alteração pendente'); return; }
+
+        const btn = document.getElementById('btn-publish-all');
+        btn.disabled = true;
+        const originalHtml = btn.innerHTML;
+        btn.innerHTML = `⏳ Publicando ${pending.length}...`;
+
+        try {
+            const resp = await fetch(`/api/account/${ACCOUNT_ID}/entity/budget-batch`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    changes: pending.map(c => ({
+                        entity_id: c.entity_id,
+                        entity_type: c.entity_type,
+                        daily_budget: c.daily_budget,
+                    }))
+                })
+            });
+            const json = await resp.json();
+            if (!json.results) {
+                mostrarToast('❌ ' + (json.error || 'Erro ao publicar'));
+                return;
+            }
+
+            const byId = {};
+            json.results.forEach(r => { byId[String(r.entity_id)] = r; });
+
+            const failures = [];
+            pending.forEach(c => {
+                const r = byId[String(c.entity_id)];
+                if (r && r.success) {
+                    c._input.dataset.original = formatBRL(c.daily_budget);
+                    c._input.value = formatBRL(c.daily_budget);
+                    const saveBtn = c._input.parentElement.querySelector('.btn-save-budget');
+                    if (saveBtn) saveBtn.style.display = 'none';
+                    const item = allData.find(d => String(d.id) === String(c.entity_id));
+                    if (item) item.daily_budget = c.daily_budget;
+                } else {
+                    failures.push({ id: c.entity_id, error: (r && r.error) || 'sem resposta' });
+                }
+            });
+
+            if (failures.length === 0) {
+                mostrarToast(`✅ ${json.updated} verba(s) atualizada(s) de uma vez`);
+            } else {
+                mostrarToast(`⚠️ ${json.updated} ok, ${failures.length} falhou(aram): ${failures[0].error}`);
+                console.error('[budget-batch] Falhas:', failures);
+            }
+        } catch (e) {
+            mostrarToast('❌ Erro de rede: ' + e.message);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = originalHtml;
+            updatePublishAllButton();
+        }
     }
 
     function multiply12(btn) {
@@ -1418,6 +1561,7 @@
                 const item = allData.find(d => String(d.id) === String(entityId));
                 if (item) item.daily_budget = newBudget;
                 mostrarToast(`✅ Verba atualizada: R$ ${formatBRL(newBudget)}/dia`);
+                updatePublishAllButton();
             } else {
                 mostrarToast('❌ ' + json.error);
                 btn.textContent = '✓';
