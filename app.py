@@ -3,7 +3,8 @@ import json
 import time
 import glob
 import uuid
-import requests as req_lib
+import requests
+from modules.meta_client import GRAPH_BASE as req_lib
 import tempfile
 import queue
 import threading
@@ -76,7 +77,7 @@ from modules.account_settings import (
 import atexit
 atexit.register(close_db)
 
-VERSION = "v2.22.0"
+VERSION = "v2.23.0"
 
 # ======================== STAGING DE UPLOAD (v2.11.0) ========================
 # Desacoplamento: o Service Worker sobe cada arquivo UMA vez para a VPS (staging),
@@ -469,7 +470,7 @@ def api_campanhas(account_id):
         statuses = [s.strip() for s in status_filter.split(',')]
 
         # Usa requests direto para controlar paginação via cursor
-        url = f"https://graph.facebook.com/v22.0/{account_id}/campaigns"
+        url = f"{GRAPH_BASE}/{account_id}/campaigns"
         params = {
             'access_token': access_token,
             'fields': 'id,name,objective,effective_status',

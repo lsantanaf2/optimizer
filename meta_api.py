@@ -27,6 +27,7 @@ from facebook_business.adobjects.adset import AdSet
 from facebook_business.adobjects.campaign import Campaign
 from facebook_business.adobjects.user import User
 from facebook_business.adobjects.adspixel import AdsPixel
+from modules.meta_client import GRAPH_BASE
 
 
 # ── Geo Compliance ────────────────────────────────────────────────────────────
@@ -290,7 +291,7 @@ class MetaUploader:
         insights_by_id = {}  # {entity_id: {p7d: {...}, p3d: {...}, ...}}
 
         for period_key, time_range in periods.items():
-            url = f"https://graph.facebook.com/v22.0/{self.account_id}/insights"
+            url = f"{GRAPH_BASE}/{self.account_id}/insights"
             params = {
                 'access_token': self.access_token,
                 'level': level,
@@ -336,7 +337,7 @@ class MetaUploader:
             batch_size = 50
             for i in range(0, len(ids_with_spend), batch_size):
                 batch_ids = ids_with_spend[i:i + batch_size]
-                batch_url = "https://graph.facebook.com/v22.0/"
+                batch_url = f"{GRAPH_BASE}/"
                 batch_params = {
                     'access_token': self.access_token,
                     'ids': ','.join(batch_ids),
@@ -406,7 +407,7 @@ class MetaUploader:
         Aceita date_preset OU since/until para datas customizadas.
         """
         try:
-            url = f"https://graph.facebook.com/v22.0/{self.account_id}/insights"
+            url = f"{GRAPH_BASE}/{self.account_id}/insights"
             params = {
                 'access_token': self.access_token,
                 'level': 'campaign',
@@ -415,12 +416,12 @@ class MetaUploader:
                 'limit': 100
             }
             if since and until:
-                params['time_range'] = f'{{"since":"{since}","until":"{until}"}}'
+                params['time_range'] = json.dumps({'since': since, 'until': until}, separators=(',', ':'))
             else:
                 params['date_preset'] = date_preset
 
-            resp = requests.get(url, params=params, timeout=30)
-            data = resp.json().get('data', [])
+            from modules.meta_client import meta_get_insights_rows
+            data = meta_get_insights_rows(url, params, timeout=30)
 
             results = []
             for ins in data:
@@ -457,20 +458,23 @@ class MetaUploader:
         if new_status.upper() not in valid_statuses:
             raise ValueError(f"Status inválido: {new_status}. Use: {valid_statuses}")
 
-        url = f"https://graph.facebook.com/v22.0/{entity_id}"
+        url = f"{GRAPH_BASE}/{entity_id}"
         payload = {
             'status': new_status.upper(),
             'access_token': self.access_token
         }
 
-        resp = requests.post(url, data=payload, timeout=30)
-        result = resp.json()
+        def _do():
+            resp = requests.post(url, data=payload, timeout=30)
+            self.check_rate_limit(resp.headers)
+            result = resp.json()
+            if 'error' in result:
+                error_msg = result['error'].get('message', 'Erro desconhecido')
+                print(f"❌ [update_status] Falha ao alterar {entity_type} {entity_id}: {error_msg}")
+                raise Exception(error_msg)
+            return result
 
-        if 'error' in result:
-            error_msg = result['error'].get('message', 'Erro desconhecido')
-            print(f"❌ [update_status] Falha ao alterar {entity_type} {entity_id}: {error_msg}")
-            raise Exception(error_msg)
-
+        self._with_retry(f"Alterar status {entity_type} {entity_id}", _do)
         print(f"✅ [update_status] {entity_type} {entity_id} → {new_status.upper()}")
         return {'success': True, 'entity_id': entity_id, 'new_status': new_status.upper()}
 
@@ -481,20 +485,23 @@ class MetaUploader:
         """
         budget_cents = int(float(daily_budget) * 100)
 
-        url = f"https://graph.facebook.com/v22.0/{entity_id}"
+        url = f"{GRAPH_BASE}/{entity_id}"
         payload = {
             'daily_budget': budget_cents,
             'access_token': self.access_token
         }
 
-        resp = requests.post(url, data=payload, timeout=30)
-        result = resp.json()
+        def _do():
+            resp = requests.post(url, data=payload, timeout=30)
+            self.check_rate_limit(resp.headers)
+            result = resp.json()
+            if 'error' in result:
+                error_msg = result['error'].get('message', 'Erro desconhecido')
+                print(f"❌ [update_budget] Falha ao alterar verba {entity_type} {entity_id}: {error_msg}")
+                raise Exception(error_msg)
+            return result
 
-        if 'error' in result:
-            error_msg = result['error'].get('message', 'Erro desconhecido')
-            print(f"❌ [update_budget] Falha ao alterar verba {entity_type} {entity_id}: {error_msg}")
-            raise Exception(error_msg)
-
+        self._with_retry(f"Alterar verba {entity_type} {entity_id}", _do)
         print(f"✅ [update_budget] {entity_type} {entity_id} → R$ {daily_budget}/dia ({budget_cents} centavos)")
         return {'success': True, 'entity_id': entity_id, 'new_budget': float(daily_budget)}
 
@@ -508,11 +515,14 @@ class MetaUploader:
         Retorna: {'success': bool, 'results': [{entity_id, success, error?, new_budget?}]}
 
         Conformidade:
-          - Chunks de 50 (limite do Batch API)
+          - Chunks de 15 (o Batch API aceita 50, mas no DEV TIER cada escrita
+            custa 3 pontos num orçamento de 60 pontos/5min — 50 escritas = 150
+            pontos = bloqueio imediato. 15×3 = 45 pontos deixa margem. Quando o
+            app ganhar Standard Access, pode voltar para 50.)
           - smart_delay() entre chunks (nunca rajada)
           - check_rate_limit() lê os headers de uso após cada chunk
         """
-        BATCH_LIMIT = 50
+        BATCH_LIMIT = 15
         results = []
 
         for i in range(0, len(changes), BATCH_LIMIT):
@@ -530,7 +540,7 @@ class MetaUploader:
                 })
 
             resp = requests.post(
-                'https://graph.facebook.com/v22.0/',
+                f'{GRAPH_BASE}/',
                 data={
                     'access_token': self.access_token,
                     'batch': json.dumps(batch_payload, separators=(',', ':')),
@@ -582,16 +592,16 @@ class MetaUploader:
             if not insights:
                 return []
 
-            # 2. Buscar dados estruturais (status, budget)
-            url = f"https://graph.facebook.com/v22.0/{self.account_id}/campaigns"
+            # 2. Buscar dados estruturais (status, budget) — paginado + throttle central
+            from modules.meta_client import meta_get_paginated
+            url = f"{GRAPH_BASE}/{self.account_id}/campaigns"
             params = {
                 'access_token': self.access_token,
                 'fields': 'id,name,status,effective_status,daily_budget,lifetime_budget,objective',
                 'filtering': '[{"field":"effective_status","operator":"IN","value":["ACTIVE","PAUSED"]}]',
                 'limit': 100
             }
-            resp = requests.get(url, params=params, timeout=30)
-            camp_map = {c['id']: c for c in resp.json().get('data', [])}
+            camp_map = {c['id']: c for c in meta_get_paginated(url, params, timeout=30)}
 
             results = []
             for ins in insights:
@@ -626,10 +636,11 @@ class MetaUploader:
         Insights como fonte primária → enriquece com dados estruturais.
         """
         try:
+            from modules.meta_client import meta_get_paginated
             all_adsets = []
             for camp_id in campaign_ids:
-                # 1. Insights (fonte primária — só quem gastou)
-                url_ins = f"https://graph.facebook.com/v22.0/{self.account_id}/insights"
+                # 1. Insights (fonte primária — só quem gastou) — throttle central
+                url_ins = f"{GRAPH_BASE}/{self.account_id}/insights"
                 params_ins = {
                     'access_token': self.access_token,
                     'level': 'adset',
@@ -638,26 +649,24 @@ class MetaUploader:
                     'limit': 200
                 }
                 if since and until:
-                    params_ins['time_range'] = f'{{"since":"{since}","until":"{until}"}}'
+                    params_ins['time_range'] = json.dumps({'since': since, 'until': until}, separators=(',', ':'))
                 else:
                     params_ins['date_preset'] = date_preset
 
-                resp_ins = requests.get(url_ins, params=params_ins, timeout=30)
-                insights_data = resp_ins.json().get('data', [])
+                insights_data = meta_get_paginated(url_ins, params_ins, timeout=30)
 
                 # 2. Dados estruturais (status, budget)
                 adset_ids_with_spend = [i.get('adset_id') for i in insights_data]
                 struct_map = {}
                 if adset_ids_with_spend:
-                    url = f"https://graph.facebook.com/v22.0/{camp_id}/adsets"
+                    url = f"{GRAPH_BASE}/{camp_id}/adsets"
                     params = {
                         'access_token': self.access_token,
                         'fields': 'id,name,status,effective_status,daily_budget,lifetime_budget,campaign_id',
                         'filtering': '[{"field":"effective_status","operator":"IN","value":["ACTIVE","PAUSED"]}]',
                         'limit': 100
                     }
-                    resp = requests.get(url, params=params, timeout=30)
-                    for a in resp.json().get('data', []):
+                    for a in meta_get_paginated(url, params, timeout=30):
                         struct_map[a['id']] = a
 
                 for ins in insights_data:
@@ -696,10 +705,11 @@ class MetaUploader:
         Insights como fonte primária → enriquece com dados estruturais.
         """
         try:
+            from modules.meta_client import meta_get_paginated
             all_ads = []
             for adset_id in adset_ids:
-                # 1. Insights (fonte primária)
-                url_ins = f"https://graph.facebook.com/v22.0/{self.account_id}/insights"
+                # 1. Insights (fonte primária) — throttle central
+                url_ins = f"{GRAPH_BASE}/{self.account_id}/insights"
                 params_ins = {
                     'access_token': self.access_token,
                     'level': 'ad',
@@ -708,26 +718,24 @@ class MetaUploader:
                     'limit': 200
                 }
                 if since and until:
-                    params_ins['time_range'] = f'{{"since":"{since}","until":"{until}"}}'
+                    params_ins['time_range'] = json.dumps({'since': since, 'until': until}, separators=(',', ':'))
                 else:
                     params_ins['date_preset'] = date_preset
 
-                resp_ins = requests.get(url_ins, params=params_ins, timeout=30)
-                insights_data = resp_ins.json().get('data', [])
+                insights_data = meta_get_paginated(url_ins, params_ins, timeout=30)
 
                 # 2. Dados estruturais (status)
                 ad_ids_with_spend = [i.get('ad_id') for i in insights_data]
                 struct_map = {}
                 if ad_ids_with_spend:
-                    url = f"https://graph.facebook.com/v22.0/{adset_id}/ads"
+                    url = f"{GRAPH_BASE}/{adset_id}/ads"
                     params = {
                         'access_token': self.access_token,
                         'fields': 'id,name,status,effective_status,adset_id',
                         'filtering': '[{"field":"effective_status","operator":"IN","value":["ACTIVE","PAUSED"]}]',
                         'limit': 100
                     }
-                    resp = requests.get(url, params=params, timeout=30)
-                    for a in resp.json().get('data', []):
+                    for a in meta_get_paginated(url, params, timeout=30):
                         struct_map[a['id']] = a
 
                 for ins in insights_data:
@@ -780,12 +788,13 @@ class MetaUploader:
 
         # ── Fonte 1: Ad Account promote_pages (TOPO — páginas da conta de anúncios) ──
         try:
+            from modules.meta_client import meta_get
             fields = 'id,name,instagram_business_account'
-            resp = requests.get(
-                f"https://graph.facebook.com/v22.0/{self.account_id}/promote_pages",
-                params={'fields': fields, 'access_token': self.access_token, 'limit': 200},
+            resp = meta_get(
+                f"{GRAPH_BASE}/{self.account_id}/promote_pages",
+                {'fields': fields, 'access_token': self.access_token, 'limit': 200},
                 timeout=30
-            ).json()
+            )
             for p in resp.get('data', []):
                 pid = p.get('id')
                 if pid and pid not in seen_ids:
@@ -827,30 +836,31 @@ class MetaUploader:
         try:
             token = page_access_token or self.access_token
 
+            from modules.meta_client import meta_get
+
             # Camada de Segurança: Tentar obter o Page Access Token se não foi fornecido
             if not page_access_token:
                 try:
-                    p_resp = requests.get(
-                        f"https://graph.facebook.com/v22.0/{page_id}",
-                        params={'fields': 'access_token', 'access_token': self.access_token},
+                    p_resp = meta_get(
+                        f"{GRAPH_BASE}/{page_id}",
+                        {'fields': 'access_token', 'access_token': self.access_token},
                         timeout=20
-                    ).json()
+                    )
                     if 'access_token' in p_resp:
                         token = p_resp['access_token']
                         print(f"🔑 [get_leadgen_forms] Usando Page Access Token para a página {page_id}")
                 except Exception as e:
                     print(f"⚠️ [get_leadgen_forms] Falha ao obter Page Access Token (usando User Token): {e}")
 
-            resp = requests.get(
-                f"https://graph.facebook.com/v22.0/{page_id}/leadgen_forms",
-                params={'fields': 'id,name,status', 'access_token': token, 'limit': 100},
-                timeout=30
-            ).json()
-
-            if 'error' in resp:
-                error_msg = resp['error'].get('message', '?')
-                print(f"⚠️ [get_leadgen_forms] API error: {error_msg}")
-                self._log(f"⚠️ Erro ao buscar formulários: {error_msg}")
+            try:
+                resp = meta_get(
+                    f"{GRAPH_BASE}/{page_id}/leadgen_forms",
+                    {'fields': 'id,name,status', 'access_token': token, 'limit': 100},
+                    timeout=30
+                )
+            except Exception as e:
+                print(f"⚠️ [get_leadgen_forms] API error: {e}")
+                self._log(f"⚠️ Erro ao buscar formulários: {e}")
                 return []
 
             forms = []
@@ -886,21 +896,19 @@ class MetaUploader:
             ('instagram_accounts', 'ad_account'),
             ('connected_instagram_accounts', 'connected')
         ]
+        from modules.meta_client import meta_get
         for edge, source in endpoints:
             try:
-                resp = requests.get(
-                    f"https://graph.facebook.com/v22.0/{self.account_id}/{edge}",
-                    params={'fields': 'id,username', 'access_token': self.access_token, 'limit': 100},
+                resp = meta_get(
+                    f"{GRAPH_BASE}/{self.account_id}/{edge}",
+                    {'fields': 'id,username', 'access_token': self.access_token, 'limit': 100},
                     timeout=30
-                ).json()
-                if 'error' in resp:
-                    print(f"⚠️ [get_ig/{edge}] API error: {resp['error'].get('message', '?')}")
-                else:
-                    count = 0
-                    for ig in resp.get('data', []):
-                        add_ig(ig.get('id'), ig.get('username', f"IG {ig.get('id')}"), source)
-                        count += 1
-                    print(f"✅ [get_ig/{edge}] {count} IGs encontrados")
+                )
+                count = 0
+                for ig in resp.get('data', []):
+                    add_ig(ig.get('id'), ig.get('username', f"IG {ig.get('id')}"), source)
+                    count += 1
+                print(f"✅ [get_ig/{edge}] {count} IGs encontrados")
             except Exception as e:
                 print(f"❌ [get_ig/{edge}] Exception: {e}")
 
@@ -912,11 +920,11 @@ class MetaUploader:
                     # Tentar buscar o username real do IG
                     ig_username = None
                     try:
-                        resp = requests.get(
-                            f"https://graph.facebook.com/v22.0/{ig_id}",
-                            params={'fields': 'username', 'access_token': self.access_token},
+                        resp = meta_get(
+                            f"{GRAPH_BASE}/{ig_id}",
+                            {'fields': 'username', 'access_token': self.access_token},
                             timeout=20
-                        ).json()
+                        )
                         ig_username = resp.get('username')
                     except Exception:
                         pass
@@ -1235,7 +1243,7 @@ class MetaUploader:
         url = self._normalize_drive_link(url)
         self._log(f"🔗 Enviando URL de imagem para a Meta: {url[:60]}...")
         
-        api_url = f"https://graph.facebook.com/v22.0/{self.account_id}/adimages"
+        api_url = f"{GRAPH_BASE}/{self.account_id}/adimages"
         
         def _do():
             resp = requests.post(api_url, data={'url': url, 'access_token': self.access_token}, timeout=60)
@@ -1278,7 +1286,7 @@ class MetaUploader:
         url = self._normalize_drive_link(url)
         self._log(f"🔗 Enviando URL de vídeo para a Meta: {url[:60]}...")
         
-        api_url = f"https://graph.facebook.com/v22.0/{self.account_id}/advideos"
+        api_url = f"{GRAPH_BASE}/{self.account_id}/advideos"
         
         def _do():
             resp = requests.post(api_url, data={'file_url': url, 'access_token': self.access_token}, timeout=60)
@@ -1376,15 +1384,16 @@ class MetaUploader:
             self._log(f"🎬 Buscando URL do vídeo {video_id} para extrair thumbnail...")
             
             # Consultar a Meta API para obter a URL de download do vídeo
-            url = f"https://graph.facebook.com/v22.0/{video_id}"
+            from modules.meta_client import meta_get
+            url = f"{GRAPH_BASE}/{video_id}"
             params = {
                 'fields': 'source',
                 'access_token': self.access_token
             }
-            resp = requests.get(url, params=params, timeout=30).json()
+            resp = meta_get(url, params, timeout=30)
 
-            if 'error' in resp or 'source' not in resp:
-                self._log(f"⚠️ Não foi possível obter URL do vídeo: {resp.get('error', {}).get('message', 'sem source')}")
+            if 'source' not in resp:
+                self._log(f"⚠️ Não foi possível obter URL do vídeo: sem source")
                 return None
             
             video_url = resp['source']
@@ -1429,7 +1438,7 @@ class MetaUploader:
 
         # --- Estratégia 2: REST API direta (fallback) ---
         def _do_rest():
-            api_url = f"https://graph.facebook.com/v22.0/{self.account_id}/adimages"
+            api_url = f"{GRAPH_BASE}/{self.account_id}/adimages"
             with open(file_path, 'rb') as img_file:
                 resp = requests.post(
                     api_url,
@@ -1462,7 +1471,7 @@ class MetaUploader:
         def _do():
             # 1. START PHASE
             self._log(f"   → Fase 1/3: START")
-            start_url = f"https://graph.facebook.com/v22.0/{self.account_id}/advideos"
+            start_url = f"{GRAPH_BASE}/{self.account_id}/advideos"
             start_data = {
                 'upload_phase': 'start',
                 'file_size': file_size,
@@ -1623,22 +1632,20 @@ class MetaUploader:
         Evita erro de 'arquivo inválido' ao criar criativos imediatamente após upload.
         """
         self._log(f"⏳ Consultando processamento do vídeo {video_id}...")
+        from modules.meta_client import meta_get
         start_time = time.time()
-        
+        # Intervalo progressivo (10s → 15s → 22s → 30s cap): reduz o nº de
+        # chamadas de polling — em dev tier cada GET custa 1 ponto de 60/5min
+        cur_interval = float(interval)
+
         while time.time() - start_time < timeout:
             try:
-                # Usando requests direta para evitar overhead do SDK em polling
-                url = f"https://graph.facebook.com/v22.0/{video_id}"
+                url = f"{GRAPH_BASE}/{video_id}"
                 params = {
                     'fields': 'status',
                     'access_token': self.access_token
                 }
-                resp = requests.get(url, params=params, timeout=30).json()
-
-                if 'error' in resp:
-                    self._log(f"⚠️ Erro ao consultar status: {resp['error'].get('message')}")
-                    time.sleep(interval)
-                    continue
+                resp = meta_get(url, params, timeout=30)
 
                 status_data = resp.get('status', {})
                 video_status = status_data.get('video_status')
@@ -1650,13 +1657,14 @@ class MetaUploader:
                     err_msg = status_data.get('error_description', 'Erro de processamento na Meta')
                     self._log(f"❌ Erro no processamento do vídeo: {err_msg}")
                     return False
-                
-                self._log(f"   → Status: {video_status}. Aguardando {interval}s...")
-                time.sleep(interval)
-                
+
+                self._log(f"   → Status: {video_status}. Aguardando {cur_interval:.0f}s...")
+                time.sleep(cur_interval)
+
             except Exception as e:
                 self._log(f"⚠️ Falha na chamada de polling: {e}")
-                time.sleep(interval)
+                time.sleep(cur_interval)
+            cur_interval = min(cur_interval * 1.5, 30.0)
 
         self._log(f"⚠️ Timeout de {timeout}s atingido. Prosseguindo com cautela...")
         return False
@@ -1667,23 +1675,20 @@ class MetaUploader:
         Embora imagens sejam processadas rápido, garante proatividade em URLs lentas.
         """
         self._log(f"⏳ Verificando disponibilidade da imagem {image_hash[:12]}...")
+        from modules.meta_client import meta_get
         start_time = time.time()
-        
+        cur_interval = float(interval)  # progressivo: 5s → 7.5s → 11s → 15s cap
+
         while time.time() - start_time < timeout:
             try:
                 # Consulta act_id/adimages com filtro de hash
-                url = f"https://graph.facebook.com/v22.0/{self.account_id}/adimages"
+                url = f"{GRAPH_BASE}/{self.account_id}/adimages"
                 params = {
                     'hashes': json.dumps([image_hash]),
                     'fields': 'hash,status',
                     'access_token': self.access_token
                 }
-                resp = requests.get(url, params=params, timeout=30).json()
-
-                if 'error' in resp:
-                    self._log(f"⚠️ Erro ao consultar imagem: {resp['error'].get('message')}")
-                    time.sleep(interval)
-                    continue
+                resp = meta_get(url, params, timeout=30)
 
                 images = resp.get('data', [])
                 if images:
@@ -1691,15 +1696,16 @@ class MetaUploader:
                     if img_status == 'ACTIVE':
                         self._log(f"✅ Imagem {image_hash[:12]} está ativa e pronta.")
                         return True
-                    self._log(f"   → Status: {img_status}. Aguardando {interval}s...")
+                    self._log(f"   → Status: {img_status}. Aguardando {cur_interval:.0f}s...")
                 else:
-                    self._log(f"   → Imagem ainda não indexada. Aguardando {interval}s...")
+                    self._log(f"   → Imagem ainda não indexada. Aguardando {cur_interval:.0f}s...")
 
-                time.sleep(interval)
-                
+                time.sleep(cur_interval)
+
             except Exception as e:
                 self._log(f"⚠️ Falha na chamada de polling de imagem: {e}")
-                time.sleep(interval)
+                time.sleep(cur_interval)
+            cur_interval = min(cur_interval * 1.5, 15.0)
 
         self._log(f"⚠️ Timeout atingido para imagem. Prosseguindo...")
         return False
@@ -1730,7 +1736,7 @@ class MetaUploader:
         if not stories_media:
             stories_media = feed_media
 
-        api_url = f"https://graph.facebook.com/v22.0/{self.account_id}/adcreatives"
+        api_url = f"{GRAPH_BASE}/{self.account_id}/adcreatives"
 
         # Normalizar textos
         body_text = primary_texts[0] if primary_texts else "Check this out!"
@@ -2150,7 +2156,7 @@ class MetaUploader:
             payload['url_tags'] = url_tags
 
         # POST → /adcreatives
-        api_url = f"https://graph.facebook.com/v22.0/{self.account_id}/adcreatives"
+        api_url = f"{GRAPH_BASE}/{self.account_id}/adcreatives"
 
         def _do():
             # Aguardar mídias ficarem prontas (todas)
@@ -2197,7 +2203,7 @@ class MetaUploader:
 
         def _do():
             import json
-            url = f"https://graph.facebook.com/v22.0/{self.account_id}/ads"
+            url = f"{GRAPH_BASE}/{self.account_id}/ads"
 
             # creative_id DEVE ser número (int), não string
             try:
@@ -2326,7 +2332,7 @@ class MetaUploader:
                     if new_name:
                         update_data['name'] = new_name
 
-                    url = f"https://graph.facebook.com/v22.0/{copied_id}"
+                    url = f"{GRAPH_BASE}/{copied_id}"
                     resp = requests.post(url, data=update_data, timeout=30).json()
                     if 'error' in resp:
                         self._log(f"⚠️ Falha ao atualizar Ad Set: {resp['error'].get('message')}")
@@ -2401,7 +2407,7 @@ class MetaUploader:
             'start_time', 'end_time', 'attribution_spec',
             'destination_type',
         ]
-        url = f"https://graph.facebook.com/v22.0/{source_adset_id}"
+        url = f"{GRAPH_BASE}/{source_adset_id}"
         resp = requests.get(url, params={
             'fields': ','.join(fields_to_read),
             'access_token': self.access_token
@@ -2501,7 +2507,7 @@ class MetaUploader:
         self._log(f"📤 [create_adset] params: {_safe_log}")
 
         # Criar novo ad set — com fallback sem start_time se a Meta rejeitar
-        create_url = f"https://graph.facebook.com/v22.0/{self.account.get_id()}/adsets"
+        create_url = f"{GRAPH_BASE}/{self.account.get_id()}/adsets"
         create_resp = requests.post(create_url, data=create_params, timeout=60).json()
 
         def _log_meta_err(prefix, err):
@@ -2531,7 +2537,7 @@ class MetaUploader:
         # start_time via PATCH separado (caso não tenha sido incluído no create)
         if new_id and _start_ts and 'start_time' not in create_params:
             try:
-                url2 = f"https://graph.facebook.com/v22.0/{new_id}"
+                url2 = f"{GRAPH_BASE}/{new_id}"
                 r2 = requests.post(url2, data={
                     'start_time': _start_ts,
                     'access_token': self.access_token

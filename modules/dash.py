@@ -29,6 +29,7 @@ from flask import (
     Response, stream_with_context, session, abort, redirect, url_for,
 )
 
+from modules.meta_client import GRAPH_BASE
 from modules.dashboard_clients import (
     get_client_by_token, list_clients,
     get_excluded_patterns, save_excluded_patterns as db_save_excluded,
@@ -346,7 +347,7 @@ def fetch_meta_ads_daily(account_id, access_token, conversion_event,
 def _fetch_meta_ads_daily_live(account_id, access_token, conversion_event,
                                date_preset, since, until):
     """Fetch real (sem cache) — chamado apenas em cache miss."""
-    base_url = f'https://graph.facebook.com/v22.0/{account_id}/insights'
+    base_url = f'{GRAPH_BASE}/{account_id}/insights'
     params = {
         'access_token':   access_token,
         'level':          'ad',
@@ -360,31 +361,29 @@ def _fetch_meta_ads_daily_live(account_id, access_token, conversion_event,
     else:
         params['date_preset'] = 'last_30d'
 
+    # meta_get_insights_rows: paginação + fragmentação automática de períodos
+    # longos (> 90 dias) em blocos — recomendação oficial da Meta
+    from modules.meta_client import meta_get_insights_rows
+    rows_raw = meta_get_insights_rows(base_url, params)
+
     by_day = {}
-    url = base_url
-    while url:
-        body = _meta_api_get(url, params if url == base_url else None)
+    for item in rows_raw:
+        date = item.get('date_start', '')
+        if not date:
+            continue
+        actions       = item.get('actions') or []
+        action_values = item.get('action_values') or []
 
-        for item in body.get('data', []):
-            date = item.get('date_start', '')
-            if not date:
-                continue
-            actions       = item.get('actions') or []
-            action_values = item.get('action_values') or []
-
-            entry = by_day.setdefault(date, {
-                'date': date, 'spend': 0.0, 'impressions': 0, 'clicks': 0,
-                'lpv': 0, 'conversions': 0, 'revenue_real': 0.0,
-            })
-            entry['spend']        += float(item.get('spend', 0) or 0)
-            entry['impressions']  += int(item.get('impressions', 0) or 0)
-            entry['clicks']       += int(item.get('inline_link_clicks', 0) or 0)
-            entry['lpv']          += _sum_action_value(actions, 'landing_page_view')
-            entry['conversions']  += _sum_action_value(actions, conversion_event)
-            entry['revenue_real'] += _sum_action_money(action_values, conversion_event)
-
-        url = body.get('paging', {}).get('next')
-        params = None
+        entry = by_day.setdefault(date, {
+            'date': date, 'spend': 0.0, 'impressions': 0, 'clicks': 0,
+            'lpv': 0, 'conversions': 0, 'revenue_real': 0.0,
+        })
+        entry['spend']        += float(item.get('spend', 0) or 0)
+        entry['impressions']  += int(item.get('impressions', 0) or 0)
+        entry['clicks']       += int(item.get('inline_link_clicks', 0) or 0)
+        entry['lpv']          += _sum_action_value(actions, 'landing_page_view')
+        entry['conversions']  += _sum_action_value(actions, conversion_event)
+        entry['revenue_real'] += _sum_action_money(action_values, conversion_event)
 
     rows = list(by_day.values())
     for r in rows:
@@ -423,7 +422,7 @@ def fetch_meta_ads_top(account_id, access_token, conversion_event,
 def _fetch_meta_ads_top_live(account_id, access_token, conversion_event,
                              since, until, limit):
     """Fetch real (sem cache) — chamado apenas em cache miss."""
-    base_url = f'https://graph.facebook.com/v22.0/{account_id}/insights'
+    base_url = f'{GRAPH_BASE}/{account_id}/insights'
     params = {
         'access_token': access_token,
         'level':        'ad',
@@ -438,32 +437,29 @@ def _fetch_meta_ads_top_live(account_id, access_token, conversion_event,
     else:
         params['date_preset'] = 'last_30d'
 
+    # Paginação + fragmentação de períodos longos (a agregação por ad_id abaixo
+    # soma corretamente linhas vindas de blocos temporais diferentes)
+    from modules.meta_client import meta_get_insights_rows
     by_ad = {}
-    url = base_url
-    while url:
-        body = _meta_api_get(url, params if url == base_url else None)
-        for item in body.get('data', []):
-            ad_id = item.get('ad_id') or ''
-            if not ad_id:
-                continue
-            actions       = item.get('actions') or []
-            action_values = item.get('action_values') or []
+    for item in meta_get_insights_rows(base_url, params):
+        ad_id = item.get('ad_id') or ''
+        if not ad_id:
+            continue
+        actions       = item.get('actions') or []
+        action_values = item.get('action_values') or []
 
-            entry = by_ad.setdefault(ad_id, {
-                'ad_id': ad_id,
-                'ad_name':       item.get('ad_name', ''),
-                'campaign_name': item.get('campaign_name', ''),
-                'spend': 0.0, 'impressions': 0, 'clicks': 0,
-                'conversions': 0, 'revenue_real': 0.0,
-            })
-            entry['spend']        += float(item.get('spend', 0) or 0)
-            entry['impressions']  += int(item.get('impressions', 0) or 0)
-            entry['clicks']       += int(item.get('inline_link_clicks', 0) or 0)
-            entry['conversions']  += _sum_action_value(actions, conversion_event)
-            entry['revenue_real'] += _sum_action_money(action_values, conversion_event)
-
-        url = body.get('paging', {}).get('next')
-        params = None
+        entry = by_ad.setdefault(ad_id, {
+            'ad_id': ad_id,
+            'ad_name':       item.get('ad_name', ''),
+            'campaign_name': item.get('campaign_name', ''),
+            'spend': 0.0, 'impressions': 0, 'clicks': 0,
+            'conversions': 0, 'revenue_real': 0.0,
+        })
+        entry['spend']        += float(item.get('spend', 0) or 0)
+        entry['impressions']  += int(item.get('impressions', 0) or 0)
+        entry['clicks']       += int(item.get('inline_link_clicks', 0) or 0)
+        entry['conversions']  += _sum_action_value(actions, conversion_event)
+        entry['revenue_real'] += _sum_action_money(action_values, conversion_event)
 
     rows = list(by_ad.values())
     # Filtra ads sem nenhuma venda (não interessam para "top criativos")
@@ -1033,7 +1029,7 @@ def api_dash_debug_actions(slug):
     since       = request.args.get('since')
     until       = request.args.get('until')
 
-    base_url = f'https://graph.facebook.com/v22.0/{meta_account_id}/insights'
+    base_url = f'{GRAPH_BASE}/{meta_account_id}/insights'
     params = {
         'access_token':   meta_token,
         'level':          'ad',

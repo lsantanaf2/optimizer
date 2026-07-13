@@ -14,11 +14,12 @@ em paralelo com o request de vídeo.
 import json
 import concurrent.futures
 
+from modules.meta_client import GRAPH_BASE
 from flask import Blueprint, jsonify, render_template, request, session, redirect, url_for
 
 anuncios_bp = Blueprint('anuncios', __name__)
 
-BASE_URL = 'https://graph.facebook.com/v22.0'
+BASE_URL = f'{GRAPH_BASE}'
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────

@@ -14,6 +14,7 @@ import json
 import time
 import threading
 import requests
+from modules.meta_client import GRAPH_BASE
 import concurrent.futures
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -280,7 +281,7 @@ def fetch_fb_insights(account_id, access_token, date_preset='last_30d', since=No
 
 def _fetch_fb_insights_live(account_id, access_token, since, until):
     """Fetch real (sem cache) — chamado apenas em cache miss."""
-    base_url = f"https://graph.facebook.com/v22.0/{account_id}/insights"
+    base_url = f"{GRAPH_BASE}/{account_id}/insights"
 
     params = {
         'access_token': access_token,
@@ -295,13 +296,11 @@ def _fetch_fb_insights_live(account_id, access_token, since, until):
     else:
         params['date_preset'] = 'last_30d'  # fallback seguro
 
+    # Paginação + fragmentação de períodos > 90 dias (linhas são diárias via
+    # time_increment=1, então concatenar blocos temporais é seguro)
+    from modules.meta_client import meta_get_insights_rows
     ads = []
-    url = base_url
-    while url:
-        from modules.meta_client import meta_get
-        body = meta_get(url, params if url == base_url else None)
-
-        for item in body.get('data', []):
+    for item in meta_get_insights_rows(base_url, params):
             actions = item.get('actions', [])
 
             def _act(atype, _a=actions):
@@ -334,12 +333,6 @@ def _fetch_fb_insights_live(account_id, access_token, since, until):
                 'instagram_follows':  _act_ig_follows(),
                 'date_start':         item.get('date_start', ''),
             })
-
-        # Paginação cursor
-        paging = body.get('paging', {})
-        next_url = paging.get('next')
-        url = next_url if next_url else None
-        params = None  # next_url já tem params embutidos
 
     return ads
 
@@ -437,7 +430,7 @@ def fetch_ads_status(account_id, access_token):
     from modules.meta_cache import get_or_fetch, TTL_LIVE
 
     def _fetch():
-        base_url = f"https://graph.facebook.com/v22.0/{account_id}/ads"
+        base_url = f"{GRAPH_BASE}/{account_id}/ads"
         params = {'access_token': access_token, 'fields': 'id,status', 'limit': 1000}
         status_map = {}
         try:
@@ -456,7 +449,7 @@ def fetch_campaigns_status(account_id, access_token):
     from modules.meta_cache import get_or_fetch, TTL_LIVE
 
     def _fetch():
-        base_url = f"https://graph.facebook.com/v22.0/{account_id}/campaigns"
+        base_url = f"{GRAPH_BASE}/{account_id}/campaigns"
         params = {'access_token': access_token, 'fields': 'id,effective_status', 'limit': 500}
         status_map = {}
         try:
@@ -475,7 +468,7 @@ def fetch_adsets_status(account_id, access_token):
     from modules.meta_cache import get_or_fetch, TTL_LIVE
 
     def _fetch():
-        base_url = f"https://graph.facebook.com/v22.0/{account_id}/adsets"
+        base_url = f"{GRAPH_BASE}/{account_id}/adsets"
         params = {'access_token': access_token, 'fields': 'id,effective_status', 'limit': 500}
         status_map = {}
         try:
@@ -1623,7 +1616,7 @@ def api_action_types():
             until_d = _d.today()
             since_d = until_d - timedelta(days=29)
 
-        base_url = f"https://graph.facebook.com/v22.0/{AD_ACCOUNT_ID}/insights"
+        base_url = f"{GRAPH_BASE}/{AD_ACCOUNT_ID}/insights"
         params = {
             'access_token': token,
             'level': 'ad',

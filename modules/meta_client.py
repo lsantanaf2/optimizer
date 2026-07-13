@@ -25,8 +25,15 @@ Uso:
 import json
 import time
 import threading
+from datetime import datetime, timedelta
 
 import requests
+
+# ── Versão da Graph API (ponto ÚNICO de mudança para upgrades) ───────────────
+# Atual: v22.0 (jan/2025, suportada). Última disponível: v25.0 (fev/2026).
+# Para fazer upgrade: mudar APENAS esta linha e testar.
+GRAPH_API_VERSION = 'v22.0'
+GRAPH_BASE = f'https://graph.facebook.com/{GRAPH_API_VERSION}'
 
 # ── Configuração ──────────────────────────────────────────────────────────────
 
@@ -75,6 +82,16 @@ def _max_usage_pct(headers):
             data = json.loads(app_usage) or {}
             for key in ('call_count', 'total_cputime', 'total_time'):
                 max_pct = max(max_pct, int(data.get(key, 0) or 0))
+    except (ValueError, TypeError, AttributeError):
+        pass
+    try:
+        # Header específico do Insights API (recomendação oficial: monitorar
+        # app_id_util_pct / acc_id_util_pct para frear ANTES do bloqueio)
+        ins = headers.get('x-fb-ads-insights-throttle')
+        if ins:
+            data = json.loads(ins) or {}
+            for key in ('app_id_util_pct', 'acc_id_util_pct'):
+                max_pct = max(max_pct, int(float(data.get(key, 0) or 0)))
     except (ValueError, TypeError, AttributeError):
         pass
     return max_pct
@@ -174,6 +191,62 @@ def meta_get(url, params=None, *, timeout=30):
             time.sleep(wait)
             continue
         raise Exception(msg)
+
+
+def _split_time_range(since_str, until_str, max_days=90):
+    """Divide um período em blocos de até max_days dias.
+
+    Retorna lista de tuplas (since, until) como strings YYYY-MM-DD.
+    Se as datas forem inválidas, retorna o período original (sem split).
+    """
+    try:
+        since = datetime.strptime(str(since_str)[:10], '%Y-%m-%d').date()
+        until = datetime.strptime(str(until_str)[:10], '%Y-%m-%d').date()
+    except (ValueError, TypeError):
+        return [(since_str, until_str)]
+    if since > until:
+        return [(since_str, until_str)]
+
+    chunks = []
+    cursor = since
+    while cursor <= until:
+        chunk_end = min(cursor + timedelta(days=max_days - 1), until)
+        chunks.append((cursor.isoformat(), chunk_end.isoformat()))
+        cursor = chunk_end + timedelta(days=1)
+    return chunks
+
+
+def meta_get_insights_rows(url, params, *, timeout=30, chunk_days=90):
+    """Busca insights com paginação E fragmentação temporal automática.
+
+    Recomendação oficial da Meta ("break down the query into smaller queries
+    by using filters like date range"): períodos longos numa única query
+    síncrona geram carga alta — foi a causa raiz do bloqueio 7.e.i.2 da conta
+    anterior. Se params['time_range'] cobre mais que chunk_days dias, divide
+    em blocos sequenciais (o throttle global espaça cada um) e concatena as
+    linhas. Seguro para callers que AGREGAM (somam) as linhas retornadas.
+    """
+    time_range_raw = (params or {}).get('time_range')
+    if not time_range_raw:
+        return meta_get_paginated(url, params, timeout=timeout)
+
+    try:
+        tr = json.loads(time_range_raw) if isinstance(time_range_raw, str) else dict(time_range_raw)
+        chunks = _split_time_range(tr.get('since'), tr.get('until'), max_days=chunk_days)
+    except (ValueError, TypeError):
+        return meta_get_paginated(url, params, timeout=timeout)
+
+    if len(chunks) <= 1:
+        return meta_get_paginated(url, params, timeout=timeout)
+
+    print(f"📆 meta_get_insights_rows: período longo dividido em {len(chunks)} blocos de até {chunk_days} dias")
+    rows = []
+    for since, until in chunks:
+        chunk_params = dict(params)
+        chunk_params['time_range'] = json.dumps({'since': since, 'until': until},
+                                                separators=(',', ':'))
+        rows.extend(meta_get_paginated(url, chunk_params, timeout=timeout))
+    return rows
 
 
 def meta_get_paginated(url, params=None, *, timeout=30, max_pages=None):

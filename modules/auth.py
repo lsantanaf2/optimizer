@@ -12,6 +12,7 @@ from functools import wraps
 from flask import Blueprint, request, redirect, session, url_for, render_template
 from urllib.parse import quote
 
+from modules.meta_client import GRAPH_BASE, GRAPH_API_VERSION
 from modules.database import fetch_one, execute_returning, execute
 from modules.token_crypto import encrypt_token, decrypt_token, is_encrypted
 
@@ -186,7 +187,7 @@ def connect_meta_page():
     scopes = 'public_profile,email,ads_read,ads_management,pages_show_list,instagram_basic,read_insights,pages_manage_ads,leads_retrieval'
     encoded_uri = quote(REDIRECT_URI)
     auth_url = (
-        f"https://www.facebook.com/v22.0/dialog/oauth?"
+        f"https://www.facebook.com/{GRAPH_API_VERSION}/dialog/oauth?"
         f"client_id={APP_ID}&redirect_uri={encoded_uri}&scope={scopes}"
     )
     return render_template('auth/connect_meta.html', auth_url=auth_url)
@@ -207,7 +208,7 @@ def meta_callback():
 
     encoded_uri = quote(REDIRECT_URI)
     token_url = (
-        f"https://graph.facebook.com/v22.0/oauth/access_token?"
+        f"{GRAPH_BASE}/oauth/access_token?"
         f"client_id={APP_ID}&redirect_uri={encoded_uri}&"
         f"client_secret={APP_SECRET}&code={code}"
     )
@@ -225,7 +226,7 @@ def meta_callback():
     expires_at = None
     try:
         ll_url = (
-            f"https://graph.facebook.com/v22.0/oauth/access_token?"
+            f"{GRAPH_BASE}/oauth/access_token?"
             f"grant_type=fb_exchange_token&client_id={APP_ID}&"
             f"client_secret={APP_SECRET}&fb_exchange_token={access_token}"
         )
@@ -242,7 +243,7 @@ def meta_callback():
         logger.warning(f"Erro ao trocar token: {e}. Usando short-lived.")
 
     # Buscar meta_user_id
-    me = req.get(f"https://graph.facebook.com/v22.0/me?access_token={access_token}", timeout=15).json()
+    me = req.get(f"{GRAPH_BASE}/me?access_token={access_token}", timeout=15).json()
     meta_user_id = me.get('id', 'unknown')
 
     # Buscar escopos efetivamente CONCEDIDOS pelo usuário (prova de consentimento
@@ -250,7 +251,7 @@ def meta_callback():
     token_scope = None
     try:
         perms = req.get(
-            f"https://graph.facebook.com/v22.0/me/permissions?access_token={access_token}",
+            f"{GRAPH_BASE}/me/permissions?access_token={access_token}",
             timeout=15
         ).json()
         granted = [p['permission'] for p in perms.get('data', []) if p.get('status') == 'granted']
@@ -334,7 +335,7 @@ def account_profile():
     scopes = 'public_profile,email,ads_read,ads_management,pages_show_list,instagram_basic,read_insights,pages_manage_ads,leads_retrieval'
     encoded_uri = quote(REDIRECT_URI)
     reauth_url = (
-        f"https://www.facebook.com/v22.0/dialog/oauth?"
+        f"https://www.facebook.com/{GRAPH_API_VERSION}/dialog/oauth?"
         f"client_id={APP_ID}&redirect_uri={encoded_uri}&scope={scopes}"
         f"&auth_type=reauthorize"
     )
