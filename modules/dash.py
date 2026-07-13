@@ -538,6 +538,58 @@ def dash_view(slug):
 # SSE — dados do dashboard
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _resilient_sse_response(slug, endpoint, pkey, generate_fn=None):
+    """Envolve um generator SSE com snapshot 'última leitura boa'.
+
+    - Carga bem-sucedida (termina em stage 'done') → eventos salvos no banco
+    - Falha ao vivo (stage 'error') → substitui pelo replay do último snapshot
+    - generate_fn=None (ex: sem token Meta) → só replay; se não houver
+      snapshot, emite o erro padrão
+
+    O dashboard é um link público de cliente: NUNCA deve mostrar tela de erro
+    se um dado antigo puder ser exibido com aviso de defasagem.
+    """
+    from modules.dash_snapshot import save_snapshot, load_snapshot, replay
+
+    def _error_chunk(msg):
+        return f"data: {json.dumps({'stage': 'error', 'message': msg})}\n\n"
+
+    def wrapped():
+        if generate_fn is None:
+            events, at = load_snapshot(slug, endpoint, pkey)
+            if events:
+                yield from replay(events, at)
+            else:
+                yield _error_chunk('Sistema não autenticado. Contate o administrador.')
+            return
+
+        collected = []
+        for chunk in generate_fn():
+            is_data = isinstance(chunk, str) and chunk.startswith('data:')
+            if is_data and '"stage": "error"' in chunk:
+                # Falha ao vivo → tenta servir o último snapshot bom
+                events, at = load_snapshot(slug, endpoint, pkey)
+                if events:
+                    logger.warning(f'[dash:{slug}] fonte falhou — servindo snapshot de {at}')
+                    yield from replay(events, at)
+                else:
+                    yield chunk
+                return
+            if is_data:
+                collected.append(chunk)
+            yield chunk
+
+        # Stream completou sem erro → persiste se terminou em 'done'
+        if collected and '"stage": "done"' in collected[-1]:
+            save_snapshot(slug, endpoint, pkey, collected)
+
+    return Response(
+        stream_with_context(wrapped()),
+        mimetype='text/event-stream',
+        headers={'X-Accel-Buffering': 'no', 'Cache-Control': 'no-cache'},
+    )
+
+
 @dash_bp.route('/api/dash/<slug>/data')
 def api_dash_data(slug):
     """
@@ -556,16 +608,20 @@ def api_dash_data(slug):
     google_customer_id   = client.get('google_ads_customer_id') or ''
     google_user_id       = client.get('google_ads_user_id')
 
-    # Token Meta: usa token persistido do sistema (token.json)
+    # Token Meta: sessão → token.json → banco (fallback durável pós-deploy)
     from app import obter_token
     meta_token = obter_token()
-    if not meta_token:
-        return jsonify({'success': False,
-                        'error': 'Sistema não autenticado. Contate o administrador.'}), 503
 
     date_preset = request.args.get('date_preset', 'last_7_days')
     since       = request.args.get('since')
     until       = request.args.get('until')
+
+    from modules.dash_snapshot import period_key
+    pkey = period_key(date_preset, since, until)
+
+    if not meta_token:
+        # Sem token: serve o último snapshot bom (com aviso) em vez de 503
+        return _resilient_sse_response(slug, 'data', pkey, None)
 
     # Importa helpers do cruzamento (reutiliza lógica de processamento)
     from modules.cruzamento import (
@@ -815,11 +871,7 @@ def api_dash_data(slug):
             traceback.print_exc()
             yield _sse('error', {'message': str(e)})
 
-    return Response(
-        stream_with_context(generate()),
-        mimetype='text/event-stream',
-        headers={'X-Accel-Buffering': 'no', 'Cache-Control': 'no-cache'},
-    )
+    return _resilient_sse_response(slug, 'data', pkey, generate)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -840,13 +892,17 @@ def api_dash_meta_only(slug):
 
     from app import obter_token
     meta_token = obter_token()
-    if not meta_token:
-        return jsonify({'success': False,
-                        'error': 'Sistema não autenticado. Contate o administrador.'}), 503
 
     date_preset = request.args.get('date_preset', 'last_7_days')
     since       = request.args.get('since')
     until       = request.args.get('until')
+
+    from modules.dash_snapshot import period_key
+    pkey = period_key(date_preset, since, until)
+
+    if not meta_token:
+        # Sem token: serve o último snapshot bom (com aviso) em vez de 503
+        return _resilient_sse_response(slug, 'meta-only', pkey, None)
 
     def _sse(stage, payload):
         return f"data: {json.dumps({'stage': stage, **payload})}\n\n"
@@ -993,11 +1049,7 @@ def api_dash_meta_only(slug):
             traceback.print_exc()
             yield _sse('error', {'message': str(e)})
 
-    return Response(
-        stream_with_context(generate()),
-        mimetype='text/event-stream',
-        headers={'X-Accel-Buffering': 'no', 'Cache-Control': 'no-cache'},
-    )
+    return _resilient_sse_response(slug, 'meta-only', pkey, generate)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

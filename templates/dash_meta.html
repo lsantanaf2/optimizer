@@ -964,6 +964,16 @@ async function load() {
                     renderChart(d.rows);
                     show('table-card');
                     show('chart-card');
+                } else if (d.stage === 'stale') {
+                    // Dados servidos do snapshot (fonte ao vivo indisponível)
+                    let banner = document.getElementById('stale-banner');
+                    if (!banner) {
+                        banner = document.createElement('div');
+                        banner.id = 'stale-banner';
+                        banner.style.cssText = 'position:sticky; top:0; z-index:200; background:#78350f; color:#fde68a; padding:8px 16px; font-size:13px; text-align:center; border-radius:8px; margin-bottom:12px;';
+                        document.body.insertBefore(banner, document.body.firstChild);
+                    }
+                    banner.textContent = '⚠️ ' + (d.message || 'Exibindo últimos dados disponíveis.');
                 } else if (d.stage === 'done') {
                     setStatus('✓ Atualizado em ' + new Date().toLocaleTimeString('pt-BR'), 'done');
                 } else if (d.stage === 'error') {

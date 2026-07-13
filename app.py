@@ -77,7 +77,7 @@ from modules.account_settings import (
 import atexit
 atexit.register(close_db)
 
-VERSION = "v2.23.0"
+VERSION = "v2.24.0"
 
 # ======================== STAGING DE UPLOAD (v2.11.0) ========================
 # Desacoplamento: o Service Worker sobe cada arquivo UMA vez para a VPS (staging),
@@ -146,6 +146,15 @@ def ensure_db():
                 )""")
             execute("CREATE INDEX IF NOT EXISTS idx_api_call_logs_called ON api_call_logs (called_at DESC)")
             execute("ALTER TABLE app_users ADD COLUMN IF NOT EXISTS meta_consent_at TIMESTAMPTZ")
+            execute("""
+                CREATE TABLE IF NOT EXISTS dash_snapshots (
+                    slug TEXT NOT NULL,
+                    endpoint TEXT NOT NULL,
+                    period_key TEXT NOT NULL,
+                    events JSONB NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    PRIMARY KEY (slug, endpoint, period_key)
+                )""")
         except Exception as e:
             print(f"⚠️ Migração idempotente falhou (não-fatal): {e}")
         # Sweep de retenção
@@ -215,13 +224,45 @@ def carregar_token():
             return data.get('access_token')
     return None
 
+_db_token_cache = {'token': None, 'at': 0.0}
+
+def _token_from_db():
+    """Fallback: token Meta válido mais recente do banco (decifrado).
+
+    O token.json morre a cada rebuild do container (deploy) — antes disso,
+    os dashboards públicos ficavam 503 até alguém reconectar o OAuth. O banco
+    é a fonte durável: pega o token não-expirado atualizado mais recentemente.
+    Cache de 60s em memória para não bater no banco a cada request de dash.
+    """
+    now = time.time()
+    if _db_token_cache['token'] and now - _db_token_cache['at'] < 60:
+        return _db_token_cache['token']
+    try:
+        from modules.database import fetch_one
+        from modules.token_crypto import decrypt_token
+        row = fetch_one(
+            """SELECT access_token FROM user_meta_tokens
+               WHERE expires_at IS NULL OR expires_at > NOW()
+               ORDER BY updated_at DESC LIMIT 1"""
+        )
+        if row:
+            token = decrypt_token(row['access_token'])
+            _db_token_cache['token'] = token
+            _db_token_cache['at'] = now
+            return token
+    except Exception as e:
+        print(f"⚠️ [obter_token] fallback do banco falhou: {e}")
+    return None
+
 def obter_token():
-    """Retorna o token da sessão ou do arquivo persistido."""
+    """Retorna o token da sessão, do arquivo persistido, ou do banco (fallback)."""
     token = session.get('access_token')
     if not token:
         token = carregar_token()
         if token:
             session['access_token'] = token
+    if not token:
+        token = _token_from_db()
     return token
 
 def inicializar_api(access_token):
