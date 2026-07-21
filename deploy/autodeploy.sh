@@ -16,6 +16,10 @@ LOG_PREFIX="[autodeploy]"
 
 cd "$REPO_DIR"
 
+# Keepalive do banco: /ping faz SELECT 1 best-effort. Rodando a cada ciclo
+# do timer (60s), o Supabase free tier nunca pausa por inatividade.
+curl -sf -m 10 "http://127.0.0.1:5000/ping" >/dev/null 2>&1 || true
+
 # Lock: impede dois deploys em paralelo (build Docker demora > 1 min).
 # flock libera sozinho se o processo morrer — sem lock órfão.
 exec 200>"$LOCK_FILE"

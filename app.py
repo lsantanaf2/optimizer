@@ -77,7 +77,7 @@ from modules.account_settings import (
 import atexit
 atexit.register(close_db)
 
-VERSION = "v2.24.0"
+VERSION = "v2.24.1"
 
 # ======================== STAGING DE UPLOAD (v2.11.0) ========================
 # Desacoplamento: o Service Worker sobe cada arquivo UMA vez para a VPS (staging),
@@ -2131,7 +2131,17 @@ def upload_history_clear():
 
 @app.route('/ping')
 def ping_vps():
-    return "🚀 BATEU NA VPS! O Docker novo está rodando o nosso código atualizado e a página subiu!!", 200
+    # Keepalive do Supabase: SELECT 1 best-effort a cada ping. O timer do
+    # auto-deploy chama /ping a cada 60s → banco com atividade constante →
+    # free tier NUNCA mais pausa por inatividade (incidentes de 03/07 e 21/07).
+    db = 'db:off'
+    try:
+        from modules.database import fetch_one
+        fetch_one("SELECT 1 AS ok")
+        db = 'db:ok'
+    except Exception:
+        db = 'db:down'
+    return f"🚀 BATEU NA VPS! O Docker novo está rodando o nosso código atualizado e a página subiu!! [{db}]", 200
 
 if __name__ == '__main__':
     print("Servidor rodando! Acesse http://localhost:5000 no seu navegador.")
