@@ -41,10 +41,17 @@ fi
 echo "$LOG_PREFIX mudança detectada: $LOCAL → $REMOTE"
 echo "$LOG_PREFIX iniciando deploy..."
 
-git pull origin main --quiet
+# reset --hard (não pull): o working tree da VPS deve SEMPRE espelhar a origin.
+# Um pull aborta se houver qualquer modificação local (ex: normalização de
+# line-endings) e trava o auto-deploy em loop — foi o incidente de 28/07.
+# Arquivos untracked (deploy.sh com credenciais, token.json) não são afetados.
+git reset --hard origin/main --quiet
+chmod +x "$0" 2>/dev/null || true
 
 if bash "$DEPLOY_SCRIPT"; then
     echo "$LOG_PREFIX ✅ deploy concluído no commit $(git rev-parse --short HEAD)"
+    # Higiene de disco: remove imagens Docker órfãs dos builds anteriores
+    docker image prune -f >/dev/null 2>&1 || true
 else
     echo "$LOG_PREFIX ❌ deploy FALHOU no commit $(git rev-parse --short HEAD) — verifique: journalctl -u optimizer-autodeploy"
     exit 1
