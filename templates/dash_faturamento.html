@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Faturamento por Funil — Optimizer</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0f1117; --bg-deep: #0a0c12; --surface: #1a1d27; --border: #252836;
+      --text: #e2e8f0; --muted: #64748b; --accent: #6366f1;
+      --green: #22c55e; --red: #f87171; --amber: #fbbf24;
+    }
+    body { background: var(--bg); color: var(--text);
+           font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+           font-size: 14px; min-height: 100vh; -webkit-font-smoothing: antialiased; }
+    button { font-family: inherit; cursor: pointer; }
+
+    .topbar { display: flex; align-items: center; justify-content: space-between;
+              padding: 14px 24px; background: var(--surface); border-bottom: 1px solid var(--border);
+              position: sticky; top: 0; z-index: 50; gap: 12px; flex-wrap: wrap; }
+    .topbar-name { font-size: 1.1rem; font-weight: 700; color: #f1f5f9; }
+    .topbar-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+    .preset-btn { padding: 6px 12px; background: var(--bg-deep); border: 1px solid var(--border);
+                  border-radius: 6px; color: var(--muted); font-size: 12px; font-weight: 600; }
+    .preset-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .date-input { padding: 5px 8px; background: var(--bg-deep); border: 1px solid var(--border);
+                  border-radius: 6px; color: var(--text); font-size: 12px; color-scheme: dark; }
+    .btn-refresh { padding: 6px 14px; background: var(--bg-deep); border: 1px solid var(--border);
+                   border-radius: 6px; color: var(--text); font-size: 12px; font-weight: 600; }
+    .btn-refresh:hover { border-color: var(--accent); }
+
+    .container { max-width: 1200px; margin: 0 auto; padding: 24px 16px 60px; }
+    .section-title { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em;
+                     color: var(--muted); font-weight: 700; margin: 26px 0 12px; }
+
+    .cards-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .kpi-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+                padding: 18px 20px; }
+    .kpi-label { font-size: .75rem; color: var(--muted); font-weight: 600; text-transform: uppercase; }
+    .kpi-value { font-size: 1.5rem; font-weight: 800; margin-top: 6px; }
+    .kpi-sub { font-size: .75rem; color: var(--muted); margin-top: 4px; }
+
+    .funis-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
+    .funil-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+                  padding: 18px 20px; }
+    .funil-card.global { border-color: var(--accent); }
+    .funil-card.sem { border-color: var(--amber); }
+    .funil-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; }
+    .funil-name { font-size: 1rem; font-weight: 800; }
+    .funil-qtd { font-size: .75rem; color: var(--muted); }
+    .funil-values { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
+    .fv { background: var(--bg-deep); border-radius: 8px; padding: 10px; }
+    .fv-label { font-size: .65rem; color: var(--muted); text-transform: uppercase; font-weight: 700; }
+    .fv-value { font-size: .95rem; font-weight: 700; margin-top: 3px; }
+
+    table.tipo-table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+    table.tipo-table th { text-align: left; color: var(--muted); font-size: .65rem;
+                          text-transform: uppercase; padding: 4px 6px; border-bottom: 1px solid var(--border); }
+    table.tipo-table td { padding: 6px; border-bottom: 1px solid var(--border); }
+    table.tipo-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    table.tipo-table tr:last-child td { border-bottom: none; }
+
+    .txt-green { color: var(--green); } .txt-red { color: var(--red); } .txt-amber { color: var(--amber); }
+
+    #loading { text-align: center; padding: 60px 0; color: var(--muted); }
+    .spinner { display: inline-block; width: 22px; height: 22px; border: 3px solid var(--border);
+               border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite;
+               vertical-align: middle; margin-right: 10px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #error-box { display: none; background: rgba(248,113,113,.1); border: 1px solid var(--red);
+                 color: var(--red); border-radius: 10px; padding: 14px 18px; margin-top: 20px; }
+    #meta-line { font-size: .7rem; color: var(--muted); text-align: center; margin-top: 26px; }
+
+    @media (max-width: 720px) {
+      .cards-row { grid-template-columns: 1fr; }
+      .funis-grid { grid-template-columns: 1fr; }
+      .topbar { padding: 12px 14px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-name">💰 Faturamento por Funil</div>
+  <div class="topbar-right">
+    <button class="preset-btn" data-preset="hoje">Hoje</button>
+    <button class="preset-btn" data-preset="7d">7 dias</button>
+    <button class="preset-btn" data-preset="30d">30 dias</button>
+    <button class="preset-btn active" data-preset="mes">Mês atual</button>
+    <button class="preset-btn" data-preset="tudo">Tudo</button>
+    <input type="date" id="date-since" class="date-input" title="Data inicial">
+    <input type="date" id="date-until" class="date-input" title="Data final">
+    <button class="btn-refresh" id="btn-refresh" onclick="load(true)">🔄 Atualizar</button>
+  </div>
+</div>
+
+<div class="container">
+  <div id="loading"><span class="spinner"></span>Carregando vendas...</div>
+  <div id="error-box"></div>
+
+  <div id="content" style="display:none;">
+    <div class="section-title">Resumo Geral</div>
+    <div class="cards-row" id="summary-cards"></div>
+
+    <div class="section-title">Funis</div>
+    <div class="funis-grid" id="funis-grid"></div>
+
+    <div id="sem-atrib-wrap" style="display:none;">
+      <div class="section-title">⚠️ Sem Atribuição (auditoria)</div>
+      <div class="funil-card sem" id="sem-atrib-card"></div>
+    </div>
+
+    <div id="meta-line"></div>
+  </div>
+</div>
+
+<script>
+const fmtBRL = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+const fmtInt = v => Number(v || 0).toLocaleString('pt-BR');
+
+let currentPreset = 'mes';
+
+function presetDates(preset) {
+  const today = new Date();
+  const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  if (preset === 'hoje')  return { since: fmt(today), until: fmt(today) };
+  if (preset === '7d')  { const s = new Date(today); s.setDate(s.getDate()-6);  return { since: fmt(s), until: fmt(today) }; }
+  if (preset === '30d') { const s = new Date(today); s.setDate(s.getDate()-29); return { since: fmt(s), until: fmt(today) }; }
+  if (preset === 'mes') { const s = new Date(today.getFullYear(), today.getMonth(), 1); return { since: fmt(s), until: fmt(today) }; }
+  return { since: '', until: '' };  // tudo
+}
+
+document.querySelectorAll('.preset-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    currentPreset = btn.dataset.preset;
+    document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const { since, until } = presetDates(currentPreset);
+    document.getElementById('date-since').value = since;
+    document.getElementById('date-until').value = until;
+    load(false);
+  });
+});
+document.getElementById('date-since').addEventListener('change', () => { clearPresetHighlight(); load(false); });
+document.getElementById('date-until').addEventListener('change', () => { clearPresetHighlight(); load(false); });
+function clearPresetHighlight() {
+  document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+}
+
+function tipoTable(por_tipo) {
+  const label = { 'TOPO FUNIL': 'Topo de Funil', 'ORDER BUMP': 'Order Bump', 'UPSELL': 'Upsell' };
+  let html = '<table class="tipo-table"><tr><th>Tipo</th><th style="text-align:right">Vendas</th><th style="text-align:right">Valor</th></tr>';
+  for (const t of ['TOPO FUNIL', 'ORDER BUMP', 'UPSELL']) {
+    const d = (por_tipo || {})[t] || { valor: 0, qtd: 0 };
+    html += `<tr><td>${label[t]}</td><td class="num">${fmtInt(d.qtd)}</td><td class="num">${fmtBRL(d.valor)}</td></tr>`;
+  }
+  return html + '</table>';
+}
+
+function funilCard(f, extraClass = '', title = null) {
+  return `<div class="funil-card ${extraClass}">
+    <div class="funil-head">
+      <span class="funil-name">${title || f.key}</span>
+      <span class="funil-qtd">${fmtInt(f.qtd_vendas)} vendas · ${fmtInt(f.qtd_reembolsos)} reemb.</span>
+    </div>
+    <div class="funil-values">
+      <div class="fv"><div class="fv-label">Bruto</div><div class="fv-value">${fmtBRL(f.bruto)}</div></div>
+      <div class="fv"><div class="fv-label">Reembolsos</div><div class="fv-value txt-red">${fmtBRL(f.reembolsos)}</div></div>
+      <div class="fv"><div class="fv-label">Líquido</div><div class="fv-value txt-green">${fmtBRL(f.liquido)}</div></div>
+    </div>
+    ${tipoTable(f.por_tipo)}
+  </div>`;
+}
+
+async function load(forceRefresh) {
+  const loading = document.getElementById('loading');
+  const errBox = document.getElementById('error-box');
+  const content = document.getElementById('content');
+  const btn = document.getElementById('btn-refresh');
+  loading.style.display = 'block';
+  errBox.style.display = 'none';
+  btn.disabled = true;
+
+  const since = document.getElementById('date-since').value;
+  const until = document.getElementById('date-until').value;
+  const params = new URLSearchParams();
+  if (since) params.set('since', since);
+  if (until) params.set('until', until);
+  if (forceRefresh) params.set('refresh', '1');
+
+  try {
+    const resp = await fetch('/api/dash/faturamento/data?' + params.toString());
+    const d = await resp.json();
+    if (!d.success) throw new Error(d.error || `HTTP ${resp.status}`);
+
+    // Resumo geral
+    document.getElementById('summary-cards').innerHTML = `
+      <div class="kpi-card"><div class="kpi-label">Faturamento Bruto</div>
+        <div class="kpi-value">${fmtBRL(d.totals.bruto)}</div>
+        <div class="kpi-sub">${fmtInt(d.totals.qtd_vendas)} vendas aprovadas</div></div>
+      <div class="kpi-card"><div class="kpi-label">Reembolsos</div>
+        <div class="kpi-value txt-red">${fmtBRL(d.totals.reembolsos)}</div>
+        <div class="kpi-sub">${fmtInt(d.totals.qtd_reembolsos)} reembolsos/chargebacks${
+          d.reembolsos_sem_data_fora > 0
+            ? ` · <span class="txt-amber">+${fmtInt(d.reembolsos_sem_data_fora)} sem data fora do período (veja em "Tudo")</span>`
+            : ''}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Saldo Líquido</div>
+        <div class="kpi-value txt-green">${fmtBRL(d.totals.liquido)}</div>
+        <div class="kpi-sub">bruto − reembolsos</div></div>`;
+
+    // EMA Global + funis
+    let grid = funilCard({ ...d.ema_global, key: 'EMA Global' }, 'global', '🌎 EMA Global (PT+ES+EN+FR)');
+    for (const f of d.funis) grid += funilCard(f);
+    document.getElementById('funis-grid').innerHTML = grid;
+
+    // Sem atribuição
+    const sa = d.sem_atribuicao;
+    const saWrap = document.getElementById('sem-atrib-wrap');
+    if (sa && (sa.qtd_vendas > 0 || sa.qtd_reembolsos > 0)) {
+      let rows = '';
+      for (const p of sa.produtos || []) {
+        rows += `<tr><td>${p.produto} <span style="color:var(--muted)">(${p.product_id})</span></td>
+                 <td class="num">${fmtInt(p.qtd)}</td><td class="num">${fmtBRL(p.bruto)}</td>
+                 <td class="num txt-red">${fmtBRL(p.reembolsos)}</td></tr>`;
+      }
+      document.getElementById('sem-atrib-card').innerHTML = `
+        <div class="funil-head">
+          <span class="funil-name txt-amber">Vendas sem funil identificado</span>
+          <span class="funil-qtd">${fmtInt(sa.qtd_vendas)} vendas · Líquido ${fmtBRL(sa.liquido)}</span>
+        </div>
+        <table class="tipo-table">
+          <tr><th>Produto</th><th style="text-align:right">Vendas</th>
+              <th style="text-align:right">Bruto</th><th style="text-align:right">Reembolsos</th></tr>
+          ${rows}
+        </table>`;
+      saWrap.style.display = 'block';
+    } else {
+      saWrap.style.display = 'none';
+    }
+
+    const m = d.meta || {};
+    document.getElementById('meta-line').textContent =
+      `${fmtInt(m.linhas_planilha)} linhas na planilha · atualizado ${new Date(m.gerado_em).toLocaleString('pt-BR')}`;
+
+    content.style.display = 'block';
+  } catch (e) {
+    errBox.textContent = '❌ ' + e.message;
+    errBox.style.display = 'block';
+  } finally {
+    loading.style.display = 'none';
+    btn.disabled = false;
+  }
+}
+
+// Init: preset "Mês atual"
+const init = presetDates('mes');
+document.getElementById('date-since').value = init.since;
+document.getElementById('date-until').value = init.until;
+load(false);
+</script>
+</body>
+</html>
