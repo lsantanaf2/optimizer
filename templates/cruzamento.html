@@ -929,6 +929,19 @@
             </div>
         </div>
 
+        <!-- Evolução diária (todas as fontes) -->
+        <h3 style="margin:24px 0 12px; font-size:15px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px;">
+            📈 MQLs por Dia — Todas as Fontes
+            <span style="text-transform:none; letter-spacing:0; font-size:11px; color:var(--text-muted); font-weight:normal; margin-left:8px;">
+                inclui Google/Orgânico — bate 1:1 com a planilha
+            </span>
+        </h3>
+        <div style="background:var(--card-bg); border:1px solid var(--border); border-radius:10px; padding:16px; margin-bottom:8px;">
+            <div style="position:relative; height:320px;">
+                <canvas id="cons-timeline-chart"></canvas>
+            </div>
+        </div>
+
         <!-- Breakdown por Fonte -->
         <h3 style="margin:24px 0 12px; font-size:15px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px;">📦 Por Fonte (utm_source)</h3>
         <div class="crz-table-wrap" style="max-height: none;">
@@ -3496,12 +3509,101 @@
             }
 
             renderConsolidado(data);
+            renderConsolidadoTimeline(data.daily || []);
             if (content) content.style.display = 'block';
         } catch (e) {
             if (e.name === 'AbortError') return;
             if (loading) loading.style.display = 'none';
             if (errEl)   { errEl.textContent = '⚠️ Erro ao carregar dados consolidados.'; errEl.style.display = 'block'; }
         }
+    }
+
+    // Gráfico diário do Consolidado — mesmo formato do timeline da aba Facebook
+    // Ads (produtos empilhados + linha de CPL), mas contando TODAS as fontes.
+    let consTimelineChart = null;
+
+    function renderConsolidadoTimeline(daily) {
+        const canvas = document.getElementById('cons-timeline-chart');
+        if (!canvas) return;
+        const sorted = [...(daily || [])].sort((a, b) => a.date.localeCompare(b.date));
+        const labels = sorted.map(d => {
+            const [y, m, dd] = d.date.split('-');
+            return `${dd}/${m}/${y.slice(2)}`;
+        });
+
+        const normStr = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+        const sumProd = (d, re) => Object.entries(d.produtos || {})
+            .filter(([k]) => re.test(normStr(k)))
+            .reduce((s, [, v]) => s + v, 0);
+
+        const ncData = sorted.map(d => sumProd(d, /negoc/));
+        const vtData = sorted.map(d => sumProd(d, /vinci/));
+        // Sobra = leads cujo produto não é NC nem VT (garante que a soma das
+        // barras seja exatamente o total de MQLs do dia)
+        const outData = sorted.map((d, i) => Math.max(0, (d.mqls || 0) - ncData[i] - vtData[i]));
+        const cplData = sorted.map(d => d.cpl);
+        const hasOut  = outData.some(v => v > 0);
+
+        const datasets = [
+            { type: 'bar', label: 'Vinci Track', data: vtData,
+              backgroundColor: 'rgba(139,92,246,0.55)', borderColor: '#8b5cf6',
+              borderWidth: 1, borderRadius: 0, stack: 'mql', yAxisID: 'yMql', order: 2 },
+            { type: 'bar', label: 'Negócios Creators', data: ncData,
+              backgroundColor: 'rgba(0,242,255,0.55)', borderColor: '#00f2ff',
+              borderWidth: 1, borderRadius: hasOut ? 0 : 3, stack: 'mql', yAxisID: 'yMql', order: 2 },
+        ];
+        if (hasOut) {
+            datasets.push({ type: 'bar', label: 'Outros produtos', data: outData,
+              backgroundColor: 'rgba(148,163,184,0.45)', borderColor: '#94a3b8',
+              borderWidth: 1, borderRadius: 3, stack: 'mql', yAxisID: 'yMql', order: 2 });
+        }
+        datasets.push({ type: 'line', label: 'CPL (R$)', data: cplData,
+          borderColor: '#ef6fa3', backgroundColor: 'rgba(239,111,163,0.10)',
+          borderWidth: 2, pointRadius: 3, pointBackgroundColor: '#ef6fa3',
+          fill: true, tension: 0.35, spanGaps: true, yAxisID: 'yCpl', order: 1 });
+
+        if (consTimelineChart) { consTimelineChart.destroy(); consTimelineChart = null; }
+        consTimelineChart = new Chart(canvas.getContext('2d'), {
+            data: { labels, datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { labels: { color: '#a0a0b0', font: { family: 'Lexend', size: 11 }, usePointStyle: true, boxWidth: 8 } },
+                    tooltip: {
+                        callbacks: {
+                            label: ctx => {
+                                if (ctx.dataset.label === 'CPL (R$)')
+                                    return ` CPL: ${ctx.raw != null ? 'R$ ' + ctx.raw.toFixed(2) : '—'}`;
+                                return ` ${ctx.dataset.label}: ${ctx.raw}`;
+                            },
+                            // Rodapé do tooltip: total do dia + quebra por fonte
+                            footer: items => {
+                                const d = sorted[items[0].dataIndex] || {};
+                                const partes = [];
+                                if (d.facebook) partes.push(`Meta ${d.facebook}`);
+                                if (d.google)   partes.push(`Google ${d.google}`);
+                                if (d.outros)   partes.push(`Outros ${d.outros}`);
+                                return `Total: ${d.mqls || 0} MQLs` + (partes.length ? `\n(${partes.join(' · ')})` : '');
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: { ticks: { color: '#5a5a6e', font: { family: 'Lexend', size: 10 }, maxRotation: 45 },
+                         grid: { color: 'rgba(255,255,255,0.04)' }, stacked: true },
+                    yMql: { type: 'linear', position: 'left', stacked: true, beginAtZero: true,
+                            ticks: { color: '#00f2ff', font: { family: 'Lexend', size: 10 }, stepSize: 1, precision: 0 },
+                            grid: { color: 'rgba(255,255,255,0.04)' },
+                            title: { display: true, text: 'MQLs', color: '#00f2ff', font: { family: 'Lexend', size: 10 } } },
+                    yCpl: { type: 'linear', position: 'right',
+                            ticks: { color: '#ef6fa3', font: { family: 'Lexend', size: 10 }, callback: v => 'R$ ' + v.toFixed(0) },
+                            grid: { display: false },
+                            title: { display: true, text: 'CPL', color: '#ef6fa3', font: { family: 'Lexend', size: 10 } } }
+                }
+            }
+        });
     }
 
     function renderConsolidado(data) {

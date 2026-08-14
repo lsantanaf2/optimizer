@@ -1419,8 +1419,59 @@ def api_dash_consolidado(slug):
     def _empty(): return {'mqls': 0, 'wons': 0, 'receita': 0.0}
     buckets = {'facebook': _empty(), 'google': _empty(), 'outros': _empty()}
 
+    # Série diária de MQLs. Ao contrário da aba "Facebook Ads" (que filtra
+    # utm_source google/adwords de propósito), o Consolidado conta TODOS os
+    # leads — é aqui que a contagem bate 1:1 com a planilha de MQLs.
+    # Mesmo formato do gráfico da aba Facebook Ads: produtos empilhados + CPL.
+    from modules.cruzamento import _parse_date_br
+    _daily_map = {}
     for row in mqls_rows:
-        buckets[_bucket(row.get('utm_source', ''))]['mqls'] += 1
+        b = _bucket(row.get('utm_source', ''))
+        buckets[b]['mqls'] += 1
+        d = _parse_date_br(row.get('Data do preenchimento', ''))
+        if d is None:
+            continue
+        k = d.isoformat()
+        e = _daily_map.setdefault(k, {'date': k, 'facebook': 0, 'google': 0,
+                                      'outros': 0, 'mqls': 0, 'produtos': {}})
+        e[b] += 1
+        e['mqls'] += 1
+        prod = (row.get('Produto indicado', '') or '').strip() or 'Sem produto'
+        e['produtos'][prod] = e['produtos'].get(prod, 0) + 1
+
+    # Gasto diário: Meta (mesmos filtros do total) + Google (planilha diária)
+    _spend_by_day = {}
+    for ad in fb_ads:
+        cn = ad.get('campaign_name', '')
+        if _matches_excluded(cn, excluded) or _is_instagram_post(cn):
+            continue
+        dk = ad.get('date_start', '')
+        if dk:
+            _spend_by_day[dk] = _spend_by_day.get(dk, 0.0) + float(ad.get('spend', 0) or 0)
+
+    _gads_by_day = {}
+    if sheet_id and sheet_gid:
+        try:
+            _gads_by_day = fetch_client_google_ads_daily(
+                sheet_id, sheet_gid, filter_kw, since_d, until_d) or {}
+        except Exception as e:
+            logger.warning(f'[consolidado:{slug}] Google Ads diário falhou: {e}')
+
+    daily = []
+    _all_days = set(_daily_map) | set(_spend_by_day) | set(_gads_by_day)
+    for k in sorted(_all_days):
+        e = _daily_map.get(k) or {'date': k, 'facebook': 0, 'google': 0,
+                                  'outros': 0, 'mqls': 0, 'produtos': {}}
+        sp_meta = round(_spend_by_day.get(k, 0.0), 2)
+        sp_goog = round(float((_gads_by_day.get(k) or {}).get('spend', 0.0)), 2)
+        sp_tot = round(sp_meta + sp_goog, 2)
+        daily.append({
+            **e,
+            'spend_meta':   sp_meta,
+            'spend_google': sp_goog,
+            'spend':        sp_tot,
+            'cpl': round(sp_tot / e['mqls'], 2) if (e['mqls'] > 0 and sp_tot > 0) else None,
+        })
 
     mqls_all_by_deal = {
         _norm(r.get('Deal ID', '')): r for r in mqls_all if _norm(r.get('Deal ID', ''))
@@ -1474,6 +1525,7 @@ def api_dash_consolidado(slug):
                         'preset': date_preset},
         'consolidado': consolidado,
         'por_fonte':   per_source,
+        'daily':       daily,
         'google_conversions_sheet': float((gads.get('totals') or {}).get('conversions', 0.0)),
         'vinci_error': gads.get('error'),
     })
