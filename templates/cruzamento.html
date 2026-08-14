@@ -942,6 +942,33 @@
             </div>
         </div>
 
+        <!-- Dimensão por Dia (todas as fontes) -->
+        <div class="chart-card" style="overflow:hidden; padding:0; margin-top:16px;">
+            <div class="chart-card-title" style="padding:14px 16px 10px; border-bottom:1px solid var(--border);">
+                📅 Dimensão por Dia
+                <span style="font-size:11px; color:var(--text-muted); font-weight:normal; margin-left:6px;">
+                    todas as fontes (Meta + Google + Orgânico)
+                </span>
+            </div>
+            <div style="overflow-x:auto; overflow-y:auto; max-height:320px;">
+                <table class="day-table" id="cons-day-table">
+                    <thead>
+                        <tr>
+                            <th>Data</th>
+                            <th>MQLs</th>
+                            <th>Meta</th>
+                            <th>Google</th>
+                            <th>%&nbsp;NC</th>
+                            <th>CPL/MQL</th>
+                            <th>Custo</th>
+                        </tr>
+                    </thead>
+                    <tbody id="cons-day-tbody"></tbody>
+                    <tfoot id="cons-day-tfoot"></tfoot>
+                </table>
+            </div>
+        </div>
+
         <!-- Breakdown por Fonte -->
         <h3 style="margin:24px 0 12px; font-size:15px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px;">📦 Por Fonte (utm_source)</h3>
         <div class="crz-table-wrap" style="max-height: none;">
@@ -3510,6 +3537,7 @@
 
             renderConsolidado(data);
             renderConsolidadoTimeline(data.daily || []);
+            renderConsolidadoDayTable(data.daily || []);
             if (content) content.style.display = 'block';
         } catch (e) {
             if (e.name === 'AbortError') return;
@@ -3604,6 +3632,58 @@
                 }
             }
         });
+    }
+
+    // Tabela "Dimensão por Dia" do Consolidado — mesmas colunas da aba Facebook
+    // Ads (+ Meta/Google), mas contando TODAS as fontes e somando o gasto das duas.
+    function renderConsolidadoDayTable(daily) {
+        const tbody = document.getElementById('cons-day-tbody');
+        const tfoot = document.getElementById('cons-day-tfoot');
+        if (!tbody) return;
+
+        const rows = [...(daily || [])].sort((a, b) => a.date.localeCompare(b.date));
+        if (!rows.length) {
+            tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--text-muted);">Sem dados para o período.</td></tr>`;
+            if (tfoot) tfoot.innerHTML = '';
+            return;
+        }
+
+        tbody.innerHTML = rows.map(row => {
+            const mqls  = row.mqls || 0;
+            const nc    = matchProd(row.produtos, 'negocio');
+            const pctNc = mqls > 0 ? ((nc / mqls) * 100).toFixed(1) + '%' : '—';
+            const cpl   = row.cpl != null ? fmtR(row.cpl) : '—';
+            const custo = row.spend > 0 ? fmtR(row.spend) : '—';
+            const [y, m, d] = row.date.split('-');
+            return `<tr>
+                <td>${d}/${m}/${y}</td>
+                <td>${mqls || '—'}</td>
+                <td>${row.facebook || '—'}</td>
+                <td>${row.google || '—'}</td>
+                <td class="pct">${(nc && mqls > 0) ? pctNc : '—'}</td>
+                <td>${cpl}</td>
+                <td>${custo}</td>
+            </tr>`;
+        }).join('');
+
+        let totMqls = 0, totNc = 0, totSpend = 0, totFb = 0, totGg = 0;
+        rows.forEach(row => {
+            totMqls  += row.mqls || 0;
+            totNc    += matchProd(row.produtos, 'negocio');
+            totSpend += row.spend || 0;
+            totFb    += row.facebook || 0;
+            totGg    += row.google || 0;
+        });
+
+        if (tfoot) tfoot.innerHTML = `<tr>
+            <td>TOTAL</td>
+            <td>${totMqls || '—'}</td>
+            <td>${totFb || '—'}</td>
+            <td>${totGg || '—'}</td>
+            <td class="pct">${totMqls > 0 ? ((totNc / totMqls) * 100).toFixed(1) + '%' : '—'}</td>
+            <td>${totMqls > 0 ? fmtR(totSpend / totMqls) : '—'}</td>
+            <td>${fmtR(totSpend)}</td>
+        </tr>`;
     }
 
     function renderConsolidado(data) {
