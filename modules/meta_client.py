@@ -35,6 +35,33 @@ import requests
 GRAPH_API_VERSION = 'v22.0'
 GRAPH_BASE = f'https://graph.facebook.com/{GRAPH_API_VERSION}'
 
+# ── Imposto sobre veiculação (Meta Ads) ──────────────────────────────────────
+# A Meta cobra 12,15% de impostos sobre o valor veiculado que NÃO aparecem no
+# Gerenciador de Anúncios (o /insights devolve o valor líquido). Para que CAC,
+# CPL, CPM, ROAS e Lucro reflitam o custo real, o multiplicador é aplicado
+# num ÚNICO lugar: nos pontos onde o spend é extraído da resposta da API.
+# Tudo que consome esses fetchers já recebe o valor com imposto — NUNCA
+# reaplicar (double counting).
+META_TAX_RATE = 0.1215
+META_SPEND_MULTIPLIER = 1.0 + META_TAX_RATE
+
+
+def apply_meta_tax(spend_raw):
+    """Converte o gasto bruto do Gerenciador no custo real com imposto."""
+    try:
+        return float(spend_raw or 0) * META_SPEND_MULTIPLIER
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def strip_meta_tax(spend_with_tax):
+    """Inverso de apply_meta_tax — recupera o valor do Gerenciador."""
+    try:
+        return float(spend_with_tax or 0) / META_SPEND_MULTIPLIER
+    except (TypeError, ValueError, ZeroDivisionError):
+        return 0.0
+
+
 # ── Configuração ──────────────────────────────────────────────────────────────
 
 MIN_INTERVAL = 0.5          # segundos mínimos entre chamadas (por worker Gunicorn)

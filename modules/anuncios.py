@@ -14,7 +14,7 @@ em paralelo com o request de vídeo.
 import json
 import concurrent.futures
 
-from modules.meta_client import GRAPH_BASE
+from modules.meta_client import GRAPH_BASE, apply_meta_tax
 from flask import Blueprint, jsonify, render_template, request, session, redirect, url_for
 
 anuncios_bp = Blueprint('anuncios', __name__)
@@ -203,7 +203,7 @@ def api_anuncios_data(account_id):
             result.append({
                 'ad_id':            ad_id,
                 'ad_name':          item.get('ad_name', ''),
-                'spend':            float(item.get('spend', 0) or 0),
+                'spend':            apply_meta_tax(item.get('spend', 0)),
                 'impressions':      int(item.get('impressions', 0) or 0),
                 'clicks':           int(item.get('clicks', 0) or 0),
                 'ctr':              float(item.get('ctr', 0) or 0),

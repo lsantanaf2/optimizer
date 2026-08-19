@@ -29,7 +29,7 @@ from flask import (
     Response, stream_with_context, session, abort, redirect, url_for,
 )
 
-from modules.meta_client import GRAPH_BASE
+from modules.meta_client import GRAPH_BASE, apply_meta_tax, META_TAX_RATE, META_SPEND_MULTIPLIER
 from modules.dashboard_clients import (
     get_client_by_token, list_clients,
     get_excluded_patterns, save_excluded_patterns as db_save_excluded,
@@ -378,7 +378,7 @@ def _fetch_meta_ads_daily_live(account_id, access_token, conversion_event,
             'date': date, 'spend': 0.0, 'impressions': 0, 'clicks': 0,
             'lpv': 0, 'conversions': 0, 'revenue_real': 0.0,
         })
-        entry['spend']        += float(item.get('spend', 0) or 0)
+        entry['spend']        += apply_meta_tax(item.get('spend', 0))
         entry['impressions']  += int(item.get('impressions', 0) or 0)
         entry['clicks']       += int(item.get('inline_link_clicks', 0) or 0)
         entry['lpv']          += _sum_action_value(actions, 'landing_page_view')
@@ -455,7 +455,7 @@ def _fetch_meta_ads_top_live(account_id, access_token, conversion_event,
             'spend': 0.0, 'impressions': 0, 'clicks': 0,
             'conversions': 0, 'revenue_real': 0.0,
         })
-        entry['spend']        += float(item.get('spend', 0) or 0)
+        entry['spend']        += apply_meta_tax(item.get('spend', 0))
         entry['impressions']  += int(item.get('impressions', 0) or 0)
         entry['clicks']       += int(item.get('inline_link_clicks', 0) or 0)
         entry['conversions']  += _sum_action_value(actions, conversion_event)
@@ -1526,6 +1526,18 @@ def api_dash_consolidado(slug):
         'consolidado': consolidado,
         'por_fonte':   per_source,
         'daily':       daily,
+        # Breakdown do investimento: o spend do Meta já vem com os 12,15% de
+        # imposto aplicados nos fetchers; aqui separamos as partes para exibir
+        # "Facebook R$ X (R$ Y imposto) · Google R$ W" na tela.
+        'spend_breakdown': {
+            'facebook': {
+                'gerenciador': round(fb_spend / META_SPEND_MULTIPLIER, 2),
+                'imposto':     round(fb_spend - (fb_spend / META_SPEND_MULTIPLIER), 2),
+                'total':       round(fb_spend, 2),
+                'tax_rate':    META_TAX_RATE,
+            },
+            'google': {'total': round(google_spend, 2)},
+        },
         'google_conversions_sheet': float((gads.get('totals') or {}).get('conversions', 0.0)),
         'vinci_error': gads.get('error'),
     })

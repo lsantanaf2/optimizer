@@ -14,7 +14,7 @@ import json
 import time
 import threading
 import requests
-from modules.meta_client import GRAPH_BASE
+from modules.meta_client import GRAPH_BASE, apply_meta_tax
 import concurrent.futures
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -324,7 +324,7 @@ def _fetch_fb_insights_live(account_id, access_token, since, until):
                 'adset_name':         item.get('adset_name', ''),
                 'ad_id':              item.get('ad_id', ''),
                 'ad_name':            item.get('ad_name', ''),
-                'spend':              float(item.get('spend', 0) or 0),
+                'spend':              apply_meta_tax(item.get('spend', 0)),
                 'impressions':        int(item.get('impressions', 0) or 0),
                 'clicks':             int(item.get('clicks', 0) or 0),
                 'link_clicks':        int(item.get('inline_link_clicks', 0) or 0),

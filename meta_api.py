@@ -27,7 +27,7 @@ from facebook_business.adobjects.adset import AdSet
 from facebook_business.adobjects.campaign import Campaign
 from facebook_business.adobjects.user import User
 from facebook_business.adobjects.adspixel import AdsPixel
-from modules.meta_client import GRAPH_BASE
+from modules.meta_client import GRAPH_BASE, apply_meta_tax
 
 
 # ── Geo Compliance ────────────────────────────────────────────────────────────
@@ -312,7 +312,7 @@ class MetaUploader:
                     if entity_id not in insights_by_id:
                         insights_by_id[entity_id] = {}
 
-                    spend = float(ins.get('spend', 0))
+                    spend = apply_meta_tax(ins.get('spend', 0))
                     compras, _ = self._extract_conversions(ins.get('actions', []))
                     cac = round(spend / compras, 2) if compras > 0 else None
 
@@ -426,7 +426,7 @@ class MetaUploader:
             results = []
             for ins in data:
                 actions = ins.get('actions', [])
-                spend = float(ins.get('spend', 0))
+                spend = apply_meta_tax(ins.get('spend', 0))
 
                 compras, checkouts = self._extract_conversions(actions)
 
@@ -672,7 +672,7 @@ class MetaUploader:
                 for ins in insights_data:
                     adset_id = ins.get('adset_id')
                     struct = struct_map.get(adset_id, {})
-                    spend = float(ins.get('spend', 0))
+                    spend = apply_meta_tax(ins.get('spend', 0))
                     daily_raw = struct.get('daily_budget')
 
                     compras, checkouts = self._extract_conversions(ins.get('actions', []))
@@ -741,7 +741,7 @@ class MetaUploader:
                 for ins in insights_data:
                     ad_id = ins.get('ad_id')
                     struct = struct_map.get(ad_id, {})
-                    spend = float(ins.get('spend', 0))
+                    spend = apply_meta_tax(ins.get('spend', 0))
 
                     compras, checkouts = self._extract_conversions(ins.get('actions', []))
 

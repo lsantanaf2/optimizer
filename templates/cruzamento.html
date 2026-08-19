@@ -3709,7 +3709,18 @@
         const fbSpend = (pf.facebook && pf.facebook.spend) || 0;
         const ggSpend = (pf.google   && pf.google.spend)   || 0;
         const sbEl = document.getElementById('cons-spend-breakdown');
-        if (sbEl) sbEl.textContent = `FB ${brl(fbSpend)} · Google ${brl(ggSpend)}`;
+        if (sbEl) {
+            const sb = data.spend_breakdown || {};
+            const fbb = sb.facebook || {};
+            if (fbb.imposto != null && fbb.imposto > 0) {
+                const pct = ((fbb.tax_rate || 0) * 100).toFixed(2).replace('.', ',');
+                sbEl.innerHTML = `Facebook ${brl(fbb.total)} ` +
+                    `<span style="color:var(--text-muted)">(${brl(fbb.gerenciador)} + ${brl(fbb.imposto)} imposto ${pct}%)</span>` +
+                    ` · Google ${brl(ggSpend)}`;
+            } else {
+                sbEl.textContent = `Facebook ${brl(fbSpend)} · Google ${brl(ggSpend)}`;
+            }
+        }
 
         // Tabela por fonte
         const labels = {
