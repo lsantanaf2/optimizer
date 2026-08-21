@@ -458,10 +458,22 @@ def semaforo(metrica, valor, config, amostra=None):
 
 # ── Série diária pronta para gráfico ─────────────────────────────────────────
 
-def serie_diaria(rows, config=None):
-    """Uma linha por dia com métricas derivadas (para curva e tabela diária)."""
+def serie_diaria(rows, config=None, vendas_por_dia=None):
+    """Uma linha por dia com todas as métricas derivadas.
+
+    Alimenta a curva diária (bloco E) e a tabela "Dados diários" (bloco 4.1):
+      data · investimento · vendas · CPA · CPM · CTR · connect rate ·
+      LP→checkout % · checkout→venda %
+
+    vendas_por_dia: dict opcional {'YYYY-MM-DD': {'vendas': int, 'faturamento': float}}
+        vindo da plataforma de pagamento (fonte da verdade). Quando ausente,
+        a coluna 'vendas' usa o pixel — e 'fonte_vendas' diz qual foi usada,
+        para a tabela poder rotular (o brief exige rótulo quando há ambiguidade).
+    """
     cfg = merge_config(config)
     imposto = cfg.get('imposto_midia', META_TAX_RATE)
+    vpd = vendas_por_dia or {}
+
     por_dia = {}
     for r in rows:
         d = r['data']
@@ -472,19 +484,69 @@ def serie_diaria(rows, config=None):
                   'checkouts', 'compras_pixel', 'valor_pixel'):
             e[k] += r.get(k, 0) or 0
 
+    # Dias que só existem na plataforma (venda sem veiculação) também entram
+    for d in vpd:
+        por_dia.setdefault(d, {'data': d, 'investimento': 0.0, 'impressoes': 0,
+                               'cliques_link': 0, 'lpv': 0, 'checkouts': 0,
+                               'compras_pixel': 0, 'valor_pixel': 0.0})
+
     saida = []
     for d in sorted(por_dia):
         e = por_dia[d]
         inv = e['investimento']
+        # Se a plataforma foi fornecida, ela é a fonte da verdade para TODOS os
+        # dias — um dia ausente significa "nenhuma venda", não "usar o pixel".
+        # Misturar as duas fontes na mesma coluna produziria um total incoerente.
+        plat = vpd.get(d) or {}
+        usa_plataforma = bool(vendas_por_dia)
+        vendas = plat.get('vendas', 0) if usa_plataforma else e['compras_pixel']
+        faturamento = plat.get('faturamento', 0.0) if usa_plataforma else e['valor_pixel']
+        tem_plat = usa_plataforma
+
         saida.append({
             **e,
             'investimento':     round(inv, 2),
             'valor_pixel':      round(e['valor_pixel'], 2),
             'custo_real_midia': round(inv * (1.0 + imposto), 2),
-            'cpa':  _round(_div(inv, e['compras_pixel'])),
+            'vendas':           vendas,
+            'fonte_vendas':     'plataforma' if tem_plat else 'pixel',
+            'faturamento':      _round(faturamento),
+            # Custos unitários
+            'cpa':  _round(_div(inv, vendas)),
             'cpm':  _round(_mult(_div(inv, e['impressoes']), 1000)),
-            'ctr':  _round(_mult(_div(e['cliques_link'], e['impressoes']), 100)),
             'cpc':  _round(_div(inv, e['cliques_link'])),
-            'roas': _round(_div(e['valor_pixel'], inv)),
+            # Taxas do funil (mesma sequência da visão consolidada)
+            'ctr':            _round(_mult(_div(e['cliques_link'], e['impressoes']), 100)),
+            'connect_rate':   _round(_mult(_div(e['lpv'], e['cliques_link']), 100)),
+            'lp_checkout':    _round(_mult(_div(e['checkouts'], e['lpv']), 100)),
+            'checkout_venda': _round(_mult(_div(vendas, e['checkouts']), 100)),
+            'roas': _round(_div(faturamento, inv)),
         })
     return saida
+
+
+def totais_serie(serie, config=None):
+    """Linha de TOTAL da tabela diária — taxas recalculadas sobre os totais,
+    nunca média das médias (que distorceria)."""
+    cfg = merge_config(config)
+    imposto = cfg.get('imposto_midia', META_TAX_RATE)
+    t = {k: 0 for k in ('investimento', 'impressoes', 'cliques_link', 'lpv',
+                        'checkouts', 'vendas', 'faturamento')}
+    for r in serie:
+        for k in t:
+            t[k] += r.get(k, 0) or 0
+    inv = t['investimento']
+    return {
+        **t,
+        'investimento':     round(inv, 2),
+        'faturamento':      round(t['faturamento'], 2),
+        'custo_real_midia': round(inv * (1.0 + imposto), 2),
+        'cpa':  _round(_div(inv, t['vendas'])),
+        'cpm':  _round(_mult(_div(inv, t['impressoes']), 1000)),
+        'cpc':  _round(_div(inv, t['cliques_link'])),
+        'ctr':            _round(_mult(_div(t['cliques_link'], t['impressoes']), 100)),
+        'connect_rate':   _round(_mult(_div(t['lpv'], t['cliques_link']), 100)),
+        'lp_checkout':    _round(_mult(_div(t['checkouts'], t['lpv']), 100)),
+        'checkout_venda': _round(_mult(_div(t['vendas'], t['checkouts']), 100)),
+        'roas': _round(_div(t['faturamento'], inv)),
+    }
