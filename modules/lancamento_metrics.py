@@ -254,13 +254,37 @@ def compute_metrics(rows, vendas_plataforma=None, config=None):
             'cp_checkout':  _round(_div(inv_bruto, tot['checkouts'])),
             'cpa_ingresso': _round(_div(inv_bruto, ingressos_efetivo)),
         },
+        # Taxas de passagem entre as etapas do funil. O nome de cada taxa é o
+        # da PASSAGEM (etapa origem → destino), como aparece na tela:
+        #   Impressões —ctr→ Cliques —connect_rate→ Page View
+        #   Page View —lp_checkout→ Checkout —taxa_compra→ Vendas
         'taxas': {
             'ctr':             _round(_mult(_div(tot['cliques_link'], tot['impressoes']), 100)),
-            'taxa_lp':         _round(_mult(_div(tot['lpv'], tot['cliques_link']), 100)),
-            'taxa_checkout':   _round(_mult(_div(tot['checkouts'], tot['lpv']), 100)),
+            'connect_rate':    _round(_mult(_div(tot['lpv'], tot['cliques_link']), 100)),
+            'lp_checkout':     _round(_mult(_div(tot['checkouts'], tot['lpv']), 100)),
+            'taxa_checkout':   _round(_mult(_div(tot['checkouts'], tot['lpv']), 100)),  # alias
             'taxa_compra':     _round(_mult(_div(ingressos_efetivo, tot['checkouts']), 100)),
             'conversao_total': _round(_mult(_div(ingressos_efetivo, tot['cliques_link']), 100)),
         },
+        # Funil pronto para render: 5 etapas, cada uma com volume, custo
+        # unitário e a taxa de passagem para a etapa seguinte (badge diagonal).
+        'funil_etapas': [
+            {'etapa': 'Impressões',    'volume': tot['impressoes'],
+             'custo_label': 'CPM',         'custo': _round(_mult(_div(inv_bruto, tot['impressoes']), 1000)),
+             'taxa_label': 'CTR',          'taxa': _round(_mult(_div(tot['cliques_link'], tot['impressoes']), 100))},
+            {'etapa': 'Cliques no link', 'volume': tot['cliques_link'],
+             'custo_label': 'CPC',         'custo': _round(_div(inv_bruto, tot['cliques_link'])),
+             'taxa_label': 'Connect rate', 'taxa': _round(_mult(_div(tot['lpv'], tot['cliques_link']), 100))},
+            {'etapa': 'Page View',       'volume': tot['lpv'],
+             'custo_label': 'CP LPV',      'custo': _round(_div(inv_bruto, tot['lpv'])),
+             'taxa_label': 'LP → Checkout','taxa': _round(_mult(_div(tot['checkouts'], tot['lpv']), 100))},
+            {'etapa': 'Checkout',        'volume': tot['checkouts'],
+             'custo_label': 'CP Checkout', 'custo': _round(_div(inv_bruto, tot['checkouts'])),
+             'taxa_label': 'Checkout → Venda', 'taxa': _round(_mult(_div(ingressos_efetivo, tot['checkouts']), 100))},
+            {'etapa': 'Vendas',          'volume': ingressos_efetivo,
+             'custo_label': 'CPA',         'custo': _round(_div(inv_bruto, ingressos_efetivo)),
+             'taxa_label': None,           'taxa': None},
+        ],
         'financeiro': {
             'fonte':                 fonte_financeiro,
             'ingressos':             ingressos_efetivo,
