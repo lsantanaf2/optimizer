@@ -180,7 +180,7 @@
     <!-- F + tabela diária -->
     <div class="grid3">
       <div class="card">
-        <div class="card-t"><span>Funil</span><span class="dim">volume · custo · taxa</span></div>
+        <div class="card-t"><span>Funil</span><span class="dim">custos c/ imposto</span></div>
         <div id="tracking-warn"></div>
         <div class="funnel" id="funnel"></div>
       </div>
@@ -192,7 +192,8 @@
         <div class="tbl-wrap">
           <table>
             <thead><tr>
-              <th>Data</th><th>Investim.</th><th>Vendas</th><th>CPA</th><th>CPM</th>
+              <th>Data</th><th title="Custo real, com imposto">Investim.</th><th>Vendas</th>
+              <th title="Custo real ÷ vendas">CPA</th><th title="Custo real ÷ mil impressões">CPM</th>
               <th>CTR</th><th>Connect</th><th>LP→Ckt</th><th>Ckt→Vnd</th>
             </tr></thead>
             <tbody id="day-tbody"></tbody>
@@ -286,7 +287,7 @@ function renderKpis(d){
     {l:'Ingressos', v:int(f.ingressos),
      c:`<span class="dim">${f.vendas_totais!=null?int(f.vendas_totais)+' vendas no total (c/ bumps)':''}</span>`},
     {l:'CPA', v:brl(m.custos_unitarios.cpa_ingresso),
-     c:`<span class="dim">gasto ÷ ingressos</span>`},
+     c:`<span class="dim">custo real ÷ ingressos · c/ imposto</span>`},
     {l:'Faturamento', v:brlK(f.faturamento_ingresso),
      c:`<span class="dim">${d.vendas.campo_receita||'comissão'}</span>`},
     {l:'Ticket médio', v:brl(f.ticket_medio),
@@ -359,13 +360,13 @@ function renderTabela(d){
   const tb = document.getElementById('day-tbody'), tf = document.getElementById('day-tfoot');
   tb.innerHTML = d.serie_diaria.map(r => {
     const dd = r.data.slice(8,10)+'/'+r.data.slice(5,7);
-    return `<tr><td>${dd}</td><td>${brl(r.investimento)}</td><td>${int(r.vendas)}</td>
+    return `<tr><td>${dd}</td><td>${brl(r.custo_real_midia)}</td><td>${int(r.vendas)}</td>
       <td>${brl(r.cpa)}</td><td>${brl(r.cpm)}</td><td>${pct(r.ctr)}</td>
       <td>${pct(r.connect_rate)}</td><td class="dim">${pct(r.lp_checkout)}</td>
       <td class="dim">${pct(r.checkout_venda)}</td></tr>`;
   }).join('');
   const t = d.totais_diarios;
-  tf.innerHTML = `<tr><td>TOTAL</td><td>${brl(t.investimento)}</td><td>${int(t.vendas)}</td>
+  tf.innerHTML = `<tr><td>TOTAL</td><td>${brl(t.custo_real_midia)}</td><td>${int(t.vendas)}</td>
     <td>${brl(t.cpa)}</td><td>${brl(t.cpm)}</td><td>${pct(t.ctr)}</td>
     <td>${pct(t.connect_rate)}</td><td class="dim">${pct(t.lp_checkout)}</td>
     <td class="dim">${pct(t.checkout_venda)}</td></tr>`;
@@ -378,7 +379,7 @@ function renderChart(d){
   const s = d.serie_diaria;
   const labels = s.map(r => r.data.slice(8,10)+'/'+r.data.slice(5,7));
   const ds = [
-    {type:'bar', label:'Investimento', data:s.map(r=>r.investimento), yAxisID:'y1',
+    {type:'bar', label:'Investimento (c/ imp.)', data:s.map(r=>r.custo_real_midia), yAxisID:'y1',
      backgroundColor:'rgba(61,79,245,.55)', borderColor:'#3D4FF5', borderWidth:1, order:3},
     {type:'line', label:'Vendas', data:s.map(r=>r.vendas), yAxisID:'y2',
      borderColor:'#3DD68C', backgroundColor:'rgba(61,214,140,.12)', borderWidth:2,
@@ -414,7 +415,7 @@ function renderCampanhas(d){
   const rows = d.campanhas||[];
   document.getElementById('camp-tbody').innerHTML = rows.length ? rows.map(c =>
     `<tr><td title="${c.nome}">${c.nome.length>42?c.nome.slice(0,42)+'…':c.nome}</td>
-     <td>${brl(c.investimento)}</td><td>${int(c.impressoes)}</td><td>${brl(c.cpm)}</td>
+     <td>${brl(c.custo_real)}</td><td>${int(c.impressoes)}</td><td>${brl(c.cpm)}</td>
      <td>${pct(c.ctr)}</td><td>${int(c.cliques_link)}</td><td>${brl(c.cpc)}</td>
      <td>${pct(c.connect_rate)}</td><td>${int(c.compras_pixel)}</td><td>${brl(c.cpa)}</td></tr>`).join('')
     : `<tr><td colspan="10" class="dim" style="text-align:center;padding:18px">Sem dados.</td></tr>`;

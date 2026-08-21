@@ -260,12 +260,24 @@ def compute_metrics(rows, vendas_plataforma=None, config=None):
             'checkouts':     tot['checkouts'],
             'compras':       ingressos_efetivo,
         },
+        # TODO custo unitário usa o CUSTO REAL (com imposto de veiculação) —
+        # é o que sai do bolso. Os equivalentes sobre o valor do Gerenciador
+        # ficam em custos_unitarios_bruto para conferência.
         'custos_unitarios': {
+            'cpm':          _round(_mult(_div(custo_real, tot['impressoes']), 1000)),
+            'cpc_link':     _round(_div(custo_real, tot['cliques_link'])),
+            'cp_lpv':       _round(_div(custo_real, tot['lpv'])),
+            'cp_checkout':  _round(_div(custo_real, tot['checkouts'])),
+            'cpa_ingresso': _round(_div(custo_real, ingressos_efetivo)),
+            'base':         'custo real (c/ imposto)',
+        },
+        'custos_unitarios_bruto': {
             'cpm':          _round(_mult(_div(inv_bruto, tot['impressoes']), 1000)),
             'cpc_link':     _round(_div(inv_bruto, tot['cliques_link'])),
             'cp_lpv':       _round(_div(inv_bruto, tot['lpv'])),
             'cp_checkout':  _round(_div(inv_bruto, tot['checkouts'])),
             'cpa_ingresso': _round(_div(inv_bruto, ingressos_efetivo)),
+            'base':         'Gerenciador (sem imposto)',
         },
         # Taxas de passagem entre as etapas do funil. O nome de cada taxa é o
         # da PASSAGEM (etapa origem → destino), como aparece na tela:
@@ -281,23 +293,24 @@ def compute_metrics(rows, vendas_plataforma=None, config=None):
         },
         # Funil pronto para render: 5 etapas, cada uma com volume, custo
         # unitário e a taxa de passagem para a etapa seguinte (badge diagonal).
+        # Custos do funil também sobre o custo real (com imposto)
         'funil_etapas': [
             {'etapa': 'Impressões',    'volume': tot['impressoes'],
-             'custo_label': 'CPM',         'custo': _round(_mult(_div(inv_bruto, tot['impressoes']), 1000)),
+             'custo_label': 'CPM',         'custo': _round(_mult(_div(custo_real, tot['impressoes']), 1000)),
              'taxa_label': 'CTR',          'taxa': _round(_mult(_div(tot['cliques_link'], tot['impressoes']), 100))},
             {'etapa': 'Cliques no link', 'volume': tot['cliques_link'],
-             'custo_label': 'CPC',         'custo': _round(_div(inv_bruto, tot['cliques_link'])),
+             'custo_label': 'CPC',         'custo': _round(_div(custo_real, tot['cliques_link'])),
              'taxa_label': 'Connect rate', 'taxa': _round(_mult(_div(tot['lpv'], tot['cliques_link']), 100))},
             {'etapa': 'Page View',       'volume': tot['lpv'],
-             'custo_label': 'CP LPV',      'custo': _round(_div(inv_bruto, tot['lpv'])),
+             'custo_label': 'CP LPV',      'custo': _round(_div(custo_real, tot['lpv'])),
              'taxa_label': 'LP → Checkout','taxa': _round(_mult(_div(tot['checkouts'], tot['lpv']), 100))},
             {'etapa': 'Checkout',        'volume': tot['checkouts'],
-             'custo_label': 'CP Checkout', 'custo': _round(_div(inv_bruto, tot['checkouts'])),
+             'custo_label': 'CP Checkout', 'custo': _round(_div(custo_real, tot['checkouts'])),
              'taxa_label': 'Checkout → Ingresso', 'taxa': _round(_mult(_div(ingressos_efetivo, tot['checkouts']), 100))},
-            # Última etapa = INGRESSOS (produto de entrada). CPA = gasto total
+            # Última etapa = INGRESSOS (produto de entrada). CPA = custo real
             # das campanhas ÷ ingressos vendidos.
             {'etapa': 'Ingressos',       'volume': ingressos_efetivo,
-             'custo_label': 'CPA',         'custo': _round(_div(inv_bruto, ingressos_efetivo)),
+             'custo_label': 'CPA',         'custo': _round(_div(custo_real, ingressos_efetivo)),
              'taxa_label': None,           'taxa': None},
         ],
         'financeiro': {
@@ -314,9 +327,9 @@ def compute_metrics(rows, vendas_plataforma=None, config=None):
             'ticket_medio':          _round(_div(fat_efetivo, ingressos_efetivo)),
             # Receita média por transação (base = todas as vendas)
             'receita_por_venda':     _round(_div(fat_efetivo, vendas_ticket)),
-            # Margem por ingresso: ticket − CPA. Negativo = cada venda dá prejuízo.
+            # Margem por ingresso: ticket − CPA real. Negativo = prejuízo por venda.
             'margem_por_ingresso':   _round((_div(fat_efetivo, ingressos_efetivo) or 0)
-                                            - (_div(inv_bruto, ingressos_efetivo) or 0)),
+                                            - (_div(custo_real, ingressos_efetivo) or 0)),
             'roas_fase1':            _round(_div(fat_efetivo, inv_bruto)),
             'roas_lancamento':       _round(_div(receita_total, inv_bruto)),
             'margem':                _round(_div(receita_total - custo_real, receita_total)),
@@ -527,18 +540,19 @@ def serie_diaria(rows, config=None, vendas_por_dia=None):
         faturamento = plat.get('faturamento', 0.0) if usa_plataforma else e['valor_pixel']
         tem_plat = usa_plataforma
 
+        custo_real_dia = round(inv * (1.0 + imposto), 2)
         saida.append({
             **e,
             'investimento':     round(inv, 2),
             'valor_pixel':      round(e['valor_pixel'], 2),
-            'custo_real_midia': round(inv * (1.0 + imposto), 2),
+            'custo_real_midia': custo_real_dia,
             'vendas':           vendas,
             'fonte_vendas':     'plataforma' if tem_plat else 'pixel',
             'faturamento':      _round(faturamento),
-            # Custos unitários
-            'cpa':  _round(_div(inv, vendas)),
-            'cpm':  _round(_mult(_div(inv, e['impressoes']), 1000)),
-            'cpc':  _round(_div(inv, e['cliques_link'])),
+            # Custos unitários sobre o CUSTO REAL (com imposto)
+            'cpa':  _round(_div(custo_real_dia, vendas)),
+            'cpm':  _round(_mult(_div(custo_real_dia, e['impressoes']), 1000)),
+            'cpc':  _round(_div(custo_real_dia, e['cliques_link'])),
             # Taxas do funil (mesma sequência da visão consolidada)
             'ctr':            _round(_mult(_div(e['cliques_link'], e['impressoes']), 100)),
             'connect_rate':   _round(_mult(_div(e['lpv'], e['cliques_link']), 100)),
@@ -560,14 +574,16 @@ def totais_serie(serie, config=None):
         for k in t:
             t[k] += r.get(k, 0) or 0
     inv = t['investimento']
+    custo_real = round(inv * (1.0 + imposto), 2)
     return {
         **t,
         'investimento':     round(inv, 2),
         'faturamento':      round(t['faturamento'], 2),
-        'custo_real_midia': round(inv * (1.0 + imposto), 2),
-        'cpa':  _round(_div(inv, t['vendas'])),
-        'cpm':  _round(_mult(_div(inv, t['impressoes']), 1000)),
-        'cpc':  _round(_div(inv, t['cliques_link'])),
+        'custo_real_midia': custo_real,
+        # Custos unitários sobre o CUSTO REAL (com imposto)
+        'cpa':  _round(_div(custo_real, t['vendas'])),
+        'cpm':  _round(_mult(_div(custo_real, t['impressoes']), 1000)),
+        'cpc':  _round(_div(custo_real, t['cliques_link'])),
         'ctr':            _round(_mult(_div(t['cliques_link'], t['impressoes']), 100)),
         'connect_rate':   _round(_mult(_div(t['lpv'], t['cliques_link']), 100)),
         'lp_checkout':    _round(_mult(_div(t['checkouts'], t['lpv']), 100)),

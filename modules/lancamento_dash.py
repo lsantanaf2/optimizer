@@ -290,14 +290,16 @@ def _tabela_entidades(rows_raw, chave):
     saida = []
     for e in por.values():
         inv, imp = e['investimento'], e['impressoes']
+        # Custos unitários sobre o CUSTO REAL (com imposto), igual ao resto da dash
+        real = round(inv * (1 + META_TAX_RATE), 2)
         saida.append({
             **e,
             'investimento': round(inv, 2),
-            'custo_real':   round(inv * (1 + META_TAX_RATE), 2),
-            'cpm': round(inv / imp * 1000, 2) if imp else None,
+            'custo_real':   real,
+            'cpm': round(real / imp * 1000, 2) if imp else None,
             'ctr': round(e['cliques_link'] / imp * 100, 2) if imp else None,
-            'cpc': round(inv / e['cliques_link'], 2) if e['cliques_link'] else None,
-            'cpa': round(inv / e['compras_pixel'], 2) if e['compras_pixel'] else None,
+            'cpc': round(real / e['cliques_link'], 2) if e['cliques_link'] else None,
+            'cpa': round(real / e['compras_pixel'], 2) if e['compras_pixel'] else None,
             'connect_rate': round(e['lpv'] / e['cliques_link'] * 100, 2) if e['cliques_link'] else None,
         })
     saida.sort(key=lambda x: -x['investimento'])
