@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ nome }} — {{ edicao }}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter+Tight:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg-deep:#070718; --bg-glow:#1E1450; --surface:#12123A; --surface-alt:#1A1A4A;
+    --stroke:#2A2A5E; --accent:#3D4FF5; --accent-soft:#8B93F8;
+    --text:#FFFFFF; --text-muted:#9AA0C7; --positive:#3DD68C; --negative:#F55E7A;
+    --r-card:12px; --r-badge:10px;
+  }
+  body{
+    background:var(--bg-deep); color:var(--text);
+    font-family:'Inter Tight',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    font-size:14px; min-height:100vh; -webkit-font-smoothing:antialiased;
+    background-image:
+      radial-gradient(60rem 40rem at 0% -10%, rgba(30,20,80,.55), transparent 60%),
+      radial-gradient(55rem 38rem at 100% -5%, rgba(61,79,245,.18), transparent 60%);
+    background-attachment:fixed;
+  }
+  .num{font-family:'Space Grotesk',sans-serif; font-variant-numeric:tabular-nums; letter-spacing:-.01em}
+  .mono{font-family:'IBM Plex Mono',monospace; font-variant-numeric:tabular-nums}
+  .wrap{max-width:1320px;margin:0 auto;padding:20px 18px 70px}
+
+  /* A — Header */
+  .topbar{display:flex;align-items:center;justify-content:space-between;gap:14px;
+    flex-wrap:wrap;padding:14px 18px;background:rgba(18,18,58,.85);
+    backdrop-filter:blur(10px);border:1px solid var(--stroke);border-radius:var(--r-card);
+    position:sticky;top:12px;z-index:60;margin-bottom:16px}
+  .brand{display:flex;flex-direction:column;gap:2px}
+  .brand b{font-size:1.05rem;font-weight:600}
+  .brand span{font-size:.72rem;color:var(--text-muted);letter-spacing:.04em}
+  .ctrl{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .seg{display:flex;background:var(--bg-deep);border:1px solid var(--stroke);border-radius:var(--r-badge);overflow:hidden}
+  .seg button{padding:6px 14px;background:none;border:0;color:var(--text-muted);
+    font:inherit;font-size:12px;font-weight:500;cursor:pointer}
+  .seg button.on{background:var(--accent);color:#fff}
+  .btn{padding:6px 12px;background:var(--bg-deep);border:1px solid var(--stroke);
+    border-radius:var(--r-badge);color:var(--text-muted);font:inherit;font-size:12px;cursor:pointer}
+  .btn:hover{border-color:var(--accent-soft);color:var(--text)}
+  input[type=date]{padding:5px 8px;background:var(--bg-deep);border:1px solid var(--stroke);
+    border-radius:var(--r-badge);color:var(--text);font:inherit;font-size:12px;color-scheme:dark}
+
+  .card{background:rgba(18,18,58,.85);border:1px solid var(--stroke);
+    border-radius:var(--r-card);padding:20px;backdrop-filter:blur(6px)}
+  .card-t{font-size:.72rem;text-transform:uppercase;letter-spacing:.09em;
+    color:var(--text-muted);font-weight:600;margin-bottom:14px;display:flex;
+    align-items:center;gap:7px;justify-content:space-between}
+
+  /* B — Timeline de fase */
+  .phase{margin-bottom:16px}
+  .phase-track{display:flex;align-items:center;margin:6px 0 10px}
+  .dot{width:11px;height:11px;border-radius:50%;background:var(--stroke);flex:none;
+    border:2px solid var(--bg-deep);box-shadow:0 0 0 1px var(--stroke)}
+  .dot.done{background:var(--accent-soft);box-shadow:0 0 0 1px var(--accent-soft)}
+  .dot.now{background:var(--accent);box-shadow:0 0 0 4px rgba(61,79,245,.25);width:15px;height:15px}
+  .bar{height:2px;flex:1;background:var(--stroke)}
+  .bar.done{background:var(--accent-soft)}
+  .phase-labels{display:flex;justify-content:space-between;font-size:.66rem;color:var(--text-muted)}
+  .phase-labels span.now{color:var(--accent-soft);font-weight:600}
+
+  /* C — KPIs */
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-bottom:16px}
+  .kpi-l{font-size:.66rem;text-transform:uppercase;letter-spacing:.09em;color:var(--text-muted);font-weight:600}
+  .kpi-v{font-size:2.1rem;font-weight:700;margin-top:7px;line-height:1.05}
+  .kpi-c{font-size:.72rem;color:var(--text-muted);margin-top:6px;display:flex;align-items:center;gap:5px}
+  .up{color:var(--positive)} .down{color:var(--negative)}
+
+  /* D — Meta */
+  .goal-bar{height:11px;background:var(--bg-deep);border:1px solid var(--stroke);
+    border-radius:99px;overflow:hidden;margin:10px 0 8px}
+  .goal-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent-soft));
+    border-radius:99px;transition:width .6s ease-out}
+  .goal-meta{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;
+    font-size:.76rem;color:var(--text-muted)}
+
+  /* Grid principal */
+  .grid3{display:grid;grid-template-columns:minmax(280px,1.05fr) minmax(340px,1.6fr);
+    gap:16px;margin-bottom:16px;align-items:start}
+  @media(max-width:1100px){.grid3{grid-template-columns:1fr}}
+
+  /* F — Funil vertical */
+  .funnel{display:flex;flex-direction:column;gap:0}
+  .step{position:relative;background:var(--surface-alt);border:1px solid var(--stroke);
+    border-radius:var(--r-card);padding:14px 16px;margin-bottom:24px}
+  .step:last-child{margin-bottom:0}
+  .step-l{font-size:.68rem;color:var(--text-muted);text-transform:uppercase;
+    letter-spacing:.07em;display:flex;align-items:center;gap:6px}
+  .step-v{font-size:1.65rem;font-weight:700;margin-top:4px}
+  .step-cost{position:absolute;right:14px;top:14px;text-align:right}
+  .step-cost small{display:block;font-size:.6rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em}
+  .step-cost b{font-size:.95rem;font-weight:600;color:var(--accent-soft)}
+  .rate{position:absolute;right:16px;bottom:-17px;z-index:2;background:var(--accent);
+    color:#fff;border-radius:var(--r-badge);padding:5px 11px;font-size:.72rem;font-weight:600;
+    box-shadow:0 4px 14px rgba(61,79,245,.35);display:flex;align-items:center;gap:6px}
+  .rate small{font-weight:400;opacity:.85;font-size:.64rem}
+  .rate.warn{background:#7c4a11;box-shadow:none}
+
+  /* Tabelas */
+  .tbl-wrap{overflow:auto;max-height:420px;border-radius:var(--r-card)}
+  table{width:100%;border-collapse:collapse;font-family:'IBM Plex Mono',monospace;
+    font-size:12px;font-variant-numeric:tabular-nums}
+  thead th{position:sticky;top:0;background:var(--surface);color:var(--text-muted);
+    font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:500;
+    padding:9px 10px;text-align:right;border-bottom:1px solid var(--stroke);white-space:nowrap}
+  thead th:first-child{text-align:left}
+  tbody td{padding:8px 10px;text-align:right;border-bottom:1px solid rgba(42,42,94,.5);white-space:nowrap}
+  tbody td:first-child{text-align:left;color:var(--text-muted)}
+  tbody tr:nth-child(even){background:rgba(26,26,74,.4)}
+  tbody tr:hover{background:rgba(61,79,245,.09)}
+  tfoot td{padding:10px;text-align:right;font-weight:600;border-top:1px solid var(--stroke);
+    background:var(--surface);position:sticky;bottom:0}
+  tfoot td:first-child{text-align:left;color:var(--text-muted)}
+  .dim{color:var(--text-muted)}
+
+  #loading{text-align:center;padding:70px 0;color:var(--text-muted)}
+  .sp{display:inline-block;width:22px;height:22px;border:2px solid var(--stroke);
+    border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;
+    vertical-align:middle;margin-right:10px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  #err{display:none;background:rgba(245,94,122,.1);border:1px solid var(--negative);
+    color:var(--negative);border-radius:var(--r-card);padding:14px 18px;margin-bottom:16px}
+  .note{font-size:.7rem;color:var(--text-muted);line-height:1.6;margin-top:18px;
+    padding-top:14px;border-top:1px solid var(--stroke)}
+  .warnbox{background:rgba(124,74,17,.18);border:1px solid #7c4a11;color:#fbbf24;
+    border-radius:var(--r-badge);padding:9px 13px;font-size:.74rem;margin-bottom:14px}
+  .client-hide{}
+  body.mode-cliente .client-hide{display:none!important}
+  @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <div class="brand">
+      <b>{{ expert }}</b>
+      <span>{{ nome }} · {{ edicao }}</span>
+    </div>
+    <div class="ctrl">
+      <div class="seg">
+        <button id="m-op" class="on" onclick="setModo('operacao')">Operação</button>
+        <button id="m-cl" onclick="setModo('cliente')">Cliente</button>
+      </div>
+      <input type="date" id="dt-since"><input type="date" id="dt-until">
+      <button class="btn" onclick="load(true)">↻ Atualizar</button>
+    </div>
+  </div>
+
+  <div id="loading"><span class="sp"></span>Carregando lançamento…</div>
+  <div id="err"></div>
+
+  <div id="content" style="display:none">
+
+    <!-- B — Timeline de fase -->
+    <div class="card phase">
+      <div class="card-t"><span>Linha do tempo</span><span id="phase-info" class="dim"></span></div>
+      <div class="phase-track" id="phase-track"></div>
+      <div class="phase-labels" id="phase-labels"></div>
+    </div>
+
+    <!-- C — KPIs -->
+    <div class="kpis" id="kpis"></div>
+
+    <!-- D — Meta -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-t"><span>Meta — ponto de equilíbrio</span><span id="goal-tag" class="dim"></span></div>
+      <div id="goal-line" style="font-size:.86rem"></div>
+      <div class="goal-bar"><div class="goal-fill" id="goal-fill" style="width:0%"></div></div>
+      <div class="goal-meta" id="goal-meta"></div>
+    </div>
+
+    <!-- F + tabela diária -->
+    <div class="grid3">
+      <div class="card">
+        <div class="card-t"><span>Funil</span><span class="dim">volume · custo · taxa</span></div>
+        <div id="tracking-warn"></div>
+        <div class="funnel" id="funnel"></div>
+      </div>
+
+      <div class="card" style="padding:0">
+        <div class="card-t" style="padding:20px 20px 0;margin-bottom:10px">
+          <span>Dados diários</span><span class="dim" id="fonte-tag"></span>
+        </div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr>
+              <th>Data</th><th>Investim.</th><th>Vendas</th><th>CPA</th><th>CPM</th>
+              <th>CTR</th><th>Connect</th><th>LP→Ckt</th><th>Ckt→Vnd</th>
+            </tr></thead>
+            <tbody id="day-tbody"></tbody>
+            <tfoot id="day-tfoot"></tfoot>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- E — Curva diária -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-t"><span>Curva diária</span><span class="dim">barras = investimento · linhas = vendas e CPA</span></div>
+      <div style="position:relative;height:300px"><canvas id="chart"></canvas></div>
+    </div>
+
+    <!-- Vendas por produto -->
+    <div class="card client-hide" style="margin-bottom:16px;padding:0">
+      <div class="card-t" style="padding:20px 20px 0;margin-bottom:10px"><span>Vendas por produto</span></div>
+      <div class="tbl-wrap" style="max-height:260px">
+        <table><thead><tr><th>Produto</th><th>Vendas</th><th>Receita</th></tr></thead>
+        <tbody id="prod-tbody"></tbody></table>
+      </div>
+    </div>
+
+    <!-- G — Campanhas -->
+    <div class="card client-hide" style="padding:0">
+      <div class="card-t" style="padding:20px 20px 0;margin-bottom:10px"><span>Campanhas</span></div>
+      <div class="tbl-wrap" style="max-height:300px">
+        <table><thead><tr>
+          <th>Campanha</th><th>Investim.</th><th>Impress.</th><th>CPM</th><th>CTR</th>
+          <th>Cliques</th><th>CPC</th><th>Connect</th><th>Compras</th><th>CPA</th>
+        </tr></thead><tbody id="camp-tbody"></tbody></table>
+      </div>
+    </div>
+
+    <div class="note" id="footer-note"></div>
+  </div>
+</div>
+
+<script>
+const SLUG = {{ slug|tojson }};
+let modo = 'operacao', chart = null, DATA = null;
+
+const brl = (v,d=2) => v==null ? '—' : 'R$ ' + Number(v).toLocaleString('pt-BR',{minimumFractionDigits:d,maximumFractionDigits:d});
+const brlK = v => v==null ? '—' : (Math.abs(v)>=1000 ? 'R$ ' + (v/1000).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1}) + 'k' : brl(v));
+const int = v => v==null ? '—' : Number(v).toLocaleString('pt-BR');
+const pct = (v,d=2) => v==null ? '—' : Number(v).toLocaleString('pt-BR',{minimumFractionDigits:d,maximumFractionDigits:d}) + '%';
+
+function setModo(m){
+  modo = m;
+  document.body.classList.toggle('mode-cliente', m==='cliente');
+  document.getElementById('m-op').classList.toggle('on', m==='operacao');
+  document.getElementById('m-cl').classList.toggle('on', m==='cliente');
+  if (DATA) { render(DATA); }
+}
+
+// B — timeline
+function renderFase(d){
+  const fases = [['venda_ingresso','Venda'],['confirmacao','Confirm.'],['evento','Evento'],
+                 ['carrinho','Carrinho'],['fechamento','Fecham.']];
+  const atual = d.fase.fase;
+  const idx = Math.max(0, fases.findIndex(f => f[0]===atual));
+  let track = '', labels = '';
+  fases.forEach((f,i) => {
+    const cls = i<idx ? 'done' : (i===idx ? 'now' : '');
+    track += `<div class="dot ${cls}"></div>`;
+    if (i < fases.length-1) track += `<div class="bar ${i<idx?'done':''}"></div>`;
+    labels += `<span class="${i===idx?'now':''}">${f[1]}</span>`;
+  });
+  document.getElementById('phase-track').innerHTML = track;
+  document.getElementById('phase-labels').innerHTML = labels;
+  const dts = d.config.datas || {};
+  const fim = dts.fechamento_carrinho;
+  let info = `Dia ${d.fase.dia_do_lancamento || '—'} do lançamento`;
+  if (fim) {
+    const restam = Math.ceil((new Date(fim+'T00:00:00') - new Date(new Date().toDateString()))/864e5);
+    info += restam>=0 ? ` · faltam ${restam} dia(s) para ${fim.slice(8,10)}/${fim.slice(5,7)}` : ' · encerrado';
+  }
+  document.getElementById('phase-info').textContent = info;
+}
+
+// C — KPIs (delta colorido pela direção desejada da métrica)
+function renderKpis(d){
+  const m = d.metricas, f = m.financeiro, c = m.custos, der = d.derivadas;
+  const roas = f.roas_real, alvoRoas = (d.config.alvos||{}).roas || 1;
+  const roasCls = roas==null ? '' : (roas >= alvoRoas ? 'up' : 'down');
+  const resCls = der.resultado >= 0 ? 'up' : 'down';
+  const cards = [
+    {l:'Investimento', v:brlK(c.custo_real_midia),
+     c:`<span class="dim">bruto ${brlK(c.investimento_bruto)} + imp. ${brlK(c.imposto_valor)}</span>`},
+    {l:'Vendas', v:int(f.ingressos),
+     c:`<span class="dim">${d.vendas.ingressos!=null?int(d.vendas.ingressos)+' ingressos':''}</span>`},
+    {l:'CPA', v:brl(m.custos_unitarios.cpa_ingresso),
+     c:`<span class="dim">por venda</span>`},
+    {l:'Faturamento', v:brlK(f.faturamento_ingresso),
+     c:`<span class="dim">${d.vendas.campo_receita||'comissão'}</span>`},
+    {l:'ROAS', v:roas==null?'—':Number(roas).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}),
+     c:`<span class="${roasCls}">meta ${Number(alvoRoas).toFixed(2)} · sobre custo real</span>`},
+    {l:'Resultado', v:brlK(der.resultado),
+     c:`<span class="${resCls}">${der.break_even_atingido?'✓ no azul':'abaixo do zero a zero'}</span>`},
+  ];
+  document.getElementById('kpis').innerHTML = cards.map(k =>
+    `<div class="card"><div class="kpi-l">${k.l}</div>
+     <div class="kpi-v num">${k.v}</div><div class="kpi-c">${k.c}</div></div>`).join('');
+}
+
+// D — meta / zero a zero
+function renderMeta(d){
+  const der = d.derivadas, m = d.metricas;
+  const alvo = der.faturamento_alvo, fat = der.faturamento_atual;
+  const p = alvo ? Math.min(100, (fat/alvo)*100) : 0;
+  document.getElementById('goal-fill').style.width = p.toFixed(1)+'%';
+  document.getElementById('goal-line').innerHTML =
+    `<b class="num">${brl(fat)}</b> <span class="dim">de</span> <b class="num">${brl(alvo)}</b>
+     <span class="dim">— ${pct(der.pct_faturamento,1)} do ponto de equilíbrio</span>`;
+  const faltam = der.vendas_para_break_even;
+  document.getElementById('goal-meta').innerHTML =
+    `<span>Budget usado: <b>${brl(m.custos.custo_real_midia)}</b> de ${brl(der.budget_real)}
+       <span class="dim">(${pct(der.pct_budget,1)})</span></span>
+     <span>Ticket médio: <b>${brl(der.ticket_medio)}</b></span>
+     <span>${der.break_even_atingido ? '<b class="up">Ponto de equilíbrio atingido</b>'
+        : `Faltam <b>${int(faltam)}</b> vendas para o zero a zero`}</span>`;
+  document.getElementById('goal-tag').textContent = 'faturamento vs. custo real de mídia';
+}
+
+// F — funil
+function renderFunil(d){
+  const et = d.metricas.funil_etapas;
+  const larguras = [100, 96, 92, 88, 84];
+  let html = '';
+  et.forEach((e,i) => {
+    const temTaxa = e.taxa_label && e.taxa != null;
+    // Taxa > 100% é impossível: sinaliza rastreamento inconsistente
+    const suspeita = temTaxa && e.taxa > 100;
+    html += `<div class="step" style="width:${larguras[i]}%">
+      <div class="step-l">${e.etapa}</div>
+      <div class="step-v num">${int(e.volume)}</div>
+      <div class="step-cost"><small>${e.custo_label}</small><b class="num">${brl(e.custo)}</b></div>
+      ${temTaxa ? `<div class="rate ${suspeita?'warn':''}">
+          ${suspeita?'⚠ ':''}${pct(e.taxa)} <small>${e.taxa_label}</small></div>` : ''}
+    </div>`;
+  });
+  document.getElementById('funnel').innerHTML = html;
+
+  // Aviso de rastreamento quando o funil é matematicamente impossível
+  const ck = et.find(e => e.etapa==='Checkout');
+  const vd = et.find(e => e.etapa==='Vendas');
+  const warn = document.getElementById('tracking-warn');
+  if (ck && vd && vd.volume > ck.volume) {
+    warn.innerHTML = `<div class="warnbox">⚠ <b>Rastreamento inconsistente:</b>
+      ${int(vd.volume)} vendas contra apenas ${int(ck.volume)} checkouts registrados.
+      O evento <span class="mono">InitiateCheckout</span> não está disparando corretamente —
+      as taxas <b>LP→Checkout</b> e <b>Checkout→Venda</b> não devem ser usadas para decisão
+      até o pixel ser corrigido.</div>`;
+  } else { warn.innerHTML = ''; }
+}
+
+// Tabela diária
+function renderTabela(d){
+  const tb = document.getElementById('day-tbody'), tf = document.getElementById('day-tfoot');
+  tb.innerHTML = d.serie_diaria.map(r => {
+    const dd = r.data.slice(8,10)+'/'+r.data.slice(5,7);
+    return `<tr><td>${dd}</td><td>${brl(r.investimento)}</td><td>${int(r.vendas)}</td>
+      <td>${brl(r.cpa)}</td><td>${brl(r.cpm)}</td><td>${pct(r.ctr)}</td>
+      <td>${pct(r.connect_rate)}</td><td class="dim">${pct(r.lp_checkout)}</td>
+      <td class="dim">${pct(r.checkout_venda)}</td></tr>`;
+  }).join('');
+  const t = d.totais_diarios;
+  tf.innerHTML = `<tr><td>TOTAL</td><td>${brl(t.investimento)}</td><td>${int(t.vendas)}</td>
+    <td>${brl(t.cpa)}</td><td>${brl(t.cpm)}</td><td>${pct(t.ctr)}</td>
+    <td>${pct(t.connect_rate)}</td><td class="dim">${pct(t.lp_checkout)}</td>
+    <td class="dim">${pct(t.checkout_venda)}</td></tr>`;
+  document.getElementById('fonte-tag').textContent =
+    'vendas: ' + ((d.serie_diaria[0]||{}).fonte_vendas || 'pixel');
+}
+
+// E — curva
+function renderChart(d){
+  const s = d.serie_diaria;
+  const labels = s.map(r => r.data.slice(8,10)+'/'+r.data.slice(5,7));
+  const ds = [
+    {type:'bar', label:'Investimento', data:s.map(r=>r.investimento), yAxisID:'y1',
+     backgroundColor:'rgba(61,79,245,.55)', borderColor:'#3D4FF5', borderWidth:1, order:3},
+    {type:'line', label:'Vendas', data:s.map(r=>r.vendas), yAxisID:'y2',
+     borderColor:'#3DD68C', backgroundColor:'rgba(61,214,140,.12)', borderWidth:2,
+     pointRadius:3, tension:.35, fill:true, order:1},
+  ];
+  if (modo === 'operacao') ds.push({type:'line', label:'CPA', data:s.map(r=>r.cpa), yAxisID:'y1',
+     borderColor:'#8B93F8', borderWidth:2, borderDash:[5,4], pointRadius:2, tension:.35,
+     spanGaps:true, order:2});
+  if (chart) chart.destroy();
+  chart = new Chart(document.getElementById('chart').getContext('2d'), {
+    data:{labels, datasets:ds},
+    options:{responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
+      plugins:{legend:{labels:{color:'#9AA0C7',usePointStyle:true,boxWidth:8,font:{family:'Inter Tight',size:11}}},
+        tooltip:{callbacks:{label:c => c.dataset.label==='Vendas'
+          ? ` Vendas: ${c.raw}` : ` ${c.dataset.label}: ${brl(c.raw)}`}}},
+      scales:{
+        x:{ticks:{color:'#9AA0C7',font:{family:'IBM Plex Mono',size:10}},grid:{color:'rgba(255,255,255,.04)'}},
+        y1:{position:'left',ticks:{color:'#8B93F8',font:{family:'IBM Plex Mono',size:10},
+            callback:v=>'R$ '+v},grid:{color:'rgba(255,255,255,.04)'}},
+        y2:{position:'right',beginAtZero:true,ticks:{color:'#3DD68C',precision:0,
+            font:{family:'IBM Plex Mono',size:10}},grid:{display:false}}}}
+  });
+}
+
+function renderProdutos(d){
+  const rows = (d.vendas.por_produto)||[];
+  document.getElementById('prod-tbody').innerHTML = rows.length ? rows.map(p =>
+    `<tr><td>${p.produto}</td><td>${int(p.vendas)}</td><td>${brl(p.faturamento)}</td></tr>`).join('')
+    : `<tr><td colspan="3" class="dim" style="text-align:center;padding:18px">Sem vendas no período.</td></tr>`;
+}
+
+function renderCampanhas(d){
+  const rows = d.campanhas||[];
+  document.getElementById('camp-tbody').innerHTML = rows.length ? rows.map(c =>
+    `<tr><td title="${c.nome}">${c.nome.length>42?c.nome.slice(0,42)+'…':c.nome}</td>
+     <td>${brl(c.investimento)}</td><td>${int(c.impressoes)}</td><td>${brl(c.cpm)}</td>
+     <td>${pct(c.ctr)}</td><td>${int(c.cliques_link)}</td><td>${brl(c.cpc)}</td>
+     <td>${pct(c.connect_rate)}</td><td>${int(c.compras_pixel)}</td><td>${brl(c.cpa)}</td></tr>`).join('')
+    : `<tr><td colspan="10" class="dim" style="text-align:center;padding:18px">Sem dados.</td></tr>`;
+}
+
+function render(d){
+  DATA = d;
+  renderFase(d); renderKpis(d); renderMeta(d); renderFunil(d);
+  renderTabela(d); renderChart(d); renderProdutos(d); renderCampanhas(d);
+  const c = d.config;
+  document.getElementById('footer-note').innerHTML =
+    `<b>Metodologia:</b> investimento do Gerenciador acrescido de
+     <b>${(c.imposto*100).toFixed(2).replace('.',',')}%</b> de imposto sobre veiculação para o custo real.
+     Receita = campo <b>${d.vendas.campo_receita||'COMISSÃO'}</b> da planilha da plataforma
+     (fonte da verdade financeira); métricas de campanha usam o pixel.
+     Reconciliação pixel × plataforma: pixel ${int(d.metricas.reconciliacao.pixel)} ·
+     plataforma ${int(d.metricas.reconciliacao.plataforma)}
+     ${d.metricas.reconciliacao.divergencia!=null?`· divergência ${pct(d.metricas.reconciliacao.divergencia,1)}`:''}.
+     Período ${d.periodo.since} a ${d.periodo.until} · atualizado ${new Date(d.gerado_em).toLocaleString('pt-BR')}.`;
+}
+
+async function load(refresh){
+  const l=document.getElementById('loading'), e=document.getElementById('err'), c=document.getElementById('content');
+  l.style.display='block'; e.style.display='none';
+  const p = new URLSearchParams();
+  const s=document.getElementById('dt-since').value, u=document.getElementById('dt-until').value;
+  if(s) p.set('since',s); if(u) p.set('until',u); if(refresh) p.set('refresh','1');
+  try{
+    const r = await fetch(`/api/dash/lancamento/${SLUG}/data?`+p.toString());
+    const d = await r.json();
+    if(!d.success) throw new Error(d.error||('HTTP '+r.status));
+    if(!document.getElementById('dt-since').value){
+      document.getElementById('dt-since').value = d.periodo.since;
+      document.getElementById('dt-until').value = d.periodo.until;
+    }
+    render(d); c.style.display='block';
+  }catch(ex){ e.textContent='⚠ '+ex.message; e.style.display='block'; }
+  finally{ l.style.display='none'; }
+}
+load(false);
+</script>
+</body>
+</html>

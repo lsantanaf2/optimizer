@@ -70,6 +70,9 @@ app.register_blueprint(compliance_bp)
 from modules.hotmart_dash import hotmart_dash_bp
 app.register_blueprint(hotmart_dash_bp)
 
+from modules.lancamento_dash import lancamento_bp
+app.register_blueprint(lancamento_bp)
+
 from modules.database import init_db, close_db
 from modules.account_settings import (
     get_or_create_imported_account,
@@ -80,7 +83,7 @@ from modules.account_settings import (
 import atexit
 atexit.register(close_db)
 
-VERSION = "v2.27.3"
+VERSION = "v2.28.0"
 
 # ======================== STAGING DE UPLOAD (v2.11.0) ========================
 # Desacoplamento: o Service Worker sobe cada arquivo UMA vez para a VPS (staging),
