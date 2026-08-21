@@ -226,13 +226,20 @@ def compute_metrics(rows, vendas_plataforma=None, config=None):
 
     vp = vendas_plataforma or {}
     ingressos = vp.get('ingressos')
+    vendas_totais = vp.get('vendas_totais')
     fat_ingresso = vp.get('faturamento_ingresso')
     vendas_princ = vp.get('vendas_principal')
     fat_princ = vp.get('faturamento_principal')
 
     # Fonte da verdade para CPA/ROAS: plataforma quando existe, senão pixel (rotulado)
     tem_plataforma = ingressos is not None
+    # O FUNIL e o CPA medem a conversão do INGRESSO (produto de entrada) — é a
+    # métrica-herói da fase de venda. Bumps e upsells entram na receita, mas não
+    # na contagem do funil, senão a taxa de conversão fica inflada por quem já
+    # tinha convertido.
     ingressos_efetivo = ingressos if tem_plataforma else tot['compras_pixel']
+    # Ticket médio usa TODAS as vendas (receita / nº de transações)
+    vendas_ticket = vendas_totais if vendas_totais is not None else ingressos_efetivo
     fat_efetivo = fat_ingresso if fat_ingresso is not None else tot['valor_pixel']
     fonte_financeiro = 'plataforma' if tem_plataforma else 'pixel'
 
@@ -286,19 +293,24 @@ def compute_metrics(rows, vendas_plataforma=None, config=None):
              'taxa_label': 'LP → Checkout','taxa': _round(_mult(_div(tot['checkouts'], tot['lpv']), 100))},
             {'etapa': 'Checkout',        'volume': tot['checkouts'],
              'custo_label': 'CP Checkout', 'custo': _round(_div(inv_bruto, tot['checkouts'])),
-             'taxa_label': 'Checkout → Venda', 'taxa': _round(_mult(_div(ingressos_efetivo, tot['checkouts']), 100))},
-            {'etapa': 'Vendas',          'volume': ingressos_efetivo,
+             'taxa_label': 'Checkout → Ingresso', 'taxa': _round(_mult(_div(ingressos_efetivo, tot['checkouts']), 100))},
+            # Última etapa = INGRESSOS (produto de entrada). CPA = gasto total
+            # das campanhas ÷ ingressos vendidos.
+            {'etapa': 'Ingressos',       'volume': ingressos_efetivo,
              'custo_label': 'CPA',         'custo': _round(_div(inv_bruto, ingressos_efetivo)),
              'taxa_label': None,           'taxa': None},
         ],
         'financeiro': {
             'fonte':                 fonte_financeiro,
             'ingressos':             ingressos_efetivo,
+            'vendas_totais':         vendas_ticket,
             'faturamento_ingresso':  _round(fat_efetivo),
             'vendas_principal':      vendas_princ,
             'faturamento_principal': _round(fat_princ),
             'receita_total':         _round(receita_total),
-            'ticket_medio':          _round(_div(fat_efetivo, ingressos_efetivo)),
+            'ticket_medio':          _round(_div(fat_efetivo, vendas_ticket)),
+            # Quanto cada ingresso vendido gera de receita total (com bumps)
+            'receita_por_ingresso':  _round(_div(fat_efetivo, ingressos_efetivo)),
             'roas_fase1':            _round(_div(fat_efetivo, inv_bruto)),
             'roas_lancamento':       _round(_div(receita_total, inv_bruto)),
             'margem':                _round(_div(receita_total - custo_real, receita_total)),

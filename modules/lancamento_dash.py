@@ -384,7 +384,9 @@ def lancamento_data(slug):
     tem_vendas = bool(resumo_vendas.get('vendas') is not None)
     metricas = compute_metrics(
         rows,
-        vendas_plataforma=({'ingressos': resumo_vendas.get('vendas'),
+        # Funil e CPA usam INGRESSOS; receita e ticket usam todas as vendas
+        vendas_plataforma=({'ingressos': resumo_vendas.get('ingressos'),
+                            'vendas_totais': resumo_vendas.get('vendas'),
                             'faturamento_ingresso': resumo_vendas.get('faturamento')}
                            if tem_vendas else None),
         config=cfg,
