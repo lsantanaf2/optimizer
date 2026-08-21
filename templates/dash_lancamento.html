@@ -192,7 +192,7 @@
         <div class="tbl-wrap">
           <table>
             <thead><tr>
-              <th>Data</th><th title="Custo real, com imposto">Investim.</th><th>Vendas</th>
+              <th>Data</th><th title="Custo real, com imposto">Investim.</th><th title="Ingressos vendidos (base do CPA)">Ingressos</th>
               <th title="Custo real ÷ vendas">CPA</th><th title="Custo real ÷ mil impressões">CPM</th>
               <th>CTR</th><th>Connect</th><th>LP→Ckt</th><th>Ckt→Vnd</th>
             </tr></thead>
@@ -360,13 +360,13 @@ function renderTabela(d){
   const tb = document.getElementById('day-tbody'), tf = document.getElementById('day-tfoot');
   tb.innerHTML = d.serie_diaria.map(r => {
     const dd = r.data.slice(8,10)+'/'+r.data.slice(5,7);
-    return `<tr><td>${dd}</td><td>${brl(r.custo_real_midia)}</td><td>${int(r.vendas)}</td>
+    return `<tr><td>${dd}</td><td>${brl(r.custo_real_midia)}</td><td>${int(r.ingressos)}</td>
       <td>${brl(r.cpa)}</td><td>${brl(r.cpm)}</td><td>${pct(r.ctr)}</td>
       <td>${pct(r.connect_rate)}</td><td class="dim">${pct(r.lp_checkout)}</td>
       <td class="dim">${pct(r.checkout_venda)}</td></tr>`;
   }).join('');
   const t = d.totais_diarios;
-  tf.innerHTML = `<tr><td>TOTAL</td><td>${brl(t.custo_real_midia)}</td><td>${int(t.vendas)}</td>
+  tf.innerHTML = `<tr><td>TOTAL</td><td>${brl(t.custo_real_midia)}</td><td>${int(t.ingressos)}</td>
     <td>${brl(t.cpa)}</td><td>${brl(t.cpm)}</td><td>${pct(t.ctr)}</td>
     <td>${pct(t.connect_rate)}</td><td class="dim">${pct(t.lp_checkout)}</td>
     <td class="dim">${pct(t.checkout_venda)}</td></tr>`;
@@ -381,7 +381,7 @@ function renderChart(d){
   const ds = [
     {type:'bar', label:'Investimento (c/ imp.)', data:s.map(r=>r.custo_real_midia), yAxisID:'y1',
      backgroundColor:'rgba(61,79,245,.55)', borderColor:'#3D4FF5', borderWidth:1, order:3},
-    {type:'line', label:'Vendas', data:s.map(r=>r.vendas), yAxisID:'y2',
+    {type:'line', label:'Ingressos', data:s.map(r=>r.ingressos), yAxisID:'y2',
      borderColor:'#3DD68C', backgroundColor:'rgba(61,214,140,.12)', borderWidth:2,
      pointRadius:3, tension:.35, fill:true, order:1},
   ];
@@ -393,8 +393,8 @@ function renderChart(d){
     data:{labels, datasets:ds},
     options:{responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
       plugins:{legend:{labels:{color:'#9AA0C7',usePointStyle:true,boxWidth:8,font:{family:'Inter Tight',size:11}}},
-        tooltip:{callbacks:{label:c => c.dataset.label==='Vendas'
-          ? ` Vendas: ${c.raw}` : ` ${c.dataset.label}: ${brl(c.raw)}`}}},
+        tooltip:{callbacks:{label:c => c.dataset.label==='Ingressos'
+          ? ` Ingressos: ${c.raw}` : ` ${c.dataset.label}: ${brl(c.raw)}`}}},
       scales:{
         x:{ticks:{color:'#9AA0C7',font:{family:'IBM Plex Mono',size:10}},grid:{color:'rgba(255,255,255,.04)'}},
         y1:{position:'left',ticks:{color:'#8B93F8',font:{family:'IBM Plex Mono',size:10},

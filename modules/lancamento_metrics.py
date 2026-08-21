@@ -539,6 +539,9 @@ def serie_diaria(rows, config=None, vendas_por_dia=None):
         vendas = plat.get('vendas', 0) if usa_plataforma else e['compras_pixel']
         faturamento = plat.get('faturamento', 0.0) if usa_plataforma else e['valor_pixel']
         tem_plat = usa_plataforma
+        # CPA sempre sobre INGRESSOS — mesma base do funil e dos KPIs, para não
+        # existirem dois CPAs diferentes na mesma tela.
+        ingressos_dia = plat.get('ingressos', vendas) if usa_plataforma else e['compras_pixel']
 
         custo_real_dia = round(inv * (1.0 + imposto), 2)
         saida.append({
@@ -547,18 +550,19 @@ def serie_diaria(rows, config=None, vendas_por_dia=None):
             'valor_pixel':      round(e['valor_pixel'], 2),
             'custo_real_midia': custo_real_dia,
             'vendas':           vendas,
+            'ingressos':        ingressos_dia,
             'fonte_vendas':     'plataforma' if tem_plat else 'pixel',
             'faturamento':      _round(faturamento),
             # Custos unitários sobre o CUSTO REAL (com imposto)
-            'cpa':  _round(_div(custo_real_dia, vendas)),
+            'cpa':  _round(_div(custo_real_dia, ingressos_dia)),
             'cpm':  _round(_mult(_div(custo_real_dia, e['impressoes']), 1000)),
             'cpc':  _round(_div(custo_real_dia, e['cliques_link'])),
             # Taxas do funil (mesma sequência da visão consolidada)
             'ctr':            _round(_mult(_div(e['cliques_link'], e['impressoes']), 100)),
             'connect_rate':   _round(_mult(_div(e['lpv'], e['cliques_link']), 100)),
             'lp_checkout':    _round(_mult(_div(e['checkouts'], e['lpv']), 100)),
-            'checkout_venda': _round(_mult(_div(vendas, e['checkouts']), 100)),
-            'roas': _round(_div(faturamento, inv)),
+            'checkout_venda': _round(_mult(_div(ingressos_dia, e['checkouts']), 100)),
+            'roas': _round(_div(faturamento, custo_real_dia)),
         })
     return saida
 
@@ -569,7 +573,7 @@ def totais_serie(serie, config=None):
     cfg = merge_config(config)
     imposto = cfg.get('imposto_midia', META_TAX_RATE)
     t = {k: 0 for k in ('investimento', 'impressoes', 'cliques_link', 'lpv',
-                        'checkouts', 'vendas', 'faturamento')}
+                        'checkouts', 'vendas', 'ingressos', 'faturamento')}
     for r in serie:
         for k in t:
             t[k] += r.get(k, 0) or 0
@@ -580,13 +584,13 @@ def totais_serie(serie, config=None):
         'investimento':     round(inv, 2),
         'faturamento':      round(t['faturamento'], 2),
         'custo_real_midia': custo_real,
-        # Custos unitários sobre o CUSTO REAL (com imposto)
-        'cpa':  _round(_div(custo_real, t['vendas'])),
+        # Custos unitários sobre o CUSTO REAL (com imposto); CPA por ingressos
+        'cpa':  _round(_div(custo_real, t['ingressos'])),
         'cpm':  _round(_mult(_div(custo_real, t['impressoes']), 1000)),
         'cpc':  _round(_div(custo_real, t['cliques_link'])),
         'ctr':            _round(_mult(_div(t['cliques_link'], t['impressoes']), 100)),
         'connect_rate':   _round(_mult(_div(t['lpv'], t['cliques_link']), 100)),
         'lp_checkout':    _round(_mult(_div(t['checkouts'], t['lpv']), 100)),
-        'checkout_venda': _round(_mult(_div(t['vendas'], t['checkouts']), 100)),
-        'roas': _round(_div(t['faturamento'], inv)),
+        'checkout_venda': _round(_mult(_div(t['ingressos'], t['checkouts']), 100)),
+        'roas': _round(_div(t['faturamento'], custo_real)),
     }

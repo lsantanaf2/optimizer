@@ -240,7 +240,7 @@ def _fetch_vendas(cfg, since, until):
             continue
 
         k = d.isoformat()
-        e = por_dia.setdefault(k, {'vendas': 0, 'faturamento': 0.0})
+        e = por_dia.setdefault(k, {'vendas': 0, 'ingressos': 0, 'faturamento': 0.0})
         e['vendas'] += 1
         e['faturamento'] += valor
         total['vendas'] += 1
@@ -249,6 +249,7 @@ def _fetch_vendas(cfg, since, until):
         # o nome do ingresso mas é outro produto (order bump).
         if ingresso_key and nome.lower().startswith(ingresso_key):
             ingressos += 1
+            e['ingressos'] += 1
         p = por_produto.setdefault(nome, {'vendas': 0, 'faturamento': 0.0})
         p['vendas'] += 1
         p['faturamento'] += valor
