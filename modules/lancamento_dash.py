@@ -112,13 +112,20 @@ def _fetch_meta(cfg, since, until):
     }
     raw = meta_get_insights_rows(f'{GRAPH_BASE}/{acct}/insights', params, timeout=60)
 
-    # Extrai as ações do funil que a API devolve aninhadas
-    def _act(actions, *tipos):
-        total = 0
+    # Extrai ações do funil por PRIORIDADE, nunca somando.
+    # Os action_types se sobrepõem: 'omni_landing_page_view' já agrega
+    # 'landing_page_view'. Somar os dois dobra o volume e produz taxas
+    # impossíveis (>100%). Mesmo padrão de meta_api._extract_conversions.
+    def _act(actions, *tipos_por_prioridade):
+        mapa = {}
         for a in (actions or []):
-            if a.get('action_type') in tipos:
-                total += int(float(a.get('value', 0) or 0))
-        return total
+            t = a.get('action_type')
+            if t:
+                mapa[t] = mapa.get(t, 0) + int(float(a.get('value', 0) or 0))
+        for t in tipos_por_prioridade:
+            if mapa.get(t):
+                return mapa[t]
+        return 0
 
     linhas = []
     for r in raw:
