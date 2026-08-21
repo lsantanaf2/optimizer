@@ -309,8 +309,10 @@ def _metas_derivadas(cfg, resumo, custo_real):
     metas = cfg.get('metas') or {}
     alvo_fat = metas.get('faturamento')
     fat = resumo.get('faturamento') or 0
-    vendas = resumo.get('vendas') or 0
-    ticket = (fat / vendas) if vendas else None
+    # Ticket médio = receita ÷ ingressos (definição do lançamento). É a base
+    # correta para projetar quantos INGRESSOS faltam para o zero a zero.
+    ingressos = resumo.get('ingressos') or 0
+    ticket = (fat / ingressos) if ingressos else None
 
     return {
         'budget_real':        metas.get('investimento_real'),
@@ -321,7 +323,8 @@ def _metas_derivadas(cfg, resumo, custo_real):
         'pct_budget':         round(custo_real / metas['investimento_real'] * 100, 1)
                               if metas.get('investimento_real') else None,
         'ticket_medio':       round(ticket, 2) if ticket else None,
-        # Quantas vendas ainda faltam para o zero a zero, no ticket atual
+        'ticket_base':        'comissão ÷ ingressos',
+        # Quantos INGRESSOS ainda faltam para o zero a zero, no ticket atual
         'vendas_para_break_even': (int(round((alvo_fat - fat) / ticket))
                                    if (alvo_fat and ticket and fat < alvo_fat) else 0),
         'break_even_atingido': bool(alvo_fat and fat >= alvo_fat),

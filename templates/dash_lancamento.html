@@ -288,7 +288,11 @@ function renderKpis(d){
     {l:'CPA', v:brl(m.custos_unitarios.cpa_ingresso),
      c:`<span class="dim">gasto ÷ ingressos</span>`},
     {l:'Faturamento', v:brlK(f.faturamento_ingresso),
-     c:`<span class="dim">${d.vendas.campo_receita||'comissão'} · ${brl(f.receita_por_ingresso)}/ingresso</span>`},
+     c:`<span class="dim">${d.vendas.campo_receita||'comissão'}</span>`},
+    {l:'Ticket médio', v:brl(f.ticket_medio),
+     c:(f.margem_por_ingresso!=null
+        ? `<span class="${f.margem_por_ingresso>=0?'up':'down'}">${f.margem_por_ingresso>=0?'+':''}${brl(f.margem_por_ingresso)} vs. CPA</span>`
+        : `<span class="dim">comissão ÷ ingressos</span>`)},
     {l:'ROAS', v:roas==null?'—':Number(roas).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}),
      c:`<span class="${roasCls}">meta ${Number(alvoRoas).toFixed(2)} · sobre custo real</span>`},
     {l:'Resultado', v:brlK(der.resultado),

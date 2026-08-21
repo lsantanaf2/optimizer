@@ -308,9 +308,15 @@ def compute_metrics(rows, vendas_plataforma=None, config=None):
             'vendas_principal':      vendas_princ,
             'faturamento_principal': _round(fat_princ),
             'receita_total':         _round(receita_total),
-            'ticket_medio':          _round(_div(fat_efetivo, vendas_ticket)),
-            # Quanto cada ingresso vendido gera de receita total (com bumps)
-            'receita_por_ingresso':  _round(_div(fat_efetivo, ingressos_efetivo)),
+            # TICKET MÉDIO = receita ÷ INGRESSOS vendidos. Mede quanto cada
+            # ingresso gera no total (já embutindo bumps e upsells), que é o
+            # número que se compara direto com o CPA.
+            'ticket_medio':          _round(_div(fat_efetivo, ingressos_efetivo)),
+            # Receita média por transação (base = todas as vendas)
+            'receita_por_venda':     _round(_div(fat_efetivo, vendas_ticket)),
+            # Margem por ingresso: ticket − CPA. Negativo = cada venda dá prejuízo.
+            'margem_por_ingresso':   _round((_div(fat_efetivo, ingressos_efetivo) or 0)
+                                            - (_div(inv_bruto, ingressos_efetivo) or 0)),
             'roas_fase1':            _round(_div(fat_efetivo, inv_bruto)),
             'roas_lancamento':       _round(_div(receita_total, inv_bruto)),
             'margem':                _round(_div(receita_total - custo_real, receita_total)),
