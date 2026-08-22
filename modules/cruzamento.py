@@ -286,7 +286,7 @@ def _fetch_fb_insights_live(account_id, access_token, since, until):
     params = {
         'access_token': access_token,
         'level': 'ad',
-        'fields': 'campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions,clicks,inline_link_clicks,actions,date_start',
+        'fields': 'campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions,reach,clicks,inline_link_clicks,actions,date_start',
         'limit': 500,
         'time_increment': 1,  # dados diarios
     }
@@ -326,6 +326,7 @@ def _fetch_fb_insights_live(account_id, access_token, since, until):
                 'ad_name':            item.get('ad_name', ''),
                 'spend':              apply_meta_tax(item.get('spend', 0)),
                 'impressions':        int(item.get('impressions', 0) or 0),
+                'reach':              int(item.get('reach', 0) or 0),
                 'clicks':             int(item.get('clicks', 0) or 0),
                 'link_clicks':        int(item.get('inline_link_clicks', 0) or 0),
                 'landing_page_views': _act('landing_page_view'),
@@ -959,11 +960,15 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows, mqls_all=None, excluded_p
         if not d:
             continue
         e = _daily_fb.setdefault(d, {
-            'spend': 0.0, 'impressions': 0,
+            'spend': 0.0, 'impressions': 0, 'reach': 0, 'clicks': 0,
             'link_clicks': 0, 'landing_page_views': 0, 'typeform_submits': 0
         })
         e['spend']              += ad.get('spend', 0.0)
         e['impressions']        += ad.get('impressions', 0)
+        # Alcance somado dos ads — NÃO é deduplicado (a mesma pessoa pode ser
+        # alcançada por vários anúncios). Serve de proxy; o rótulo na tela diz.
+        e['reach']              += ad.get('reach', 0)
+        e['clicks']             += ad.get('clicks', 0)
         e['link_clicks']        += ad.get('link_clicks', 0)
         e['landing_page_views'] += ad.get('landing_page_views', 0)
         e['typeform_submits']   += ad.get('typeform_submits', 0)
@@ -978,17 +983,33 @@ def processar_cruzamento(fb_ads, mqls_rows, wons_rows, mqls_all=None, excluded_p
         lc  = fb.get('link_clicks', 0)
         lpv = fb.get('landing_page_views', 0)
         tf  = fb.get('typeform_submits', 0)
+        rch = fb.get('reach', 0)
+        clk = fb.get('clicks', 0)          # cliques em TUDO (não só no link)
+        # Ordem cronológica do funil: veiculação → impressão → alcance →
+        # clique → página → lead → MQL
         daily_funnel.append({
             'date':          dk,
+            # 1. Veiculação
             'spend':         sp,
+            'cpm':           round(sp / imp * 1000, 2) if imp > 0 else None,
+            # 2. Entrega
             'impressions':   imp,
+            'reach':         rch,
+            'frequency':     round(imp / rch, 2) if rch > 0 else None,
+            # 3. Cliques
+            'clicks':        clk,
             'link_clicks':   lc,
+            'ctr_all':       round(clk / imp * 100, 2) if imp > 0 else None,
+            'ctr':           round(lc  / imp * 100, 2) if imp > 0 else None,  # CTR (link)
+            'cpc_link':      round(sp / lc, 2) if lc > 0 else None,
+            # 4. Página
             'lpv':           lpv,
-            'typeform':      tf,
-            'mqls':          mql,
-            'ctr':           round(lc  / imp * 100, 2) if imp > 0 else None,
             'connect_rate':  round(lpv / lc  * 100, 2) if lc  > 0 else None,
+            # 5. Lead
+            'typeform':      tf,
             'taxa_lead':     round(tf  / lpv * 100, 2) if lpv > 0 else None,
+            # 6. MQL
+            'mqls':          mql,
             'taxa_mql':      round(mql / tf  * 100, 2) if tf  > 0 else None,
         })
 
@@ -1486,14 +1507,20 @@ def api_cruzamento_data():
                     daily_funnel.append({
                         'date':          dk,
                         'spend':         round(gd.get('spend', 0.0), 2),
+                        'cpm':           None,
                         'impressions':   0,
+                        'reach':         0,
+                        'frequency':     None,
+                        'clicks':        gd.get('clicks', 0),
                         'link_clicks':   gd.get('clicks', 0),
-                        'lpv':           0,
-                        'typeform':      0,
-                        'mqls':          0,
+                        'ctr_all':       None,
                         'ctr':           None,
+                        'cpc_link':      None,
+                        'lpv':           0,
                         'connect_rate':  None,
+                        'typeform':      0,
                         'taxa_lead':     None,
+                        'mqls':          0,
                         'taxa_mql':      None,
                         'has_google':    True,
                     })

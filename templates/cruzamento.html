@@ -1378,13 +1378,45 @@
         <div class="panel-header">
             <span>📈 Evolução Diária do Funil</span>
         </div>
+        <!-- 1. VEICULAÇÃO -->
         <div class="panel-chart-row">
             <div class="panel-chart-label">💰 Valor Investido (R$) <span class="panel-kpi-val" id="panel-kpi-spend">—</span></div>
             <canvas id="panel-chart-spend" height="55"></canvas>
         </div>
         <div class="panel-chart-row">
-            <div class="panel-chart-label">🖱 CTR — Cliques / Impressões (%) <span class="panel-kpi-val" id="panel-kpi-ctr">—</span></div>
+            <div class="panel-chart-label">📢 CPM — Custo por mil impressões (R$) <span class="panel-kpi-val" id="panel-kpi-cpm">—</span></div>
+            <canvas id="panel-chart-cpm" height="55"></canvas>
+        </div>
+        <!-- 2. ENTREGA -->
+        <div class="panel-chart-row">
+            <div class="panel-chart-label">👁 Impressões <span class="panel-kpi-val" id="panel-kpi-impr">—</span></div>
+            <canvas id="panel-chart-impr" height="55"></canvas>
+        </div>
+        <div class="panel-chart-row">
+            <div class="panel-chart-label">👥 Alcance <span style="font-size:10px;color:var(--text-muted);font-weight:normal;">(somado por anúncio, não deduplicado)</span> <span class="panel-kpi-val" id="panel-kpi-reach">—</span></div>
+            <canvas id="panel-chart-reach" height="55"></canvas>
+        </div>
+        <div class="panel-chart-row">
+            <div class="panel-chart-label">🔁 Frequência — Impressões / Alcance <span class="panel-kpi-val" id="panel-kpi-freq">—</span></div>
+            <canvas id="panel-chart-freq" height="55"></canvas>
+        </div>
+        <!-- 3. CLIQUES -->
+        <div class="panel-chart-row">
+            <div class="panel-chart-label">🖱 CTR (todos) — Cliques totais / Impressões (%) <span class="panel-kpi-val" id="panel-kpi-ctr-all">—</span></div>
+            <canvas id="panel-chart-ctr-all" height="55"></canvas>
+        </div>
+        <div class="panel-chart-row">
+            <div class="panel-chart-label">🔗 CTR (link) — Cliques no link / Impressões (%) <span class="panel-kpi-val" id="panel-kpi-ctr">—</span></div>
             <canvas id="panel-chart-ctr" height="55"></canvas>
+        </div>
+        <div class="panel-chart-row">
+            <div class="panel-chart-label">🖱 Cliques no link <span class="panel-kpi-val" id="panel-kpi-lc">—</span></div>
+            <canvas id="panel-chart-lc" height="55"></canvas>
+        </div>
+        <!-- 4. PÁGINA -->
+        <div class="panel-chart-row">
+            <div class="panel-chart-label">📄 Landing Page Views <span class="panel-kpi-val" id="panel-kpi-lpv">—</span></div>
+            <canvas id="panel-chart-lpv" height="55"></canvas>
         </div>
         <div class="panel-chart-row">
             <div class="panel-chart-label">📄 Connect Rate — Vis. Página / Cliques (%) <span class="panel-kpi-val" id="panel-kpi-cr">—</span></div>
@@ -2955,9 +2987,22 @@
         }
 
         // Atualiza KPIs de resumo no header de cada gráfico
+        const _int = v => v == null ? '—' : Math.round(v).toLocaleString('pt-BR');
+        // Taxas do período: recalculadas sobre os TOTAIS (média das médias distorce)
+        const _ratio = (num, den, mult=100) => {
+            const n = _sum(num), d = _sum(den);
+            return d > 0 ? (n / d) * mult : null;
+        };
         document.getElementById('panel-kpi-spend').textContent     = _fmt(_sum('spend'), 'R$ ');
-        document.getElementById('panel-kpi-ctr').textContent        = _fmt(_avg('ctr'), '', '%');
-        document.getElementById('panel-kpi-cr').textContent         = _fmt(_avg('connect_rate'), '', '%');
+        document.getElementById('panel-kpi-cpm').textContent        = _fmt(_ratio('spend','impressions',1000), 'R$ ');
+        document.getElementById('panel-kpi-impr').textContent       = _int(_sum('impressions'));
+        document.getElementById('panel-kpi-reach').textContent      = _int(_sum('reach'));
+        document.getElementById('panel-kpi-freq').textContent       = _fmt(_ratio('impressions','reach',1));
+        document.getElementById('panel-kpi-ctr-all').textContent    = _fmt(_ratio('clicks','impressions'), '', '%');
+        document.getElementById('panel-kpi-ctr').textContent        = _fmt(_ratio('link_clicks','impressions'), '', '%');
+        document.getElementById('panel-kpi-lc').textContent         = _int(_sum('link_clicks'));
+        document.getElementById('panel-kpi-lpv').textContent        = _int(_sum('lpv'));
+        document.getElementById('panel-kpi-cr').textContent         = _fmt(_ratio('lpv','link_clicks'), '', '%');
         document.getElementById('panel-kpi-taxa-lead').textContent  = _fmt(_avg('taxa_lead'), '', '%');
         document.getElementById('panel-kpi-taxa-mql').textContent   = _fmt(_avg('taxa_mql'), '', '%');
 
@@ -3007,8 +3052,36 @@
                 label: 'Gasto', cb: v => v == null ? '—' : 'R$ ' + v.toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2})
             },
             {
+                id: 'panel-chart-cpm', key: 'cpm', color: '#fbbf24',
+                label: 'CPM', cb: v => v == null ? '—' : 'R$ ' + v.toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2})
+            },
+            {
+                id: 'panel-chart-impr', key: 'impressions', color: '#94a3b8',
+                label: 'Impressões', cb: v => v == null ? '—' : Math.round(v).toLocaleString('pt-BR')
+            },
+            {
+                id: 'panel-chart-reach', key: 'reach', color: '#64748b',
+                label: 'Alcance', cb: v => v == null ? '—' : Math.round(v).toLocaleString('pt-BR')
+            },
+            {
+                id: 'panel-chart-freq', key: 'frequency', color: '#e879f9',
+                label: 'Frequência', cb: v => v == null ? '—' : v.toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2})
+            },
+            {
+                id: 'panel-chart-ctr-all', key: 'ctr_all', color: '#38bdf8',
+                label: 'CTR (todos)', cb: v => v == null ? '—' : v.toLocaleString('pt-BR', {minimumFractionDigits:2}) + '%'
+            },
+            {
                 id: 'panel-chart-ctr', key: 'ctr', color: '#4f9cf9',
-                label: 'CTR', cb: v => v == null ? '—' : v.toLocaleString('pt-BR', {minimumFractionDigits:2}) + '%'
+                label: 'CTR (link)', cb: v => v == null ? '—' : v.toLocaleString('pt-BR', {minimumFractionDigits:2}) + '%'
+            },
+            {
+                id: 'panel-chart-lc', key: 'link_clicks', color: '#60a5fa',
+                label: 'Cliques no link', cb: v => v == null ? '—' : Math.round(v).toLocaleString('pt-BR')
+            },
+            {
+                id: 'panel-chart-lpv', key: 'lpv', color: '#a78bfa',
+                label: 'Landing Page Views', cb: v => v == null ? '—' : Math.round(v).toLocaleString('pt-BR')
             },
             {
                 id: 'panel-chart-cr', key: 'connect_rate', color: '#7f5af0',
