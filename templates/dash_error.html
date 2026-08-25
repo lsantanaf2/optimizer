@@ -16,6 +16,9 @@
     .icon { font-size: 3rem; margin-bottom: 1rem; }
     h1 { font-size: 1.4rem; font-weight: 600; color: #f1f5f9; margin-bottom: .75rem; }
     p  { color: #94a3b8; line-height: 1.6; font-size: .95rem; }
+    .code { margin-top: 1.25rem; font-family: 'SF Mono', Consolas, monospace;
+            font-size: .78rem; color: #64748b; letter-spacing: .06em;
+            border-top: 1px solid #2d3148; padding-top: .9rem; }
   </style>
 </head>
 <body>
@@ -23,6 +26,7 @@
     <div class="icon">⚠️</div>
     <h1>Ocorreu um erro</h1>
     <p>{{ message or 'Não foi possível carregar o dashboard. Avise o desenvolvedor.' }}</p>
+    {% if code %}<div class="code">Código: {{ code }}</div>{% endif %}
   </div>
 </body>
 </html>

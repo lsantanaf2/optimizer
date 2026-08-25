@@ -65,10 +65,10 @@ def _require_client(slug: str):
     check_rate_limit(f'dash-api:{slug}')
     token = request.args.get('t', '').strip()
     if not token:
-        abort(403, 'Ocorreu um erro ao carregar o dashboard. Avise o desenvolvedor.')
+        abort(403, 'Ocorreu um erro ao carregar o dashboard. Avise o desenvolvedor. [DSH-102]')
     client = _resolve_client(slug, token)
     if not client:
-        abort(403, 'Ocorreu um erro ao carregar o dashboard. Avise o desenvolvedor.')
+        abort(403, 'Ocorreu um erro ao carregar o dashboard. Avise o desenvolvedor. [DSH-103]')
     return client
 
 
@@ -500,12 +500,12 @@ def dash_view(slug):
     token = request.args.get('t', '').strip()
     if not token:
         return render_template('dash_error.html',
-                               message='Ocorreu um erro ao carregar o dashboard. Avise o desenvolvedor.'), 403
+                               message='Ocorreu um erro ao carregar o dashboard. Avise o desenvolvedor.', code='DSH-100'), 403
 
     client = _resolve_client(slug, token)
     if not client:
         return render_template('dash_error.html',
-                               message='Ocorreu um erro ao carregar o dashboard. Avise o desenvolvedor.'), 403
+                               message='Ocorreu um erro ao carregar o dashboard. Avise o desenvolvedor.', code='DSH-101'), 403
 
     display_name  = client.get('display_name') or client.get('name') or slug.title()
     locked_period = client.get('locked_period') or ''

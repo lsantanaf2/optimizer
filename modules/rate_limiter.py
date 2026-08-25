@@ -65,4 +65,4 @@ def check_rate_limit(scope, max_requests=DEFAULT_MAX_REQUESTS, window=DEFAULT_WI
     """Aborta com 429 se o par (scope, IP do cliente) exceder o limite."""
     key = f'{scope}|{_client_ip()}'
     if not is_allowed(key, max_requests, window):
-        abort(429, 'Muitas requisições. Aguarde um instante e tente novamente.')
+        abort(429, 'Muitas requisições. Aguarde um instante e tente novamente. [DSH-429]')

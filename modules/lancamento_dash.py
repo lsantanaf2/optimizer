@@ -345,7 +345,7 @@ def lancamento_page(slug):
     cfg = _cfg(slug)
     if not cfg:
         return render_template('dash_error.html',
-                               message='Lançamento não encontrado.'), 404
+                               message='Ocorreu um erro ao carregar o dashboard. Avise o desenvolvedor.', code='DSH-104'), 404
     return render_template('dash_lancamento.html', slug=slug,
                            nome=cfg['nome'], expert=cfg['expert'], edicao=cfg['edicao'])
 
