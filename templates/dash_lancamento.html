@@ -133,6 +133,24 @@
     border-radius:var(--r-badge);padding:9px 13px;font-size:.74rem;margin-bottom:14px}
   .client-hide{}
   body.mode-cliente .client-hide{display:none!important}
+  /* Abas */
+  .tabs{display:flex;gap:6px;margin-bottom:16px;border-bottom:1px solid var(--stroke);padding-bottom:0}
+  .tab{padding:9px 18px;background:none;border:0;border-bottom:2px solid transparent;
+    color:var(--text-muted);font:inherit;font-size:13px;font-weight:600;cursor:pointer}
+  .tab.on{color:var(--text);border-bottom-color:var(--accent)}
+  .tab-panel{display:none} .tab-panel.on{display:block}
+  /* Cards de post impulsionado */
+  .posts{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:14px}
+  .post{background:var(--surface-alt);border:1px solid var(--stroke);border-radius:var(--r-card);padding:16px}
+  .post-t{font-size:.82rem;line-height:1.4;margin-bottom:12px;min-height:2.3em;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .post-hero{display:flex;align-items:baseline;gap:8px;margin-bottom:10px}
+  .post-hero b{font-size:1.5rem;font-weight:700}
+  .post-hero span{font-size:.7rem;color:var(--text-muted)}
+  .post-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:.72rem}
+  .post-grid div{background:var(--bg-deep);border-radius:8px;padding:7px 9px}
+  .post-grid small{display:block;color:var(--text-muted);font-size:.62rem;text-transform:uppercase;letter-spacing:.05em}
+  .post-grid b{font-size:.86rem;font-weight:600}
   @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -158,6 +176,13 @@
   <div id="err"></div>
 
   <div id="content" style="display:none">
+
+    <div class="tabs">
+      <button class="tab on" id="tab-btn-lanc" onclick="setTab('lanc')">🚀 Lançamento</button>
+      <button class="tab" id="tab-btn-ig" onclick="setTab('ig')">📸 Instagram</button>
+    </div>
+
+    <div class="tab-panel on" id="tab-lanc">
 
     <!-- B — Timeline de fase -->
     <div class="card phase">
@@ -228,6 +253,41 @@
         </tr></thead><tbody id="camp-tbody"></tbody></table>
       </div>
     </div>
+
+    </div><!-- /tab-lanc -->
+
+    <div class="tab-panel" id="tab-ig">
+      <div id="ig-loading" style="text-align:center;padding:50px 0;color:var(--text-muted)">
+        <span class="sp"></span>Carregando Instagram…
+      </div>
+      <div id="ig-avisos"></div>
+      <div id="ig-content" style="display:none">
+        <div class="kpis" id="ig-kpis"></div>
+
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-t"><span>Crescimento do perfil</span><span class="dim" id="ig-growth-tag"></span></div>
+          <div style="position:relative;height:250px"><canvas id="ig-chart"></canvas></div>
+        </div>
+
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-t"><span>Posts impulsionados</span><span class="dim">ordenados por seguidores ganhos</span></div>
+          <div class="posts" id="ig-posts"></div>
+        </div>
+
+        <div class="card" style="padding:0" id="ig-organic-card">
+          <div class="card-t" style="padding:20px 20px 0;margin-bottom:10px">
+            <span>Desempenho orgânico das publicações</span>
+            <span class="dim">alcance e engajamento do post</span>
+          </div>
+          <div class="tbl-wrap" style="max-height:340px">
+            <table><thead><tr>
+              <th>Publicação</th><th>Data</th><th>Alcance</th><th>Curtidas</th>
+              <th>Coment.</th><th>Salvos</th><th>Compart.</th>
+            </tr></thead><tbody id="ig-organic-tbody"></tbody></table>
+          </div>
+        </div>
+      </div>
+    </div><!-- /tab-ig -->
 
     <div class="note" id="footer-note"></div>
   </div>
@@ -437,6 +497,117 @@ function render(d){
      Período ${d.periodo.since} a ${d.periodo.until} · atualizado ${new Date(d.gerado_em).toLocaleString('pt-BR')}.`;
 }
 
+// ── Abas ──────────────────────────────────────────────────────────────────
+let igCarregado = false, igChart = null, IGDATA = null;
+
+function setTab(t){
+  document.getElementById('tab-lanc').classList.toggle('on', t==='lanc');
+  document.getElementById('tab-ig').classList.toggle('on', t==='ig');
+  document.getElementById('tab-btn-lanc').classList.toggle('on', t==='lanc');
+  document.getElementById('tab-btn-ig').classList.toggle('on', t==='ig');
+  // Carrega o Instagram só quando a aba é aberta (economiza chamadas à Meta)
+  if (t==='ig' && !igCarregado) { igCarregado = true; loadIG(false); }
+}
+
+async function loadIG(refresh){
+  const l=document.getElementById('ig-loading'), c=document.getElementById('ig-content'),
+        av=document.getElementById('ig-avisos');
+  l.style.display='block'; av.innerHTML='';
+  try{
+    const p = new URLSearchParams(); if(refresh) p.set('refresh','1');
+    const r = await fetch(`/api/dash/lancamento/${SLUG}/instagram?`+p.toString());
+    const d = await r.json();
+    if(!d.success) throw new Error(d.error||('HTTP '+r.status));
+    IGDATA = d;
+    renderIG(d); c.style.display='block';
+  }catch(ex){
+    av.innerHTML = `<div class="warnbox">⚠ ${ex.message}</div>`;
+  }finally{ l.style.display='none'; }
+}
+
+function renderIG(d){
+  const t = d.totais, rp = d.resumo_perfil;
+
+  // Avisos (falta de permissão etc.) — não impedem o resto de aparecer
+  document.getElementById('ig-avisos').innerHTML = (d.avisos||[]).length
+    ? `<div class="warnbox">⚠ ${d.avisos.join('<br>⚠ ')}</div>` : '';
+
+  const cards = [
+    {l:'Seguidores via anúncio', v:int(t.seguidores),
+     c:`<span class="dim">${int(t.posts)} post(s) impulsionado(s)</span>`},
+    {l:'Custo por seguidor', v:brl(t.custo_seguidor),
+     c:`<span class="dim">custo real ÷ seguidores</span>`},
+    {l:'Investido', v:brlK(t.custo_real),
+     c:`<span class="dim">bruto ${brlK(t.gasto)} + imposto</span>`},
+    {l:'Impressões', v:int(t.impressoes),
+     c:`<span class="dim">CPM ${brl(t.cpm)} · CTR ${pct(t.ctr)}</span>`},
+    {l:'Cliques', v:int(t.cliques),
+     c:`<span class="dim">engajamento ${int(t.engajamento)}</span>`},
+  ];
+  if (rp.novos_seguidores != null) {
+    cards.push({l:'Novos seguidores', v:int(rp.novos_seguidores),
+      c:`<span class="dim">${rp.pct_via_ads!=null?pct(rp.pct_via_ads,1)+' via anúncio':'perfil no período'}</span>`});
+  }
+  document.getElementById('ig-kpis').innerHTML = cards.map(k=>
+    `<div class="card"><div class="kpi-l">${k.l}</div>
+     <div class="kpi-v num">${k.v}</div><div class="kpi-c">${k.c}</div></div>`).join('');
+
+  // Curva de crescimento
+  const g = d.crescimento||[];
+  const tag = document.getElementById('ig-growth-tag');
+  if (g.length) {
+    tag.textContent = `${d.periodo.since} a ${d.periodo.until}`;
+    const labels = g.map(x=>x.date.slice(8,10)+'/'+x.date.slice(5,7));
+    if (igChart) igChart.destroy();
+    igChart = new Chart(document.getElementById('ig-chart').getContext('2d'), {
+      data:{labels, datasets:[
+        {type:'bar', label:'Novos seguidores/dia', data:g.map(x=>x.novos_seguidores),
+         backgroundColor:'rgba(61,79,245,.55)', borderColor:'#3D4FF5', borderWidth:1}
+      ]},
+      options:{responsive:true, maintainAspectRatio:false,
+        plugins:{legend:{labels:{color:'#9AA0C7',usePointStyle:true,boxWidth:8,font:{family:'Inter Tight',size:11}}}},
+        scales:{x:{ticks:{color:'#9AA0C7',font:{family:'IBM Plex Mono',size:10}},grid:{color:'rgba(255,255,255,.04)'}},
+          y:{beginAtZero:true,ticks:{color:'#8B93F8',precision:0,font:{family:'IBM Plex Mono',size:10}},
+             grid:{color:'rgba(255,255,255,.04)'}}}}
+    });
+  } else {
+    tag.textContent = 'indisponível';
+    document.getElementById('ig-chart').parentElement.innerHTML =
+      `<div class="dim" style="text-align:center;padding:60px 20px;font-size:.82rem">
+         Crescimento diário do perfil requer a permissão de métricas do Instagram.<br>
+         Reconecte o Facebook para liberar.</div>`;
+  }
+
+  // Cards dos posts impulsionados
+  document.getElementById('ig-posts').innerHTML = (d.impulsionados||[]).length
+    ? d.impulsionados.map(p=>`
+      <div class="post">
+        <div class="post-t">${p.titulo||p.nome}</div>
+        <div class="post-hero"><b class="num">${int(p.seguidores)}</b><span>seguidores · ${brl(p.custo_seguidor)} cada</span></div>
+        <div class="post-grid">
+          <div><small>Investido</small><b class="num">${brl(p.custo_real)}</b></div>
+          <div><small>Impressões</small><b class="num">${int(p.impressoes)}</b></div>
+          <div><small>Cliques</small><b class="num">${int(p.cliques)}</b></div>
+          <div><small>CTR</small><b class="num">${pct(p.ctr)}</b></div>
+        </div>
+      </div>`).join('')
+    : `<div class="dim" style="padding:20px">Nenhum post impulsionado no período.</div>`;
+
+  // Orgânico
+  const org = d.organicos||[];
+  document.getElementById('ig-organic-card').style.display = org.length ? 'block' : 'none';
+  if (org.length) {
+    document.getElementById('ig-organic-tbody').innerHTML = org.map(o=>{
+      const dt = o.data ? o.data.slice(8,10)+'/'+o.data.slice(5,7) : '—';
+      const leg = (o.legenda||'').replace(/\s+/g,' ').slice(0,52) || o.tipo;
+      const link = o.link ? `<a href="${o.link}" target="_blank" style="color:var(--accent-soft)">${leg}</a>` : leg;
+      return `<tr><td>${link}</td><td>${dt}</td><td>${int(o.alcance)}</td>
+        <td>${int(o.curtidas)}</td><td>${int(o.comentarios)}</td>
+        <td>${int(o.salvamentos)}</td><td>${int(o.compartilhamentos)}</td></tr>`;
+    }).join('');
+  }
+}
+
 async function load(refresh){
   const l=document.getElementById('loading'), e=document.getElementById('err'), c=document.getElementById('content');
   l.style.display='block'; e.style.display='none';
@@ -454,6 +625,7 @@ async function load(refresh){
     render(d); c.style.display='block';
   }catch(ex){ e.textContent='⚠ '+ex.message; e.style.display='block'; }
   finally{ l.style.display='none'; }
+  if (refresh && igCarregado) loadIG(true);
 }
 load(false);
 </script>

@@ -17,7 +17,7 @@ import csv
 import io
 import json
 import logging
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 
 import requests
 from flask import Blueprint, jsonify, render_template, request
@@ -62,10 +62,11 @@ LANCAMENTOS = {
             'gid': '0',
             'produtos': [
                 'AULÃO DE BALANCEAMENTO - com Edu Sorveteiro Raiz',
-                'COMBO: TODOS OS PRODUTOS JUNTOS',
                 'GRAVAÇÃO - AULÃO DE BALANCEAMENTO com Edu Sorveteiro Raiz',
                 'Combo: 4 Ebooks (Ciência do sabor - Boas práticas na prátca - '
                 'Comprar produto pronto ou produzir o seu - Sorvete dentro da lei)',
+                'Tira Dúvidas de 1 hora em Grupo com Edu Sorveteiro Raiz!',
+                'COMBO: TODOS OS PRODUTOS JUNTOS',
             ],
             'produto_ingresso': 'AULÃO DE BALANCEAMENTO',
         },
@@ -348,6 +349,89 @@ def lancamento_page(slug):
                                message='Ocorreu um erro ao carregar o dashboard. Avise o desenvolvedor.', code='DSH-104'), 404
     return render_template('dash_lancamento.html', slug=slug,
                            nome=cfg['nome'], expert=cfg['expert'], edicao=cfg['edicao'])
+
+
+@lancamento_bp.route('/api/dash/lancamento/<slug>/instagram')
+def lancamento_instagram(slug):
+    """Aba Instagram: posts impulsionados + crescimento do perfil + orgânico."""
+    from modules.rate_limiter import check_rate_limit
+    check_rate_limit(f'lancamento-ig:{slug}')
+
+    cfg = _cfg(slug)
+    if not cfg:
+        return jsonify({'success': False, 'error': 'Lançamento não encontrado'}), 404
+
+    from app import obter_token
+    token = obter_token()
+    if not token:
+        return jsonify({'success': False, 'error': 'Sistema não autenticado na Meta.'}), 503
+
+    # Período: por padrão os últimos 30 dias (limite do follower_count do IG),
+    # que é uma janela diferente da do lançamento — o perfil é contínuo.
+    hoje = date.today()
+    since = request.args.get('since') or (hoje - timedelta(days=29)).isoformat()
+    until = request.args.get('until') or hoje.isoformat()
+
+    from modules.meta_cache import get_or_fetch, invalidate
+    from modules.instagram_insights import (
+        fetch_boosted_posts, totais_boosted, fetch_ig_account,
+        fetch_follower_growth, fetch_organic_posts,
+    )
+    if request.args.get('refresh') == '1':
+        invalidate(f'lancamento-ig:{slug}')
+
+    acct = cfg['ad_account_id']
+    avisos = []
+
+    # 1. Posts impulsionados (sempre funciona com os escopos atuais)
+    try:
+        posts = get_or_fetch((f'lancamento-ig:{slug}', 'boost', since, until), CACHE_TTL,
+                             lambda: fetch_boosted_posts(acct, token, since, until))
+    except Exception as e:
+        logger.error(f'[instagram:{slug}] impulsionados: {e}')
+        return jsonify({'success': False, 'error': f'Meta Ads: {e}'}), 502
+
+    # 2 e 3. Dependem de instagram_manage_insights — degradam sem quebrar
+    ig = get_or_fetch((f'lancamento-ig:{slug}', 'acct'), CACHE_TTL,
+                      lambda: fetch_ig_account(acct, token))
+    crescimento, err_growth = [], None
+    organicos, err_org = [], None
+    if ig and ig.get('id'):
+        crescimento, err_growth = get_or_fetch(
+            (f'lancamento-ig:{slug}', 'growth', since, until), CACHE_TTL,
+            lambda: fetch_follower_growth(ig['id'], token, since, until))
+        organicos, err_org = get_or_fetch(
+            (f'lancamento-ig:{slug}', 'organic'), CACHE_TTL,
+            lambda: fetch_organic_posts(ig['id'], token))
+    else:
+        avisos.append('Nenhuma conta do Instagram vinculada a esta conta de anúncios.')
+    for e in (err_growth, err_org):
+        if e and e not in avisos:
+            avisos.append(e)
+
+    tot = totais_boosted(posts)
+    # Quanto do crescimento veio de anúncio (quando temos as duas séries)
+    novos_total = sum(d['novos_seguidores'] for d in crescimento) if crescimento else None
+    pct_pago = (round(tot['seguidores'] / novos_total * 100, 1)
+                if (novos_total and tot['seguidores']) else None)
+
+    return jsonify({
+        'success': True,
+        'periodo': {'since': since, 'until': until},
+        'conta_ig': ig,
+        'impulsionados': posts,
+        'totais': tot,
+        'crescimento': crescimento,
+        'organicos': organicos,
+        'resumo_perfil': {
+            'novos_seguidores': novos_total,
+            'seguidores_via_ads': tot['seguidores'],
+            'pct_via_ads': pct_pago,
+            'custo_seguidor': tot['custo_seguidor'],
+        },
+        'avisos': avisos,
+        'gerado_em': datetime.now().isoformat(),
+    })
 
 
 @lancamento_bp.route('/api/dash/lancamento/<slug>/data')

@@ -184,7 +184,7 @@ def register_submit():
 @auth_bp.route('/connect-meta', methods=['GET'])
 @login_required
 def connect_meta_page():
-    scopes = 'public_profile,email,ads_read,ads_management,pages_show_list,instagram_basic,read_insights,pages_manage_ads,leads_retrieval'
+    scopes = 'public_profile,email,ads_read,ads_management,pages_show_list,instagram_basic,instagram_manage_insights,read_insights,pages_manage_ads,leads_retrieval'
     encoded_uri = quote(REDIRECT_URI)
     auth_url = (
         f"https://www.facebook.com/{GRAPH_API_VERSION}/dialog/oauth?"
@@ -332,7 +332,7 @@ def account_profile():
     )
 
     # URL de re-autenticação Meta
-    scopes = 'public_profile,email,ads_read,ads_management,pages_show_list,instagram_basic,read_insights,pages_manage_ads,leads_retrieval'
+    scopes = 'public_profile,email,ads_read,ads_management,pages_show_list,instagram_basic,instagram_manage_insights,read_insights,pages_manage_ads,leads_retrieval'
     encoded_uri = quote(REDIRECT_URI)
     reauth_url = (
         f"https://www.facebook.com/{GRAPH_API_VERSION}/dialog/oauth?"
