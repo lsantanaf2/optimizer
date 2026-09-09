@@ -17,7 +17,15 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $projeto  = Split-Path -Parent $PSScriptRoot
-$memoria  = "$env:USERPROFILE\.claude\projects\D--Clientes-SK-MKT-OPTIMIZER\memory"
+
+# A pasta de memoria do Claude e derivada do caminho do projeto:
+#   D:\Clientes\SK MKT\OPTIMIZER  ->  D--Clientes-SK-MKT-OPTIMIZER
+function Get-PastaMemoria($caminho) {
+    # [char]92 = barra invertida (evita problemas de escape)
+    $slug = $caminho.Replace(':', '-').Replace([char]92, '-').Replace(' ', '-')
+    return "$env:USERPROFILE\.claude\projects\$slug\memory"
+}
+$memoria = Get-PastaMemoria $projeto
 
 Write-Host ""
 Write-Host "=== Exportando configuracao do Optimizer ===" -ForegroundColor Cyan
@@ -50,9 +58,21 @@ Write-Host "1. Arquivos secretos do projeto" -ForegroundColor White
 foreach ($f in @('notepad.env', 'google_credentials.json', 'deploy.sh', '.env')) {
     if (Copiar "$projeto\$f" "$Destino\projeto\$f" $f) { $copiados++ } else { $faltando += $f }
 }
-if (Copiar "$projeto\.claude\settings.local.json" "$Destino\projeto\.claude\settings.local.json" ".claude/settings.local.json") {
-    $copiados++
-} else { $faltando += '.claude/settings.local.json' }
+# CLAUDE.md e a pasta .claude/ INTEIRA nao vem no clone: o .gitignore
+# ignora ".claude/" e "CLAUDE.md". Sao 130+ arquivos (agents, rules, hooks,
+# skills, commands) que o Claude Code precisa para operar como neste PC.
+if (Copiar "$projeto\CLAUDE.md" "$Destino\projeto\CLAUDE.md" "CLAUDE.md") { $copiados++ }
+else { $faltando += 'CLAUDE.md' }
+
+if (Test-Path "$projeto\.claude") {
+    Copy-Item "$projeto\.claude" "$Destino\projeto\" -Recurse -Force
+    $n = (Get-ChildItem "$Destino\projeto\.claude" -Recurse -File).Count
+    Write-Host ("  [OK]    .claude/ completa ({0} arquivos)" -f $n) -ForegroundColor Green
+    $copiados += $n
+} else {
+    Write-Host "  [FALTA] pasta .claude/" -ForegroundColor Yellow
+    $faltando += '.claude/'
+}
 
 # 2. Memoria do Claude (historico de decisoes do projeto)
 Write-Host ""
@@ -89,9 +109,9 @@ Gerado em: $(Get-Date -Format 'dd/MM/yyyy HH:mm')
 >>> ESTE PACOTE CONTEM CREDENCIAIS. Apague depois de instalar. <<<
 
 COMO INSTALAR NO PC NOVO
-1. Clone o repositorio em D:\Clientes\SK MKT\OPTIMIZER
-     git clone https://github.com/lsantanaf2/optimizer.git "D:\Clientes\SK MKT\OPTIMIZER"
-   (use exatamente esse caminho: a pasta de memoria do Claude depende dele)
+1. Clone o repositorio no caminho que preferir:
+     git clone https://github.com/lsantanaf2/optimizer.git "<caminho>"
+   (qualquer caminho serve - o importador se adapta sozinho)
 
 2. Rode o importador, apontando para esta pasta:
      powershell -ExecutionPolicy Bypass -File scripts\importar-config.ps1 -Origem "<caminho desta pasta>"

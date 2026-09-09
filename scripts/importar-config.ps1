@@ -16,7 +16,15 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $projeto = Split-Path -Parent $PSScriptRoot
-$memoria = "$env:USERPROFILE\.claude\projects\D--Clientes-SK-MKT-OPTIMIZER\memory"
+
+# A pasta de memoria e derivada do caminho REAL deste projeto — funciona em
+# qualquer caminho, inclusive se o clone criou uma subpasta duplicada.
+function Get-PastaMemoria($caminho) {
+    # [char]92 = barra invertida (evita problemas de escape)
+    $slug = $caminho.Replace(':', '-').Replace([char]92, '-').Replace(' ', '-')
+    return "$env:USERPROFILE\.claude\projects\$slug\memory"
+}
+$memoria = Get-PastaMemoria $projeto
 
 if (-not (Test-Path $Origem)) {
     Write-Host "Pasta de origem nao encontrada: $Origem" -ForegroundColor Red
@@ -29,17 +37,9 @@ Write-Host "Origem : $Origem"
 Write-Host "Projeto: $projeto"
 Write-Host ""
 
-# Alerta se o caminho do projeto for diferente do esperado (quebra a memoria)
-$esperado = 'D:\Clientes\SK MKT\OPTIMIZER'
-if ($projeto -ne $esperado) {
-    Write-Host "ATENCAO: o projeto esta em" -ForegroundColor Yellow
-    Write-Host "  $projeto" -ForegroundColor Yellow
-    Write-Host "mas o esperado e" -ForegroundColor Yellow
-    Write-Host "  $esperado" -ForegroundColor Yellow
-    Write-Host "A memoria do Claude e vinculada ao caminho. Em outro caminho," -ForegroundColor Yellow
-    Write-Host "renomeie a pasta em ~\.claude\projects\ conforme o novo path." -ForegroundColor Yellow
-    Write-Host ""
-}
+Write-Host "Memoria do Claude sera instalada em:" -ForegroundColor DarkGray
+Write-Host "  $memoria" -ForegroundColor DarkGray
+Write-Host ""
 
 $instalados = 0
 
@@ -64,8 +64,20 @@ Write-Host "1. Arquivos secretos do projeto" -ForegroundColor White
 foreach ($f in @('notepad.env', 'google_credentials.json', 'deploy.sh', '.env')) {
     if (Instalar "$Origem\projeto\$f" "$projeto\$f" $f) { $instalados++ }
 }
-if (Instalar "$Origem\projeto\.claude\settings.local.json" "$projeto\.claude\settings.local.json" ".claude/settings.local.json") {
-    $instalados++
+if (Instalar "$Origem\projeto\CLAUDE.md" "$projeto\CLAUDE.md" "CLAUDE.md") { $instalados++ }
+
+# .claude/ inteira (agents, rules, hooks, skills) — nao vem no git
+if (Test-Path "$Origem\projeto\.claude") {
+    if (Test-Path "$projeto\.claude") {
+        Copy-Item "$projeto\.claude" "$projeto\.claude.bak" -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Host "  [BAK]   .claude/ existente salva como .claude.bak" -ForegroundColor DarkYellow
+    }
+    Copy-Item "$Origem\projeto\.claude" "$projeto\" -Recurse -Force
+    $n = (Get-ChildItem "$projeto\.claude" -Recurse -File).Count
+    Write-Host ("  [OK]    .claude/ completa ({0} arquivos)" -f $n) -ForegroundColor Green
+    $instalados += $n
+} else {
+    Write-Host "  [PULA]  .claude/ nao veio no pacote" -ForegroundColor DarkGray
 }
 
 # 2. Memoria do Claude

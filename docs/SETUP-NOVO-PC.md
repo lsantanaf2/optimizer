@@ -73,18 +73,18 @@ AIOX_ACTIVE_AGENT=devops git push origin main
 
 ---
 
-## 2. O que o `git clone` já traz
+## 2. O que o `git clone` traz — e o que NÃO traz
 
-Código, `CLAUDE.md`, e toda a pasta `.claude/` (agents, commands, hooks, rules,
-skills, `settings.json`). **Nada a fazer** além de clonar:
+O clone traz **apenas o código-fonte**. O `.gitignore` ignora `.claude/`
+(linha 41) e `CLAUDE.md` (linha 48): as 130+ definições de agents, rules,
+hooks, skills e commands **não vêm no clone** e estão no pacote gerado pelo
+`exportar-config.ps1`.
+
+Clone no caminho que preferir — os scripts se adaptam:
 
 ```bash
-git clone https://github.com/lsantanaf2/optimizer.git "D:\Clientes\SK MKT\OPTIMIZER"
+git clone https://github.com/lsantanaf2/optimizer.git "<caminho de sua escolha>"
 ```
-
-> **Use exatamente este caminho.** O nome da pasta de memória do Claude é
-> derivado dele (`D--Clientes-SK-MKT-OPTIMIZER`). Caminho diferente = memória
-> não encontrada.
 
 ---
 
@@ -100,18 +100,26 @@ Estão no `.gitignore` e **não vêm no clone**. Sem eles nada funciona.
 | `google_credentials.json` | Service Account do Google (lê as planilhas) |
 | `deploy.sh` | Script de deploy com credenciais de produção |
 | `.env` | `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `SUPABASE_*`, `GITHUB_TOKEN`, `CLICKUP_API_KEY` … |
-| `.claude/settings.local.json` | Permissões locais do Claude neste projeto |
+| `CLAUDE.md` | Instruções do projeto para o Claude (gitignored) |
+| `.claude/` **inteira** | 130+ arquivos: agents, rules, hooks, skills, commands, settings |
 
 ### 3.2 Memória do Claude (o mais esquecido)
 
-Pasta inteira, do PC antigo para o novo:
-
-```
-C:\Users\<usuario>\.claude\projects\D--Clientes-SK-MKT-OPTIMIZER\memory\
-```
-
 Contém `MEMORY.md` e `meta-compliance-plan.md` — histórico de decisões,
 incidentes e soluções. Sem isso o Claude recomeça do zero.
+
+O nome da pasta é **derivado do caminho do projeto**: troque `:`, `\` e
+espaços por `-`.
+
+| Caminho do projeto | Pasta de memória |
+|---|---|
+| `D:\Clientes\SK MKT\OPTIMIZER` | `D--Clientes-SK-MKT-OPTIMIZER` |
+| `C:\Users\lsant\OneDrive\Documentos\SK\optimizer` | `C--Users-lsant-OneDrive-Documentos-SK-optimizer` |
+
+Fica em `C:\Users\<usuario>\.claude\projects\<pasta>\memory`.
+
+**O `importar-config.ps1` calcula isso sozinho** a partir de onde o projeto
+estiver — não é preciso acertar caminho na mão.
 
 ### 3.3 Configuração global do Claude
 
@@ -179,8 +187,8 @@ py -3 verify_payload.py
 
 ## 7. Checklist final
 
-- [ ] `git clone` em `D:\Clientes\SK MKT\OPTIMIZER`
-- [ ] Copiar os 5 arquivos secretos (item 3.1)
+- [ ] `git clone` no caminho de sua escolha
+- [ ] Copiar os arquivos secretos + `CLAUDE.md` + `.claude/` (item 3.1)
 - [ ] Copiar a pasta `memory/` do Claude (item 3.2)
 - [ ] Copiar `~/.claude/settings.json` (item 3.3)
 - [ ] Copiar as chaves SSH (item 3.4)
