@@ -434,6 +434,25 @@
     </div>
   </div>
 
+  <!-- Comparativo mês passado × mês atual -->
+  <div class="table-card" id="compare-card" style="display:none">
+    <div class="card-title">📅 Mês passado × Mês atual</div>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Métrica</th>
+            <th id="compare-th-prev">Mês passado</th>
+            <th id="compare-th-curr">Mês atual</th>
+            <th>Variação</th>
+          </tr>
+        </thead>
+        <tbody id="compare-body"></tbody>
+      </table>
+    </div>
+    <div class="empty" id="compare-empty" style="display:none">Não foi possível carregar a comparação.</div>
+  </div>
+
   <!-- Top criativos -->
   <div class="top-ads-card" id="top-ads-card" style="display:none">
     <div class="card-title">🏆 Top 5 criativos do período</div>
@@ -478,6 +497,11 @@ const API_BASE      = '{{ api_base }}';
 const DASH_TOKEN    = '{{ dash_token }}';
 const LOCKED_PERIOD = '{{ locked_period }}';
 const IS_CLIENT     = true;  // dash_meta sempre é client-view
+const RESULT_KIND   = '{{ result_kind|default("sales") }}';
+const IS_MSG        = RESULT_KIND === 'messaging';
+// Campanha de mensagem não tem receita: o "resultado" é conversa iniciada.
+const CONV_LABEL    = IS_MSG ? 'Conversas iniciadas' : 'Vendas';
+const CAC_LABEL     = IS_MSG ? 'Custo por conversa'  : 'CAC';
 
 // ── Estado ─────────────────────────────────────────────────────────────────
 let abortCtrl = null;
@@ -799,7 +823,7 @@ function renderTopAds(rows, ticket) {
                 <div class="top-ad-meta">${campName} · ${fmtBRL(r.spend)} gasto · CAC ${fmtBRL(cpa)}</div>
               </div>
               <div class="top-ad-stats">
-                <div class="top-ad-conv">${fmtN(conv)} venda${conv === 1 ? '' : 's'}</div>
+                <div class="top-ad-conv">${fmtN(conv)} ${IS_MSG ? ('conversa' + (conv === 1 ? '' : 's')) : ('venda' + (conv === 1 ? '' : 's'))}</div>
                 <div class="top-ad-roas">ROAS ${fmtX(roas)}</div>
               </div>
             </div>`;
@@ -828,8 +852,7 @@ function renderTable(rows) {
           <td>${fmtBRL(r.spend)}</td>
           <td>${fmtN(r.clicks)}</td>
           <td>${fmtPct(r.ctr)}</td>
-          <td>${fmtN(r.lpv)}</td>
-          <td>${fmtPct(r.connect_rate)}</td>
+          ${IS_MSG ? '' : `<td>${fmtN(r.lpv)}</td><td>${fmtPct(r.connect_rate)}</td>`}
           <td>${fmtN(r.conversions)}</td>
         </tr>`).join('');
 
@@ -849,8 +872,7 @@ function renderTable(rows) {
           <td>${fmtBRL(tot.spend)}</td>
           <td>${fmtN(tot.clicks)}</td>
           <td>${totCtr !== '—' ? totCtr + '%' : '—'}</td>
-          <td>${fmtN(tot.lpv)}</td>
-          <td>${totCr !== '—' ? totCr + '%' : '—'}</td>
+          ${IS_MSG ? '' : `<td>${fmtN(tot.lpv)}</td><td>${totCr !== '—' ? totCr + '%' : '—'}</td>`}
           <td>${fmtN(tot.conv)}</td>
         </tr>`;
 }
@@ -990,10 +1012,140 @@ async function load() {
     }
 }
 
+// ── Ajuste de rótulos por tipo de resultado ────────────────────────────────
+function applyResultKind() {
+    if (!IS_MSG) return;
+
+    const cardOf  = id => { const el = document.getElementById(id); return el && el.closest('.kpi-card'); };
+    const labelOf = id => { const c = cardOf(id); return c && c.querySelector('.kpi-label'); };
+
+    const lc = labelOf('kpi-conv'); if (lc) lc.textContent = '💬 ' + CONV_LABEL;
+    const la = labelOf('kpi-cac');  if (la) la.textContent = '🎯 ' + CAC_LABEL;
+
+    // Campanha de mensagem não devolve valor de compra à Meta: faturamento,
+    // lucro, ROAS e AOV ficariam sempre zerados. Visitas de LP idem — o clique
+    // abre o WhatsApp, não uma página.
+    ['kpi-revenue', 'kpi-profit', 'kpi-roas', 'kpi-lpv'].forEach(id => {
+        const c = cardOf(id); if (c) c.style.display = 'none';
+    });
+    const aov = document.getElementById('kpi-aov'); if (aov) aov.style.display = 'none';
+
+    // Tabela diária: remove as colunas de LP e renomeia a última
+    const ths = document.querySelectorAll('#table-card thead th');
+    if (ths.length === 7) { ths[4].remove(); ths[5].remove(); ths[6].textContent = CONV_LABEL; }
+
+    const chartTitle = document.querySelector('#chart-card .card-title');
+    if (chartTitle) chartTitle.textContent = 'Gasto × ' + CONV_LABEL.toLowerCase() + ' por dia';
+    const topEmpty = document.getElementById('top-ads-empty');
+    if (topEmpty) topEmpty.textContent = 'Nenhum criativo com conversas no período.';
+}
+
+// ── Comparativo mês passado × mês atual ────────────────────────────────────
+const COMPARE_ROWS = IS_MSG ? [
+    ['Investimento',  'spend',       fmtBRL, 'neutral'],
+    [CONV_LABEL,      'conversions', fmtN,   'up'],
+    [CAC_LABEL,       'cac',         fmtBRL, 'down'],
+    ['Impressões',    'impressions', fmtN,   'neutral'],
+    ['Cliques link',  'clicks',      fmtN,   'up'],
+    ['CTR',           'ctr',         fmtPct, 'up'],
+    ['CPC link',      'cpc_link',    fmtBRL, 'down'],
+    ['CPM',           'cpm',         fmtBRL, 'down'],
+] : [
+    ['Investimento',  'spend',       fmtBRL, 'neutral'],
+    ['Vendas',        'conversions', fmtN,   'up'],
+    ['Faturamento',   'revenue',     fmtBRL, 'up'],
+    ['Lucro',         'profit',      fmtBRL, 'up'],
+    ['ROAS',          'roas',        fmtX,   'up'],
+    ['CAC',           'cac',         fmtBRL, 'down'],
+    ['Impressões',    'impressions', fmtN,   'neutral'],
+    ['Cliques link',  'clicks',      fmtN,   'up'],
+    ['CTR',           'ctr',         fmtPct, 'up'],
+    ['CPC link',      'cpc_link',    fmtBRL, 'down'],
+    ['CPM',           'cpm',         fmtBRL, 'down'],
+];
+
+// Lê o stream até o evento 'kpis' — só os totais do período interessam aqui.
+async function fetchKpis(preset) {
+    const resp = await fetch(apiUrl('/meta-only', 'date_preset=' + preset));
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+
+    const reader  = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let   buffer  = '';
+    try {
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const parts = buffer.split('\n\n');
+            buffer = parts.pop();
+            for (const part of parts) {
+                const line = part.trim();
+                if (!line.startsWith('data:')) continue;
+                let d;
+                try { d = JSON.parse(line.slice(5).trim()); } catch (_) { continue; }
+                if (d.stage === 'kpis')  return { totals: d.totals || {}, period: d.period };
+                if (d.stage === 'error') throw new Error(d.message);
+            }
+        }
+    } finally {
+        try { reader.cancel(); } catch (_) {}
+    }
+    throw new Error('sem dados no período');
+}
+
+function monthLabel(period) {
+    if (!period || !period.since) return '—';
+    const [y, m] = period.since.split('-');
+    const nome = MONTHS_PT[Number(m) - 1] || '';
+    return nome.charAt(0).toUpperCase() + nome.slice(1) + '/' + y;
+}
+
+function varCell(curr, prev, polarity) {
+    if (!prev) return '<span class="kpi-delta neutral">—</span>';
+    const pct   = (curr - prev) / prev * 100;
+    const arrow = pct > 0 ? '▲' : (pct < 0 ? '▼' : '●');
+    let cls = 'neutral';
+    if (polarity !== 'neutral' && Math.abs(pct) >= 0.05) {
+        const melhor = polarity === 'down' ? pct < 0 : pct > 0;
+        cls = melhor ? 'up' : 'down';
+    }
+    return `<span class="kpi-delta ${cls}">${arrow} ${Math.abs(pct).toFixed(1)}%</span>`;
+}
+
+async function loadComparativo() {
+    const body  = document.getElementById('compare-body');
+    const card  = document.getElementById('compare-card');
+    const empty = document.getElementById('compare-empty');
+    card.style.display = '';
+    try {
+        const [prev, curr] = await Promise.all([
+            fetchKpis('last_month'), fetchKpis('this_month'),
+        ]);
+        document.getElementById('compare-th-prev').textContent = monthLabel(prev.period);
+        document.getElementById('compare-th-curr').textContent = monthLabel(curr.period);
+
+        body.innerHTML = COMPARE_ROWS.map(([label, key, fmt, pol]) => `
+            <tr>
+              <td>${label}</td>
+              <td>${fmt(prev.totals[key])}</td>
+              <td>${fmt(curr.totals[key])}</td>
+              <td>${varCell(curr.totals[key] || 0, prev.totals[key] || 0, pol)}</td>
+            </tr>`).join('');
+        empty.style.display = 'none';
+    } catch (err) {
+        body.innerHTML = '';
+        empty.textContent = 'Não foi possível carregar a comparação: ' + err.message;
+        empty.style.display = 'block';
+    }
+}
+
 // ── Boot ───────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
+    applyResultKind();
     initDRP();
     load();
+    loadComparativo();
 });
 </script>
 </body>

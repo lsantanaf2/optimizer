@@ -513,6 +513,10 @@ def dash_view(slug):
     # Clientes sem planilha de MQLs → dashboard Meta-only simplificado
     if not client.get('mqls_spreadsheet_id'):
         ticket = float(client.get('ticket_value') or 0)
+        # Campanhas de mensagem não devolvem valor de compra: faturamento, lucro
+        # e ROAS ficam estruturalmente zerados e o "resultado" é conversa, não venda.
+        event = (client.get('typeform_action_type') or '').lower()
+        result_kind = 'messaging' if ('messaging' in event or 'conversation' in event) else 'sales'
         return render_template(
             'dash_meta.html',
             client_name=display_name,
@@ -521,6 +525,7 @@ def dash_view(slug):
             dash_token=token,
             slug=slug,
             ticket_value=ticket,
+            result_kind=result_kind,
         )
 
     # Clientes com planilha → dashboard completo (cruzamento)
