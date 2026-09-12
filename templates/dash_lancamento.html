@@ -675,10 +675,37 @@ function renderPesq(){
 
 const PESQ_FONTE_EIXO = '11px system-ui,-apple-system,sans-serif';
 
+// As opções do formulário são frases inteiras e não cabem na coluna do eixo em
+// nenhuma largura razoável. Aqui ficam os nomes curtos usados só para EXIBIR —
+// o valor cru continua sendo a chave do filtro, e o tooltip mostra a frase
+// completa.
+const PESQ_ABREV = {
+  'Tenho loja com produção própria':            'Loja com produção própria',
+  'Tenho loja e revendo produtos de terceiros': 'Loja revendendo terceiros',
+  'Tenho fábrica de sorvete ou açaí':           'Fábrica própria',
+  'Não iniciei no ramo de sorvete e açaí, mas pretendo': 'Ainda não iniciou',
+  'Melhorar a qualidade do sorvete':            'Qualidade do sorvete',
+  'Melhorar a qualidade do açaí':               'Qualidade do açaí',
+  'Reduzir custos da sua receita':              'Reduzir custos',
+  'Aumentar a sua margem de lucro':             'Margem de lucro',
+  'Linha zero adição de açúcares':              'Zero açúcar',
+  'Não trabalho ainda com nenhum produto':      'Nenhum produto ainda',
+  'Não tenho Sorveteria/Fábrica ou Açaíteria':  'Não tem negócio',
+};
+
+function pesqAbreviar(bruto){
+  let t = String(bruto).replace(/\.+$/, '').trim();
+  if (PESQ_ABREV[t]) return PESQ_ABREV[t];
+  t = t.replace(/\s*\([^)]*\)\s*/g, ' ').trim();     // "... (picolé, paleta)" fora
+  if (PESQ_ABREV[t]) return PESQ_ABREV[t];
+  if (t.includes(' - ')) t = t.split(' - ')[0].trim();  // "Geladinho - Dimdim - ..."
+  return t;
+}
+
 // Largura da coluna de rótulos. Fixá-la alinha os gráficos entre si e dá uma
 // medida conhecida para cortar o texto.
 function pesqLarguraEixo(larguraChart){
-  return Math.min(172, Math.max(88, larguraChart * 0.42));
+  return Math.min(190, Math.max(110, larguraChart * 0.46));
 }
 
 // Corta pela largura real em pixels, não por contagem de caracteres: o rótulo
@@ -753,7 +780,8 @@ function renderPesqChart(campo){
     type: 'bar',
     plugins: [pesqRotulos],
     data: {
-      labels,
+      // Exibe o nome curto; `labels` (cru) segue sendo a chave do filtro.
+      labels: labels.map(pesqAbreviar),
       datasets: [
         { label: 'Total', data: totais, grouped: false, barPercentage: .92,
           backgroundColor: 'rgba(61,79,245,.18)', borderRadius: 4 },
@@ -779,6 +807,7 @@ function renderPesqChart(campo){
         pesqRotulos: {base},
         tooltip: {
           callbacks: {
+            title: items => labels[items[0].dataIndex],   // frase completa
             label: ctx => {
               const pct = base > 0 ? (ctx.raw / base * 100).toFixed(1).replace('.', ',') : '0';
               return ctx.datasetIndex === 0
@@ -833,7 +862,7 @@ function renderPesqChips(){
   const n = pesqFiltrados(null).length;
   box.innerHTML = pares.map(p => `
       <span class="pesq-chip" onclick="pesqToggle('${p.campoKey}', ${escapeHtml(JSON.stringify(p.valor))})">
-        <b>${escapeHtml(p.label)}:</b> ${escapeHtml(p.valor)} <span class="pesq-chip-x">×</span>
+        <b>${escapeHtml(p.label)}:</b> ${escapeHtml(pesqAbreviar(p.valor))} <span class="pesq-chip-x">×</span>
       </span>`).join('') +
     `<button class="pesq-limpar" onclick="pesqLimpar()">limpar tudo</button>` +
     `<span class="dim">${n} de ${PESQ.respostas.length} respostas</span>`;
