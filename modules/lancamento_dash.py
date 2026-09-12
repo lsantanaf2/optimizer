@@ -70,6 +70,12 @@ LANCAMENTOS = {
             ],
             'produto_ingresso': 'AULÃO DE BALANCEAMENTO',
         },
+        # Formulário de perfil respondido pelos inscritos. Nome, e-mail e
+        # telefone são descartados no servidor: esta dash é link público.
+        'pesquisa': {
+            'spreadsheet_id': '1RDnXj3Lr1tGbxbtDekml86r7lBDpefiJc6l-r25D7GM',
+            'gid': '0',
+        },
         'benchmarks': {
             'roas':         {'alvo': 1.0,  'atencao': 0.15, 'critico': 0.30, 'direcao': 'maior_melhor'},
             'ctr':          {'alvo': 3.5,  'atencao': 0.20, 'critico': 0.40, 'direcao': 'maior_melhor'},
@@ -337,6 +343,189 @@ def _metas_derivadas(cfg, resumo, custo_real):
     }
 
 
+# ── Pesquisa de perfil dos inscritos ─────────────────────────────────────────
+
+# Nome, e-mail e telefone não aparecem em nenhuma lista abaixo — é assim que
+# ficam fora da resposta da API, já que só as colunas mapeadas são lidas.
+# Campos que viram gráfico. 'multi' = resposta de múltipla escolha, em que uma
+# pessoa conta para vários valores.
+PESQUISA_CAMPOS = [
+    {'key': 'situacao',     'label': 'Situação atual',        'tipo': 'single',
+     'coluna': 'Qual a sua situação atual?'},
+    {'key': 'faturamento',  'label': 'Faturamento mensal',    'tipo': 'single',
+     'coluna': 'Quanto a sua empresa vende por mês'},
+    {'key': 'dificuldade',  'label': 'Maior dificuldade',     'tipo': 'multi',
+     'coluna': 'Qual a sua maior dificuldade hoje?'},
+    {'key': 'produtos',     'label': 'Produtos que trabalha', 'tipo': 'multi',
+     'coluna': 'Quais produtos você trabalha?'},
+    {'key': 'tempo',        'label': 'Tempo no ramo',         'tipo': 'single',
+     'coluna': 'Quanto tempo você está no ramo de sorvete?'},
+    {'key': 'idade',        'label': 'Faixa etária',          'tipo': 'single',
+     'coluna': 'Qual sua faixa etária'},
+    {'key': 'sexo',         'label': 'Sexo',                  'tipo': 'single',
+     'coluna': 'Qual seu sexo?'},
+    {'key': 'escolaridade', 'label': 'Escolaridade',          'tipo': 'single',
+     'coluna': 'Qual o seu nível de escolaridade?'},
+    {'key': 'estado',       'label': 'Estado',                'tipo': 'single',
+     'coluna': 'Qual é o seu estado?'},
+    {'key': 'origem',       'label': 'Como conheceu',         'tipo': 'single',
+     'coluna': 'Como você conheceu meu trabalho?'},
+]
+
+# Texto livre: não vira gráfico, vira lista (filtrável pelos gráficos acima).
+PESQUISA_TEXTOS = [
+    {'key': 'objetivo',   'label': 'Objetivos',
+     'coluna': 'Agora vamos ao que interessa! Me diga com detalhes quais são os '
+               'seus objetivos. O que você quer melhorar?'},
+    {'key': 'pergunta',   'label': 'O que perguntaria ao Edu',
+     'coluna': 'Eu e você frente a frente, o que você me perguntaria?'},
+    {'key': 'expectativa', 'label': 'Expectativa',
+     'coluna': 'Qual a sua expectativa para o AULÃO DE BALANCEAMENTO com Edu Sorveteiro Raiz?'},
+    {'key': 'maquinario',  'label': 'Maquinário',
+     'coluna': 'Já possui maquinário? Se sim, quais?'},
+    {'key': 'capacidade',  'label': 'Capacidade diária',
+     'coluna': 'Qual a sua capacidade produtiva diária?'},
+]
+
+_UF = {
+    'ac': 'Acre', 'al': 'Alagoas', 'ap': 'Amapá', 'am': 'Amazonas', 'ba': 'Bahia',
+    'ce': 'Ceará', 'df': 'Distrito Federal', 'es': 'Espírito Santo', 'go': 'Goiás',
+    'ma': 'Maranhão', 'mt': 'Mato Grosso', 'ms': 'Mato Grosso do Sul',
+    'mg': 'Minas Gerais', 'pa': 'Pará', 'pb': 'Paraíba', 'pr': 'Paraná',
+    'pe': 'Pernambuco', 'pi': 'Piauí', 'rj': 'Rio de Janeiro',
+    'rn': 'Rio Grande do Norte', 'rs': 'Rio Grande do Sul', 'ro': 'Rondônia',
+    'rr': 'Roraima', 'sc': 'Santa Catarina', 'sp': 'São Paulo',
+    'se': 'Sergipe', 'to': 'Tocantins',
+}
+_CONECTIVOS = ('de', 'do', 'da', 'dos', 'das', 'e')
+
+
+def _split_multi(valor):
+    """Quebra resposta de múltipla escolha em valores.
+
+    O separador é a vírgula, mas duas opções do formulário têm vírgula dentro:
+    "Sorvete de palito (picolé, paleta, ...)" e "Geladinho - ... - Sacolé, etc".
+    Por isso ignora vírgula entre parênteses e recola o fragmento "etc".
+    """
+    if not valor:
+        return []
+    partes, atual, prof = [], '', 0
+    for ch in valor:
+        if ch == '(':
+            prof += 1
+        elif ch == ')':
+            prof = max(0, prof - 1)
+        if ch == ',' and prof == 0:
+            partes.append(atual)
+            atual = ''
+        else:
+            atual += ch
+    partes.append(atual)
+
+    out = []
+    for p in partes:
+        p = p.strip().rstrip('.').strip()
+        if not p:
+            continue
+        if p.lower() in ('etc', 'etc.') and out:
+            out[-1] += ', etc'
+            continue
+        out.append(p)
+    return out
+
+
+def _norm_estado(valor):
+    v = (valor or '').strip()
+    if not v:
+        return 'Não informado'
+    v = v.split(',')[0].strip()          # "São Paulo, Caçapava" → "São Paulo"
+    if len(v) == 2 and v.lower() in _UF:
+        return _UF[v.lower()]
+    palavras = [w.capitalize() if w.lower() not in _CONECTIVOS else w.lower()
+                for w in v.split()]
+    if palavras:
+        palavras[0] = palavras[0].capitalize()
+    return ' '.join(palavras)
+
+
+def _bucket_faturamento(valor):
+    """Normaliza o faturamento: algumas respostas vêm como número livre."""
+    v = (valor or '').strip()
+    if not v:
+        return 'Não informado'
+    low = v.lower()
+    if 'não tenho' in low or 'nao tenho' in low:
+        return 'Não tem loja/fábrica'
+    if 'mil' in low:                      # já é uma das faixas do formulário
+        return v
+    num = _parse_brl(v)
+    if num:
+        if num < 25000:
+            return 'Abaixo de R$ 25 mil'
+        if num < 50000:
+            return 'R$25 mil a R$50 mil'
+        if num < 100000:
+            return 'R$50 mil a R$100 mil'
+        return 'Acima de R$ 100 mil'
+    return 'Não informado'
+
+
+def _fetch_pesquisa(cfg):
+    """Lê o formulário de perfil e devolve as respostas SEM dado pessoal."""
+    pcfg = cfg.get('pesquisa') or {}
+    sid, gid = pcfg.get('spreadsheet_id'), pcfg.get('gid', '0')
+    if not sid:
+        return []
+
+    url = (f'https://docs.google.com/spreadsheets/d/{sid}'
+           f'/gviz/tq?tqx=out:csv&gid={gid}')
+    resp = requests.get(url, timeout=25)
+    resp.raise_for_status()
+    if resp.text.lstrip().startswith('<'):
+        raise RuntimeError('retornou HTML (planilha não é pública)')
+    rows = list(csv.DictReader(io.StringIO(resp.text)))
+
+    # Mapeia header real → coluna esperada, tolerando espaço/caixa diferentes
+    def _achar(header, alvo):
+        alvo_n = alvo.strip().lower()
+        for h in header:
+            if (h or '').strip().lower() == alvo_n:
+                return h
+        return None
+
+    header = list(rows[0].keys()) if rows else []
+    mapa_campos = {c['key']: _achar(header, c['coluna']) for c in PESQUISA_CAMPOS}
+    mapa_textos = {t['key']: _achar(header, t['coluna']) for t in PESQUISA_TEXTOS}
+
+    out = []
+    for r in rows:
+        # Descarta linha vazia (planilha de formulário costuma ter sobra)
+        if not any((v or '').strip() for v in r.values()):
+            continue
+
+        reg = {}
+        for campo in PESQUISA_CAMPOS:
+            col = mapa_campos.get(campo['key'])
+            bruto = (r.get(col) or '').strip() if col else ''
+            if campo['key'] == 'estado':
+                reg[campo['key']] = _norm_estado(bruto)
+            elif campo['key'] == 'faturamento':
+                reg[campo['key']] = _bucket_faturamento(bruto)
+            elif campo['tipo'] == 'multi':
+                reg[campo['key']] = _split_multi(bruto) or ['Não informado']
+            else:
+                reg[campo['key']] = bruto or 'Não informado'
+
+        for texto in PESQUISA_TEXTOS:
+            col = mapa_textos.get(texto['key'])
+            reg[texto['key']] = (r.get(col) or '').strip() if col else ''
+
+        out.append(reg)
+
+    logger.info(f'[lancamento] pesquisa: {len(out)} respostas lidas (sem PII)')
+    return out
+
+
 # ── Rotas ────────────────────────────────────────────────────────────────────
 
 @lancamento_bp.route('/dash/lancamento/<slug>')
@@ -431,6 +620,58 @@ def lancamento_instagram(slug):
         },
         'avisos': avisos,
         'gerado_em': datetime.now().isoformat(),
+    })
+
+
+@lancamento_bp.route('/api/dash/lancamento/<slug>/pesquisa')
+def lancamento_pesquisa(slug):
+    """Aba Pesquisa: perfil dos inscritos, agregável e sem dado pessoal."""
+    from modules.rate_limiter import check_rate_limit
+    check_rate_limit(f'lancamento-pesquisa:{slug}')
+
+    cfg = _cfg(slug)
+    if not cfg:
+        return jsonify({'success': False, 'error': 'Lançamento não encontrado'}), 404
+    if not (cfg.get('pesquisa') or {}).get('spreadsheet_id'):
+        return jsonify({'success': False, 'error': 'Pesquisa não configurada'}), 404
+
+    from modules.meta_cache import get_or_fetch, invalidate
+    if request.args.get('refresh') == '1':
+        invalidate(f'lancamento:{slug}')
+
+    try:
+        respostas = get_or_fetch((f'lancamento:{slug}', 'pesquisa'), CACHE_TTL,
+                                 lambda: _fetch_pesquisa(cfg))
+    except Exception as e:
+        logger.error(f'[lancamento:{slug}] pesquisa falhou: {e}')
+        return jsonify({'success': False, 'error': f'Planilha da pesquisa: {e}'}), 502
+
+    # Ingressos vendidos: base do percentual de resposta. Mesma janela da aba
+    # principal, para o número bater com o card de Ingressos.
+    dts = cfg['datas']
+    since = dts.get('inicio_venda_ingresso')
+    until = dts.get('fechamento_carrinho') or date.today().isoformat()
+    hoje = date.today().isoformat()
+    if until > hoje:
+        until = hoje
+
+    ingressos = None
+    try:
+        _, resumo_vendas = get_or_fetch(
+            (f'lancamento:{slug}', 'vendas', since, until), CACHE_TTL,
+            lambda: _fetch_vendas(cfg, since, until))
+        ingressos = resumo_vendas.get('ingressos')
+    except Exception as e:
+        logger.warning(f'[lancamento:{slug}] ingressos p/ taxa de resposta: {e}')
+
+    return jsonify({
+        'success':   True,
+        'respostas': respostas,
+        'total':     len(respostas),
+        'ingressos': ingressos,
+        'campos':    [{'key': c['key'], 'label': c['label'], 'tipo': c['tipo']}
+                      for c in PESQUISA_CAMPOS],
+        'textos':    [{'key': t['key'], 'label': t['label']} for t in PESQUISA_TEXTOS],
     })
 
 

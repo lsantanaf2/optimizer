@@ -820,11 +820,11 @@ function renderTopAds(rows, ticket) {
               <div class="top-ad-rank ${cls}">${i + 1}</div>
               <div class="top-ad-info">
                 <div class="top-ad-name" title="${adName}">${adName}</div>
-                <div class="top-ad-meta">${campName} · ${fmtBRL(r.spend)} gasto · CAC ${fmtBRL(cpa)}</div>
+                <div class="top-ad-meta">${campName} · ${fmtBRL(r.spend)} gasto · ${IS_MSG ? 'custo/conversa' : 'CAC'} ${fmtBRL(cpa)}</div>
               </div>
               <div class="top-ad-stats">
                 <div class="top-ad-conv">${fmtN(conv)} ${IS_MSG ? ('conversa' + (conv === 1 ? '' : 's')) : ('venda' + (conv === 1 ? '' : 's'))}</div>
-                <div class="top-ad-roas">ROAS ${fmtX(roas)}</div>
+                ${IS_MSG ? '' : `<div class="top-ad-roas">ROAS ${fmtX(roas)}</div>`}
               </div>
             </div>`;
     }).join('');
