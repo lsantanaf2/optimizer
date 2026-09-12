@@ -673,6 +673,31 @@ function renderPesq(){
   renderPesqTextos();
 }
 
+const PESQ_FONTE_EIXO = '11px system-ui,-apple-system,sans-serif';
+
+// Largura da coluna de rótulos. Fixá-la alinha os gráficos entre si e dá uma
+// medida conhecida para cortar o texto.
+function pesqLarguraEixo(larguraChart){
+  return Math.min(172, Math.max(88, larguraChart * 0.42));
+}
+
+// Corta pela largura real em pixels, não por contagem de caracteres: o rótulo
+// mostra o COMEÇO e ganha "…" no fim. Sem isso o texto que não cabia era
+// clipado no início, porque o eixo Y alinha o texto à direita.
+function pesqCortarTexto(ctx, txt, maxPx){
+  ctx.save();
+  ctx.font = PESQ_FONTE_EIXO;
+  let out = txt;
+  if (ctx.measureText(out).width > maxPx){
+    while (out.length > 1 && ctx.measureText(out + '…').width > maxPx){
+      out = out.slice(0, -1);
+    }
+    out = out.replace(/[\s,.;:–-]+$/, '') + '…';
+  }
+  ctx.restore();
+  return out;
+}
+
 // Escreve "N · X%" na ponta de cada barra. Chart.js não tem rótulo de dado
 // nativo e não vale puxar um plugin de CDN só para isso.
 const pesqRotulos = {
@@ -767,12 +792,17 @@ function renderPesqChart(campo){
       scales: {
         x: {beginAtZero: true, ticks: {precision: 0, color: '#9AA0C7'},
             grid: {color: 'rgba(42,42,94,.5)'}},
-        y: {ticks: {color: '#9AA0C7', font: {size: 11},
-                    callback: function(v){
-                      const t = this.getLabelForValue(v);
-                      return t.length > 34 ? t.slice(0, 33) + '…' : t;
-                    }},
-            grid: {display: false}},
+        y: {
+          afterFit: sc => { sc.width = pesqLarguraEixo(sc.chart.width); },
+          ticks: {
+            color: '#9AA0C7', font: {size: 11}, autoSkip: false,
+            callback: function(v){
+              return pesqCortarTexto(this.chart.ctx, this.getLabelForValue(v),
+                                     pesqLarguraEixo(this.chart.width) - 14);
+            },
+          },
+          grid: {display: false},
+        },
       },
     },
   });
