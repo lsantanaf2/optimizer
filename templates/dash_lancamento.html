@@ -165,12 +165,13 @@
   .pesq-chart-wrap{position:relative}
   .pesq-vazio{text-align:center;color:var(--text-muted);font-size:.78rem;padding:24px 0}
 
-  .pesq-txt{border-bottom:1px solid var(--stroke);padding:14px 20px}
-  .pesq-txt:last-child{border-bottom:0}
-  .pesq-txt-h{font-size:.68rem;text-transform:uppercase;letter-spacing:.08em;
-    color:var(--text-muted);font-weight:600;margin-bottom:8px}
-  .pesq-txt-q{font-size:.68rem;color:var(--accent-soft);font-weight:600;margin-top:8px}
-  .pesq-txt-a{font-size:.82rem;line-height:1.55;color:var(--text)}
+  .pesq-txt-sec{border-bottom:1px solid var(--stroke);padding:16px 20px}
+  .pesq-txt-sec:last-child{border-bottom:0}
+  .pesq-txt-h{font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;
+    color:var(--accent-soft);font-weight:700;margin-bottom:10px}
+  .pesq-txt-a{font-size:.82rem;line-height:1.55;color:var(--text);
+    border-left:2px solid var(--stroke);padding:6px 0 6px 12px;margin-bottom:7px}
+  .pesq-txt-a:last-child{margin-bottom:0}
 
   @media(max-width:720px){
     .pesq-grid{grid-template-columns:1fr}
@@ -361,7 +362,7 @@
             <span>Respostas em texto</span>
             <span class="dim" id="pesq-textos-info"></span>
           </div>
-          <div class="tbl-wrap" style="max-height:420px">
+          <div class="tbl-wrap" style="max-height:560px">
             <div id="pesq-textos"></div>
           </div>
         </div>
@@ -672,20 +673,51 @@ function renderPesq(){
   renderPesqTextos();
 }
 
+// Escreve "N · X%" na ponta de cada barra. Chart.js não tem rótulo de dado
+// nativo e não vale puxar um plugin de CDN só para isso.
+const pesqRotulos = {
+  id: 'pesqRotulos',
+  afterDatasetsDraw(chart, args, opts){
+    const base = opts.base || 0;
+    const dados = chart.data.datasets[1].data;
+    const ctx = chart.ctx;
+    ctx.save();
+    ctx.font = '600 11px system-ui,-apple-system,sans-serif';
+    ctx.fillStyle = '#9AA0C7';
+    ctx.textBaseline = 'middle';
+    chart.getDatasetMeta(1).data.forEach((barra, i) => {
+      const v = dados[i];
+      if (!v) return;
+      const pct = base > 0 ? (v / base * 100) : 0;
+      const txt = `${v} · ${pct.toFixed(pct < 10 ? 1 : 0).replace('.', ',')}%`;
+      ctx.fillText(txt, barra.x + 7, barra.y);
+    });
+    ctx.restore();
+  },
+};
+
 function renderPesqChart(campo){
   const sel      = PESQ.filtros[campo.key] || [];
   // Ordem das categorias vem do total geral, para as barras não dançarem de
   // lugar a cada clique.
   const totalMap = pesqContar(campo.key, PESQ.respostas);
-  const filtMap  = pesqContar(campo.key, pesqFiltrados(campo.key));
+  // Base do percentual: quantos respondentes este gráfico está enxergando.
+  // Sem filtro é o total; com filtro de OUTRO campo, é o recorte.
+  const baseRegs = pesqFiltrados(campo.key);
+  const base     = baseRegs.length;
+  const filtMap  = pesqContar(campo.key, baseRegs);
   const labels   = [...totalMap.entries()].sort((a, b) => b[1] - a[1]).map(e => e[0]);
 
   const totais    = labels.map(l => totalMap.get(l) || 0);
   const filtrados = labels.map(l => filtMap.get(l)  || 0);
 
   const info = document.getElementById('pesq-n-' + campo.key);
-  if (info) info.textContent = sel.length ? `${sel.length} selecionado(s)` :
-    (campo.tipo === 'multi' ? 'múltipla escolha' : '');
+  if (info) {
+    const partes = [`% de ${base}`];
+    if (campo.tipo === 'multi') partes.push('múltipla escolha');
+    if (sel.length) partes.push(`${sel.length} selecionado(s)`);
+    info.textContent = partes.join(' · ');
+  }
 
   const cv = document.getElementById('pesq-cv-' + campo.key);
   if (!cv) return;
@@ -694,6 +726,7 @@ function renderPesqChart(campo){
   if (PESQ.charts[campo.key]) PESQ.charts[campo.key].destroy();
   PESQ.charts[campo.key] = new Chart(cv.getContext('2d'), {
     type: 'bar',
+    plugins: [pesqRotulos],
     data: {
       labels,
       datasets: [
@@ -707,6 +740,7 @@ function renderPesqChart(campo){
     },
     options: {
       indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      layout: {padding: {right: 62}},   // espaço para o rótulo "N · X%"
       onClick: (evt, els, chart) => {
         const hit = chart.getElementsAtEventForMode(evt, 'index', {intersect: false}, true);
         if (hit.length) pesqToggle(campo.key, labels[hit[0].index]);
@@ -717,11 +751,15 @@ function renderPesqChart(campo){
       },
       plugins: {
         legend: {display: false},
+        pesqRotulos: {base},
         tooltip: {
           callbacks: {
-            label: ctx => ctx.datasetIndex === 0
-              ? `Total: ${ctx.raw}`
-              : `Seleção: ${ctx.raw} de ${totais[ctx.dataIndex]}`,
+            label: ctx => {
+              const pct = base > 0 ? (ctx.raw / base * 100).toFixed(1).replace('.', ',') : '0';
+              return ctx.datasetIndex === 0
+                ? `Total geral: ${ctx.raw} de ${PESQ.respostas.length}`
+                : `${ctx.raw} de ${base} (${pct}%)`;
+            },
             footer: () => 'clique para filtrar',
           },
         },
@@ -781,16 +819,14 @@ function renderPesqTextos(){
     box.innerHTML = '<div class="pesq-vazio">Nenhuma resposta com esse filtro.</div>';
     return;
   }
-  box.innerHTML = registros.map((reg, i) => {
-    const blocos = PESQ.textos
-      .filter(t => (reg[t.key] || '').trim())
-      .map(t => `<div class="pesq-txt-q">${t.label}</div>
-                 <div class="pesq-txt-a">${escapeHtml(reg[t.key])}</div>`)
-      .join('');
-    if (!blocos) return '';
-    return `<div class="pesq-txt">
-              <div class="pesq-txt-h">Respondente ${i + 1} · ${escapeHtml(reg.situacao || '')}</div>
-              ${blocos}
+  // Agrupado por pergunta: todas as respostas da mesma pergunta juntas.
+  box.innerHTML = PESQ.textos.map(t => {
+    const respostas = registros.map(r => (r[t.key] || '').trim()).filter(Boolean);
+    if (!respostas.length) return '';
+    return `<div class="pesq-txt-sec">
+              <div class="pesq-txt-h">${escapeHtml(t.label)}
+                <span class="dim">· ${respostas.length} resposta(s)</span></div>
+              ${respostas.map(a => `<div class="pesq-txt-a">${escapeHtml(a)}</div>`).join('')}
             </div>`;
   }).join('') || '<div class="pesq-vazio">Sem texto livre nessas respostas.</div>';
 }
