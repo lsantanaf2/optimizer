@@ -70,6 +70,14 @@ LANCAMENTOS = {
             ],
             'produto_ingresso': 'AULÃO DE BALANCEAMENTO',
         },
+        # Produto principal vendido depois do aulão. Mesma planilha de vendas,
+        # mas o produto tem vendas de edições anteriores: a janela abaixo é o
+        # que separa as vendas DESTE lançamento.
+        'principal': {
+            'produto': 'Profissão Sorveteiro',
+            'inicio_vendas': '2026-09-15',
+            'fim_vendas': '2026-09-22',          # ~7 dias de carrinho
+        },
         # Formulário de perfil respondido pelos inscritos. Nome, e-mail e
         # telefone são descartados no servidor: esta dash é link público.
         'pesquisa': {
@@ -619,6 +627,110 @@ def lancamento_instagram(slug):
             'custo_seguidor': tot['custo_seguidor'],
         },
         'avisos': avisos,
+        'gerado_em': datetime.now().isoformat(),
+    })
+
+
+@lancamento_bp.route('/api/dash/lancamento/<slug>/resumo')
+def lancamento_resumo(slug):
+    """Aba Resumo: ROI geral do lançamento (ingressos + produto principal)."""
+    from modules.rate_limiter import check_rate_limit
+    check_rate_limit(f'lancamento-resumo:{slug}')
+
+    cfg = _cfg(slug)
+    if not cfg:
+        return jsonify({'success': False, 'error': 'Lançamento não encontrado'}), 404
+
+    pcfg = cfg.get('principal') or {}
+    hoje = date.today().isoformat()
+    since = cfg['datas']['inicio_venda_ingresso']
+    # Até o fim do carrinho do principal (ou hoje): o gasto depois do
+    # fechamento do ingresso também é custo deste lançamento.
+    until = min(pcfg.get('fim_vendas') or hoje, hoje)
+
+    from modules.meta_cache import get_or_fetch, invalidate
+    if request.args.get('refresh') == '1':
+        invalidate(f'lancamento:{slug}')
+
+    try:
+        rows = get_or_fetch((f'lancamento:{slug}', 'meta', since, until), CACHE_TTL,
+                            lambda: _fetch_meta(cfg, since, until))
+    except Exception as e:
+        logger.error(f'[lancamento:{slug}] resumo/Meta falhou: {e}')
+        return jsonify({'success': False, 'error': f'Meta Ads: {e}'}), 502
+    # compute_metrics aplica o imposto de 12,15% sobre o gasto bruto
+    custos = compute_metrics(rows, None, cfg)['custos']
+
+    try:
+        _, front = get_or_fetch((f'lancamento:{slug}', 'vendas', since, until), CACHE_TTL,
+                                lambda: _fetch_vendas(cfg, since, until))
+    except Exception as e:
+        logger.error(f'[lancamento:{slug}] resumo/vendas falhou: {e}')
+        return jsonify({'success': False, 'error': f'Planilha de vendas: {e}'}), 502
+
+    ingresso_key = (cfg['vendas'].get('produto_ingresso') or '').lower()
+    com_ingresso, bumps = 0.0, []
+    for p in front.get('por_produto') or []:
+        if ingresso_key and p['produto'].lower().startswith(ingresso_key):
+            com_ingresso += p['faturamento']
+        else:
+            bumps.append(p)
+    com_bumps = sum(p['faturamento'] for p in bumps)
+
+    # Produto principal: reaproveita _fetch_vendas trocando a lista de
+    # produtos, com a janela própria do carrinho.
+    principal = {'produto': pcfg.get('produto'), 'vendas': 0, 'comissao': 0.0,
+                 'reembolsos': 0, 'por_dia': [],
+                 'periodo': {'since': pcfg.get('inicio_vendas'), 'until': pcfg.get('fim_vendas')},
+                 'iniciado': bool(pcfg.get('inicio_vendas')) and hoje >= pcfg['inicio_vendas']}
+    if pcfg.get('produto') and principal['iniciado']:
+        p_since, p_until = pcfg['inicio_vendas'], min(pcfg.get('fim_vendas') or hoje, hoje)
+        cfg_p = {**cfg, 'vendas': {**cfg['vendas'], 'produtos': [pcfg['produto']],
+                                   'produto_ingresso': ''}}
+        try:
+            por_dia, resumo_p = get_or_fetch(
+                (f'lancamento:{slug}', 'principal', p_since, p_until), CACHE_TTL,
+                lambda: _fetch_vendas(cfg_p, p_since, p_until))
+            principal.update({
+                'vendas': resumo_p.get('vendas') or 0,
+                'comissao': resumo_p.get('faturamento') or 0.0,
+                'reembolsos': resumo_p.get('reembolsos') or 0,
+                'por_dia': [{'data': d, 'vendas': v['vendas'], 'comissao': v['faturamento']}
+                            for d, v in sorted(por_dia.items())],
+            })
+        except Exception as e:
+            logger.error(f'[lancamento:{slug}] resumo/principal falhou: {e}')
+            return jsonify({'success': False, 'error': f'Vendas do principal: {e}'}), 502
+
+    custo = custos['custo_real_midia']
+    receita = round(com_ingresso + com_bumps + principal['comissao'], 2)
+    lucro = round(receita - custo, 2)
+
+    return jsonify({
+        'success': True,
+        'periodo': {'since': since, 'until': until},
+        'custos': {
+            'bruto': custos['investimento_bruto'],
+            'imposto': custos['imposto_valor'],
+            'aliquota': custos['imposto_aliquota'],
+            'real': custo,
+        },
+        'ingressos': {
+            'quantidade': front.get('ingressos') or 0,
+            'comissao': round(com_ingresso, 2),
+            'reembolsos': front.get('reembolsos') or 0,
+            'custo_por_ingresso': (round(custo / front['ingressos'], 2)
+                                   if front.get('ingressos') else None),
+        },
+        'bumps': {'comissao': round(com_bumps, 2), 'produtos': bumps},
+        'principal': principal,
+        'geral': {
+            'receita': receita,
+            'lucro': lucro,
+            'roi': round(lucro / custo * 100, 1) if custo else None,
+            'roas': round(receita / custo, 2) if custo else None,
+        },
+        'campo_receita': cfg.get('receita_campo'),
         'gerado_em': datetime.now().isoformat(),
     })
 

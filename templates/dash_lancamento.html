@@ -140,6 +140,19 @@
   .tab.on{color:var(--text);border-bottom-color:var(--accent)}
   .tab-panel{display:none} .tab-panel.on{display:block}
 
+  /* ── Aba Resumo ── */
+  .res-hero-grid{display:grid;grid-template-columns:1.3fr repeat(3,1fr);gap:20px;align-items:end}
+  .res-roi{font-size:3rem;font-weight:700;line-height:1;margin-top:7px}
+  .res-roi.pos,.kpi-v.pos{color:var(--positive)} .res-roi.neg,.kpi-v.neg{color:var(--negative)}
+  .res-cols{display:grid;grid-template-columns:3fr 2fr;gap:14px;margin-top:14px}
+  .res-total td{font-weight:700;border-top:1px solid var(--stroke)}
+  .res-sub td:first-child{padding-left:28px;color:var(--text-muted)}
+  @media(max-width:860px){
+    .res-hero-grid{grid-template-columns:1fr 1fr}
+    .res-cols{grid-template-columns:1fr}
+    .res-roi{font-size:2.3rem}
+  }
+
   /* ── Aba Pesquisa ── */
   .pesq-taxa{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
   .pesq-taxa-num{font-size:2.4rem;font-weight:700;line-height:1;color:var(--accent-soft)}
@@ -217,6 +230,7 @@
 
     <div class="tabs">
       <button class="tab on" id="tab-btn-lanc" onclick="setTab('lanc')">🚀 Lançamento</button>
+      <button class="tab" id="tab-btn-res" onclick="setTab('res')">💰 Resumo</button>
       <button class="tab" id="tab-btn-ig" onclick="setTab('ig')">📸 Instagram</button>
       <button class="tab" id="tab-btn-pesq" onclick="setTab('pesq')">📊 Pesquisa</button>
     </div>
@@ -327,6 +341,67 @@
         </div>
       </div>
     </div><!-- /tab-ig -->
+
+    <div class="tab-panel" id="tab-res">
+      <div id="res-loading" class="note">Carregando resumo…</div>
+      <div id="res-erro"></div>
+
+      <div id="res-content" style="display:none">
+        <div class="card res-hero">
+          <div class="card-t">
+            <span>ROI geral do lançamento</span>
+            <span class="dim" id="res-periodo"></span>
+          </div>
+          <div class="res-hero-grid">
+            <div>
+              <div class="kpi-l">ROI</div>
+              <div class="res-roi num" id="res-roi">—</div>
+              <div class="kpi-c" id="res-roas"></div>
+            </div>
+            <div>
+              <div class="kpi-l">Lucro</div>
+              <div class="kpi-v num" id="res-lucro">—</div>
+              <div class="kpi-c">comissão total − custo real</div>
+            </div>
+            <div>
+              <div class="kpi-l">Comissão total</div>
+              <div class="kpi-v num" id="res-receita">—</div>
+              <div class="kpi-c">ingressos + bumps + principal</div>
+            </div>
+            <div>
+              <div class="kpi-l">Custo real</div>
+              <div class="kpi-v num" id="res-custo">—</div>
+              <div class="kpi-c" id="res-custo-sub"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="kpis" id="res-kpis" style="margin-top:14px"></div>
+
+        <div class="res-cols">
+          <div class="card" style="padding:0">
+            <div class="card-t" style="padding:20px 20px 0;margin-bottom:10px">
+              <span>De onde veio a comissão</span><span class="dim" id="res-campo"></span>
+            </div>
+            <div class="tbl-wrap">
+              <table><thead><tr><th>Origem</th><th>Vendas</th><th>Comissão</th><th>% do total</th></tr></thead>
+                <tbody id="res-origem"></tbody></table>
+            </div>
+          </div>
+          <div class="card" style="padding:0">
+            <div class="card-t" style="padding:20px 20px 0;margin-bottom:10px">
+              <span id="res-dia-titulo">Produto principal por dia</span><span class="dim" id="res-dia-periodo"></span>
+            </div>
+            <div class="tbl-wrap">
+              <table><thead><tr><th>Data</th><th>Vendas</th><th>Comissão</th></tr></thead>
+                <tbody id="res-dia"></tbody></table>
+            </div>
+          </div>
+        </div>
+
+        <div class="note" id="res-nota"></div>
+      </div>
+    </div><!-- /tab-res -->
 
     <div class="tab-panel" id="tab-pesq">
       <div id="pesq-loading" class="note">Carregando pesquisa…</div>
@@ -581,13 +656,106 @@ function render(d){
 let igCarregado = false, igChart = null, IGDATA = null;
 
 function setTab(t){
-  for (const k of ['lanc','ig','pesq']){
+  for (const k of ['lanc','res','ig','pesq']){
     document.getElementById('tab-'+k).classList.toggle('on', t===k);
     document.getElementById('tab-btn-'+k).classList.toggle('on', t===k);
   }
   // Carrega sob demanda: economiza chamadas à Meta e à planilha
+  if (t==='res'  && !resCarregado)  { resCarregado = true;  loadRes(); }
   if (t==='ig'   && !igCarregado)   { igCarregado = true;   loadIG(false); }
   if (t==='pesq' && !pesqCarregado) { pesqCarregado = true; loadPesq(); }
+}
+
+// ── Aba Resumo: ROI geral (ingressos + bumps + produto principal) ───────────
+let resCarregado = false;
+const dataBR = s => s ? s.slice(8,10) + '/' + s.slice(5,7) : '—';
+
+async function loadRes(){
+  const l = document.getElementById('res-loading'),
+        c = document.getElementById('res-content'),
+        e = document.getElementById('res-erro');
+  l.style.display = 'block'; e.innerHTML = '';
+  try {
+    const r = await fetch(`/api/dash/lancamento/${SLUG}/resumo`);
+    const d = await r.json();
+    if (!d.success) throw new Error(d.error || 'falha ao carregar');
+    renderRes(d);
+    l.style.display = 'none';
+    c.style.display = 'block';
+  } catch (err) {
+    l.style.display = 'none';
+    e.innerHTML = `<div class="warnbox">Não foi possível carregar o resumo: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+function renderRes(d){
+  const g = d.geral, cu = d.custos, ing = d.ingressos, bu = d.bumps, pr = d.principal;
+  const sinal = v => v == null ? '' : (v >= 0 ? 'pos' : 'neg');
+  const aliq = pct(cu.aliquota * 100);
+
+  document.getElementById('res-periodo').textContent =
+    `${dataBR(d.periodo.since)} a ${dataBR(d.periodo.until)}`;
+
+  const roi = document.getElementById('res-roi');
+  roi.textContent = g.roi == null ? '—' : (g.roi > 0 ? '+' : '') + pct(g.roi, 1);
+  roi.className = 'res-roi num ' + sinal(g.roi);
+  document.getElementById('res-roas').textContent =
+    g.roas == null ? '' : `ROAS ${g.roas.toLocaleString('pt-BR',{minimumFractionDigits:2})}x sobre o custo real`;
+
+  const lucro = document.getElementById('res-lucro');
+  lucro.textContent = brl(g.lucro);
+  lucro.className = 'kpi-v num ' + sinal(g.lucro);
+  document.getElementById('res-receita').textContent = brl(g.receita);
+  document.getElementById('res-custo').textContent = brl(cu.real);
+  document.getElementById('res-custo-sub').textContent =
+    `${brl(cu.bruto)} + ${brl(cu.imposto)} de imposto (${aliq})`;
+
+  const cards = [
+    {l: '🎟️ Ingressos', v: (ing.quantidade || 0).toLocaleString('pt-BR'),
+     c: `${brl(ing.comissao)} de comissão · ${brl(ing.custo_por_ingresso)} de custo cada`},
+    {l: '➕ Order bumps', v: brl(bu.comissao),
+     c: `${bu.produtos.reduce((s, p) => s + p.vendas, 0)} vendas de ${bu.produtos.length} produto(s)`},
+    {l: '⭐ ' + (pr.produto || 'Produto principal'),
+     v: pr.iniciado ? (pr.vendas || 0).toLocaleString('pt-BR') : '—',
+     c: pr.iniciado ? `${brl(pr.comissao)} de comissão` : `vendas começam em ${dataBR(pr.periodo.since)}`},
+  ];
+  document.getElementById('res-kpis').innerHTML = cards.map(k =>
+    `<div class="card"><div class="kpi-l">${escapeHtml(k.l)}</div>
+     <div class="kpi-v num">${k.v}</div><div class="kpi-c">${k.c}</div></div>`).join('');
+
+  // Composição da comissão
+  const total = g.receita || 0;
+  const part = v => total > 0 ? pct(v / total * 100, 1) : '—';
+  const linhas = [
+    `<tr><td>Ingressos</td><td>${ing.quantidade}</td><td>${brl(ing.comissao)}</td><td>${part(ing.comissao)}</td></tr>`,
+    `<tr><td>Order bumps</td><td>${bu.produtos.reduce((s, p) => s + p.vendas, 0)}</td><td>${brl(bu.comissao)}</td><td>${part(bu.comissao)}</td></tr>`,
+    ...bu.produtos.map(p =>
+      `<tr class="res-sub"><td>${escapeHtml(p.produto.length > 46 ? p.produto.slice(0, 45) + '…' : p.produto)}</td>
+       <td>${p.vendas}</td><td>${brl(p.faturamento)}</td><td>${part(p.faturamento)}</td></tr>`),
+    `<tr><td>${escapeHtml(pr.produto || 'Produto principal')}</td><td>${pr.vendas}</td><td>${brl(pr.comissao)}</td><td>${part(pr.comissao)}</td></tr>`,
+    `<tr class="res-total"><td>Comissão total</td><td></td><td>${brl(total)}</td><td>100%</td></tr>`,
+    `<tr><td>(−) Custo real de mídia</td><td></td><td>${brl(cu.real)}</td><td></td></tr>`,
+    `<tr class="res-total"><td>Lucro</td><td></td><td>${brl(g.lucro)}</td><td></td></tr>`,
+  ];
+  document.getElementById('res-origem').innerHTML = linhas.join('');
+  document.getElementById('res-campo').textContent = `campo "${d.campo_receita || 'COMISSÃO'}" da planilha`;
+
+  // Principal por dia
+  document.getElementById('res-dia-titulo').textContent = `${pr.produto || 'Produto principal'} por dia`;
+  document.getElementById('res-dia-periodo').textContent =
+    `carrinho ${dataBR(pr.periodo.since)} a ${dataBR(pr.periodo.until)}`;
+  document.getElementById('res-dia').innerHTML = pr.por_dia.length
+    ? pr.por_dia.map(x => `<tr><td>${dataBR(x.data)}</td><td>${x.vendas}</td><td>${brl(x.comissao)}</td></tr>`).join('')
+    : `<tr><td colspan="3" class="dim">${pr.iniciado ? 'Nenhuma venda ainda.' : 'Carrinho ainda não abriu.'}</td></tr>`;
+
+  const avisos = [];
+  if (ing.reembolsos) avisos.push(`${ing.reembolsos} reembolso(s) de ingresso descontado(s)`);
+  if (pr.reembolsos)  avisos.push(`${pr.reembolsos} reembolso(s) do principal descontado(s)`);
+  document.getElementById('res-nota').innerHTML =
+    `<b>ROI</b> = (comissão total − custo real) ÷ custo real. ` +
+    `Custo real = gasto do Gerenciador + ${aliq} de imposto, somando todas as campanhas do lançamento. ` +
+    `Comissão é o valor líquido que chega ao produtor, só vendas aprovadas.` +
+    (avisos.length ? ' ' + avisos.join(' · ') + '.' : '');
 }
 
 // ── Aba Pesquisa: gráficos com filtro cruzado ───────────────────────────────
