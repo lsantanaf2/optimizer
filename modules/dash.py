@@ -393,15 +393,40 @@ def _fetch_meta_ads_daily_live(account_id, access_token, conversion_event,
     return rows
 
 
-def fetch_meta_ads_top(account_id, access_token, conversion_event,
-                       since=None, until=None, date_preset='last_30d', limit=5):
-    """
-    Busca insights agregados por AD para retornar o top N ads por número de
-    conversões. Usado pela seção 'Top criativos' do dashboard.
+# Etapas do funil de e-commerce, antes da compra (que vem do conversion_event
+# do cliente). Cada etapa usa o PRIMEIRO action_type presente: a Meta devolve o
+# mesmo evento com vários nomes (view_content, omni_view_content,
+# offsite_conversion.fb_pixel_view_content) e somar contaria em dobro.
+FUNIL_ECOMMERCE = [
+    ('produto',   'Produto visto', ('view_content', 'omni_view_content',
+                                    'offsite_conversion.fb_pixel_view_content')),
+    ('carrinho',  'Carrinho',      ('add_to_cart', 'omni_add_to_cart',
+                                    'offsite_conversion.fb_pixel_add_to_cart')),
+    ('checkout',  'Checkout',      ('initiate_checkout', 'omni_initiated_checkout',
+                                    'offsite_conversion.fb_pixel_initiate_checkout')),
+    ('pagamento', 'Pagamento',     ('add_payment_info',
+                                    'offsite_conversion.fb_pixel_add_payment_info')),
+]
 
-    Retorna lista ordenada (desc por conversions) com:
-        { ad_id, ad_name, campaign_name, spend, impressions, clicks,
-          conversions, revenue_real, roas, cpa }
+
+def _first_action(actions, candidatos):
+    for c in candidatos:
+        v = _sum_action_value(actions, c)
+        if v:
+            return v
+    return 0
+
+
+def fetch_meta_ads_by_ad(account_id, access_token, conversion_event,
+                         since=None, until=None, date_preset='last_30d'):
+    """
+    Insights do período agregados por AD — todos os anúncios, com campanha e
+    eventos do funil. Uma consulta alimenta top criativos, tabela de
+    campanhas e funil.
+
+    Retorna lista de dicts:
+        { ad_id, ad_name, campaign_id, campaign_name, spend, impressions,
+          clicks, conversions, revenue_real, funil: {produto, carrinho, ...} }
     """
     from modules.cruzamento import preset_to_dates
     from modules.meta_cache import get_or_fetch, ttl_for_period
@@ -412,15 +437,59 @@ def fetch_meta_ads_top(account_id, access_token, conversion_event,
         if since_d and until_d:
             since, until = str(since_d), str(until_d)
 
-    cache_key = ('dash_top', account_id, conversion_event, since, until, date_preset, limit)
+    cache_key = ('dash_ads', account_id, conversion_event, since, until, date_preset)
     return get_or_fetch(cache_key, ttl_for_period(until),
-                        lambda: _fetch_meta_ads_top_live(
+                        lambda: _fetch_meta_ads_by_ad_live(
                             account_id, access_token, conversion_event,
-                            since, until, limit))
+                            since, until))
 
 
-def _fetch_meta_ads_top_live(account_id, access_token, conversion_event,
-                             since, until, limit):
+def top_ads_de(rows, limit=5):
+    """Top N anúncios por conversões (só os que venderam)."""
+    out = []
+    for r in rows:
+        if r['conversions'] <= 0:
+            continue
+        item = {k: v for k, v in r.items() if k != 'funil'}
+        item['roas'] = round(r['revenue_real'] / r['spend'], 2) if r['spend'] > 0 else 0.0
+        item['cpa'] = round(r['spend'] / r['conversions'], 2)
+        out.append(item)
+    out.sort(key=lambda r: r['conversions'], reverse=True)
+    return out[:limit]
+
+
+def campanhas_de(rows):
+    """Agrupa os anúncios por campanha."""
+    by = {}
+    for r in rows:
+        nome = r.get('campaign_name') or '(sem nome)'
+        c = by.setdefault(nome, {'campanha': nome, 'spend': 0.0, 'impressions': 0,
+                                 'clicks': 0, 'conversions': 0, 'revenue_real': 0.0})
+        for k in ('spend', 'impressions', 'clicks', 'conversions', 'revenue_real'):
+            c[k] += r[k]
+    out = [c for c in by.values() if c['spend'] > 0 or c['conversions'] > 0]
+    for c in out:
+        c['spend'] = round(c['spend'], 2)
+        c['revenue_real'] = round(c['revenue_real'], 2)
+        c['cpa'] = round(c['spend'] / c['conversions'], 2) if c['conversions'] else None
+        c['roas'] = round(c['revenue_real'] / c['spend'], 2) if c['spend'] > 0 else None
+        c['ctr'] = round(c['clicks'] / c['impressions'] * 100, 2) if c['impressions'] else 0.0
+        c['cpm'] = round(c['spend'] / c['impressions'] * 1000, 2) if c['impressions'] else 0.0
+    out.sort(key=lambda c: c['spend'], reverse=True)
+    return out
+
+
+def funil_de(rows):
+    """Totais de cada etapa do funil de e-commerce, terminando na compra."""
+    etapas = [{'key': k, 'label': label, 'valor': sum(r['funil'][k] for r in rows)}
+              for k, label, _ in FUNIL_ECOMMERCE]
+    etapas.append({'key': 'compra', 'label': 'Compra',
+                   'valor': sum(r['conversions'] for r in rows)})
+    return etapas
+
+
+def _fetch_meta_ads_by_ad_live(account_id, access_token, conversion_event,
+                               since, until):
     """Fetch real (sem cache) — chamado apenas em cache miss."""
     base_url = f'{GRAPH_BASE}/{account_id}/insights'
     params = {
@@ -451,26 +520,88 @@ def _fetch_meta_ads_top_live(account_id, access_token, conversion_event,
         entry = by_ad.setdefault(ad_id, {
             'ad_id': ad_id,
             'ad_name':       item.get('ad_name', ''),
+            'campaign_id':   item.get('campaign_id', ''),
             'campaign_name': item.get('campaign_name', ''),
             'spend': 0.0, 'impressions': 0, 'clicks': 0,
             'conversions': 0, 'revenue_real': 0.0,
+            'funil': {k: 0 for k, _, _ in FUNIL_ECOMMERCE},
         })
         entry['spend']        += apply_meta_tax(item.get('spend', 0))
         entry['impressions']  += int(item.get('impressions', 0) or 0)
         entry['clicks']       += int(item.get('inline_link_clicks', 0) or 0)
         entry['conversions']  += _sum_action_value(actions, conversion_event)
         entry['revenue_real'] += _sum_action_money(action_values, conversion_event)
+        for k, _, candidatos in FUNIL_ECOMMERCE:
+            entry['funil'][k] += _first_action(actions, candidatos)
 
     rows = list(by_ad.values())
-    # Filtra ads sem nenhuma venda (não interessam para "top criativos")
-    rows = [r for r in rows if r['conversions'] > 0]
     for r in rows:
         r['spend']        = round(r['spend'], 2)
         r['revenue_real'] = round(r['revenue_real'], 2)
-        r['roas']         = round(r['revenue_real'] / r['spend'], 2) if r['spend'] > 0 else 0.0
-        r['cpa']          = round(r['spend'] / r['conversions'], 2) if r['conversions'] > 0 else 0.0
-    rows.sort(key=lambda r: r['conversions'], reverse=True)
-    return rows[:limit]
+    return rows
+
+
+def _meta_totals(rows, ticket_value):
+    """Soma a lista diária e devolve totais + métricas derivadas."""
+    t_spend   = sum(r['spend']        for r in rows)
+    t_imp     = sum(r['impressions']  for r in rows)
+    t_clicks  = sum(r['clicks']       for r in rows)
+    t_lpv     = sum(r['lpv']          for r in rows)
+    t_conv    = sum(r['conversions']  for r in rows)
+    t_rev_re  = sum(r['revenue_real'] for r in rows)
+    t_rev_est = t_conv * ticket_value
+    # Faturamento "efetivo": prioriza Pixel, cai pro estimado se vier 0
+    t_rev_eff = t_rev_re if t_rev_re > 0 else t_rev_est
+
+    return {
+        'spend':         round(t_spend, 2),
+        'impressions':   t_imp,
+        'clicks':        t_clicks,
+        'lpv':           t_lpv,
+        'conversions':   t_conv,
+        'revenue_real':  round(t_rev_re, 2),
+        'revenue_est':   round(t_rev_est, 2),
+        'revenue':       round(t_rev_eff, 2),   # campo principal
+        'ticket':        ticket_value,
+        'aov':           round(t_rev_re / t_conv, 2) if (t_rev_re > 0 and t_conv > 0) else 0.0,
+        'roas':          round(t_rev_eff / t_spend, 2) if t_spend > 0 else 0.0,
+        'profit':        round(t_rev_eff - t_spend, 2),
+        'cac':           round(t_spend / t_conv, 2) if t_conv > 0 else 0.0,
+        'cpm':           round(t_spend / t_imp * 1000, 2) if t_imp > 0 else 0.0,
+        'cpc_link':      round(t_spend / t_clicks, 2) if t_clicks > 0 else 0.0,
+        'ctr':           round(t_clicks / t_imp * 100, 2) if t_imp > 0 else 0.0,
+        'connect_rate':  round(t_lpv / t_clicks * 100, 2) if t_clicks > 0 else 0.0,
+    }
+
+
+# Meta do mês por cliente da dash Meta-only. tipo: 'faturamento' | 'vendas' |
+# 'investimento'. Fica em código, como as metas do LP11, até existir tela de
+# configuração. Cliente sem entrada aqui não exibe a barra de meta.
+METAS_MENSAIS = {}
+
+_META_CAMPO = {'faturamento': 'revenue', 'vendas': 'conversions', 'investimento': 'spend'}
+
+
+def _meta_mensal(slug, totals, since, until):
+    cfg = METAS_MENSAIS.get(slug) or {}
+    tipo, alvo = cfg.get('tipo'), cfg.get('valor')
+    if tipo not in _META_CAMPO or not alvo:
+        return None
+    import calendar
+    ini = datetime.strptime(since, '%Y-%m-%d').date()
+    fim = datetime.strptime(until, '%Y-%m-%d').date()
+    dias_mes = calendar.monthrange(ini.year, ini.month)[1]
+    decorridos = (fim - ini).days + 1
+    realizado = float(totals.get(_META_CAMPO[tipo]) or 0)
+    return {
+        'tipo':       tipo,
+        'alvo':       float(alvo),
+        'realizado':  round(realizado, 2),
+        'pct':        round(realizado / float(alvo) * 100, 1),
+        # Ritmo linear: quanto o mês fecha se seguir a média diária até aqui
+        'projecao':   round(realizado / decorridos * dias_mes, 2) if decorridos > 0 else None,
+        'dias':       {'decorridos': decorridos, 'mes': dias_mes},
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -883,6 +1014,51 @@ def api_dash_data(slug):
 # SSE Meta-only (clientes sem planilha de MQLs)
 # ─────────────────────────────────────────────────────────────────────────────
 
+@dash_bp.route('/api/dash/<slug>/comparativo')
+def api_dash_comparativo(slug):
+    """
+    Mês passado × mês atual (só totais) + meta do mês, em JSON.
+    Rota própria porque reusar o SSE completo buscava também período anterior e
+    top criativos de cada mês: seis consultas à Meta para dois totais (~40s).
+    """
+    client = _require_client(slug)
+    from app import obter_token
+    meta_token = obter_token()
+    if not meta_token:
+        return jsonify({'success': False, 'error': 'Token Meta indisponível'}), 503
+
+    acct   = client['meta_ad_account_id']
+    evento = client.get('typeform_action_type') or 'offsite_conversion.fb_pixel_custom'
+    ticket = float(client.get('ticket_value') or 0)
+
+    from modules.cruzamento import preset_to_dates
+    periodos = {}
+    for preset in ('last_month', 'this_month'):
+        s, u = preset_to_dates(preset)
+        periodos[preset] = (str(s), str(u))
+
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
+            futs = {p: ex.submit(fetch_meta_ads_daily, acct, meta_token, evento, p, *periodos[p])
+                    for p in periodos}
+            dados = {p: f.result() for p, f in futs.items()}
+    except Exception as e:
+        logger.error(f'[dash:{slug}] comparativo falhou: {e}')
+        return jsonify({'success': False, 'error': f'Meta Ads: {e}'}), 502
+
+    def _bloco(preset):
+        s, u = periodos[preset]
+        return {'periodo': {'since': s, 'until': u}, 'totals': _meta_totals(dados[preset], ticket)}
+
+    atual = _bloco('this_month')
+    return jsonify({
+        'success':  True,
+        'anterior': _bloco('last_month'),
+        'atual':    atual,
+        'meta':     _meta_mensal(slug, atual['totals'], *periodos['this_month']),
+    })
+
+
 @dash_bp.route('/api/dash/<slug>/meta-only')
 def api_dash_meta_only(slug):
     """
@@ -911,38 +1087,6 @@ def api_dash_meta_only(slug):
 
     def _sse(stage, payload):
         return f"data: {json.dumps({'stage': stage, **payload})}\n\n"
-
-    def _aggregate_totals(rows):
-        """Recebe a lista diária e devolve dict de totais + métricas derivadas."""
-        t_spend   = sum(r['spend']        for r in rows)
-        t_imp     = sum(r['impressions']  for r in rows)
-        t_clicks  = sum(r['clicks']       for r in rows)
-        t_lpv     = sum(r['lpv']          for r in rows)
-        t_conv    = sum(r['conversions']  for r in rows)
-        t_rev_re  = sum(r['revenue_real'] for r in rows)
-        t_rev_est = t_conv * ticket_value
-        # Faturamento "efetivo": prioriza Pixel, cai pro estimado se vier 0
-        t_rev_eff = t_rev_re if t_rev_re > 0 else t_rev_est
-
-        return {
-            'spend':         round(t_spend, 2),
-            'impressions':   t_imp,
-            'clicks':        t_clicks,
-            'lpv':           t_lpv,
-            'conversions':   t_conv,
-            'revenue_real':  round(t_rev_re, 2),
-            'revenue_est':   round(t_rev_est, 2),
-            'revenue':       round(t_rev_eff, 2),   # campo principal
-            'ticket':        ticket_value,
-            'aov':           round(t_rev_re / t_conv, 2) if (t_rev_re > 0 and t_conv > 0) else 0.0,
-            'roas':          round(t_rev_eff / t_spend, 2) if t_spend > 0 else 0.0,
-            'profit':        round(t_rev_eff - t_spend, 2),
-            'cac':           round(t_spend / t_conv, 2) if t_conv > 0 else 0.0,
-            'cpm':           round(t_spend / t_imp * 1000, 2) if t_imp > 0 else 0.0,
-            'cpc_link':      round(t_spend / t_clicks, 2) if t_clicks > 0 else 0.0,
-            'ctr':           round(t_clicks / t_imp * 100, 2) if t_imp > 0 else 0.0,
-            'connect_rate':  round(t_lpv / t_clicks * 100, 2) if t_clicks > 0 else 0.0,
-        }
 
     def _deltas(curr, prev):
         """Calcula delta percentual para cada KPI comparado ao período anterior."""
@@ -984,28 +1128,29 @@ def api_dash_meta_only(slug):
 
             yield _sse('status', {'message': f'Processando {len(rows)} dias + período anterior + top criativos...'})
 
-            # Fetch paralelo: período anterior + top ads do período atual
+            # Fetch paralelo: período anterior + insights por anúncio do período
+            # atual (esses alimentam top criativos, campanhas e funil)
             prev_rows = []
-            top_ads   = []
+            ads_rows  = []
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
                 fut_prev = (ex.submit(
                     fetch_meta_ads_daily, meta_account_id, meta_token, conversion_event,
                     date_preset, prev_since, prev_until,
                 ) if prev_since and prev_until else None)
-                fut_top  = ex.submit(
-                    fetch_meta_ads_top, meta_account_id, meta_token, conversion_event,
-                    curr_since, curr_until, date_preset, 5,
+                fut_ads  = ex.submit(
+                    fetch_meta_ads_by_ad, meta_account_id, meta_token, conversion_event,
+                    curr_since, curr_until, date_preset,
                 )
                 if fut_prev:
                     try:    prev_rows = fut_prev.result()
                     except Exception as e:
                         logger.warning(f'[dash:{slug}] período anterior falhou: {e}')
-                try:    top_ads = fut_top.result()
+                try:    ads_rows = fut_ads.result()
                 except Exception as e:
-                    logger.warning(f'[dash:{slug}] top ads falhou: {e}')
+                    logger.warning(f'[dash:{slug}] insights por anúncio falharam: {e}')
 
-            totals      = _aggregate_totals(rows)
-            prev_totals = _aggregate_totals(prev_rows)
+            totals      = _meta_totals(rows, ticket_value)
+            prev_totals = _meta_totals(prev_rows, ticket_value)
             deltas      = _deltas(totals, prev_totals)
 
             # Métricas derivadas por dia (mantém compat com tabela atual)
@@ -1037,8 +1182,10 @@ def api_dash_meta_only(slug):
                 'prev_period': {'since': prev_since, 'until': prev_until},
             })
 
-            yield _sse('daily',   {'rows': daily})
-            yield _sse('top_ads', {'rows': top_ads, 'ticket': ticket_value})
+            yield _sse('daily',     {'rows': daily})
+            yield _sse('top_ads',   {'rows': top_ads_de(ads_rows, 5), 'ticket': ticket_value})
+            yield _sse('campanhas', {'rows': campanhas_de(ads_rows)})
+            yield _sse('funil',     {'etapas': funil_de(ads_rows)})
 
             yield _sse('done', {
                 'meta': {

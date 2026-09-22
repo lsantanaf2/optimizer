@@ -5,49 +5,64 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{ client_name }} — Dashboard</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter+Tight:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      /* Paleta principal */
-      --bg:             #0f1117;
-      --bg-deep:        #0a0c12;
-      --surface:        #1a1d27;
-      --border:         #252836;
-      --text:           #e2e8f0;
-      --muted:          #64748b;
-      --accent:         #6366f1;
-      --green:          #22c55e;
-      --red:            #f87171;
+      /* Paleta do LP11 (dash_lancamento.html) — as duas dashs têm a mesma cara */
+      --bg:             #070718;
+      --bg-deep:        #070718;
+      --surface:        #12123A;
+      --surface-alt:    #1A1A4A;
+      --card:           rgba(18,18,58,.85);
+      --border:         #2A2A5E;
+      --text:           #FFFFFF;
+      --muted:          #9AA0C7;
+      --accent:         #3D4FF5;
+      --accent-soft:    #8B93F8;
+      --green:          #3DD68C;
+      --red:            #F55E7A;
+      --r-card:         12px;
 
       /* Aliases para reutilizar o DRP do cruzamento sem reescrever */
       --bg-surface:     var(--surface);
       --card-bg:        var(--surface);
       --card-bg-hover:  rgba(255,255,255,0.05);
       --text-primary:   var(--text);
-      --text-secondary: #cbd5e1;
+      --text-secondary: #C9CDEA;
       --text-muted:     var(--muted);
-      --accent-alt:     #818cf8;
-      --radius-sm:      6px;
-      --radius-md:      8px;
+      --accent-alt:     var(--accent-soft);
+      --radius-sm:      8px;
+      --radius-md:      10px;
       --font-sans:      inherit;
     }
 
     html { -webkit-text-size-adjust: 100%; }
-    body { background: var(--bg); color: var(--text);
-           font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    body { background: var(--bg-deep); color: var(--text);
+           font-family: 'Inter Tight', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
            font-size: 14px; min-height: 100vh;
-           -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+           -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+           background-image:
+             radial-gradient(60rem 40rem at 0% -10%, rgba(30,20,80,.55), transparent 60%),
+             radial-gradient(55rem 38rem at 100% -5%, rgba(61,79,245,.18), transparent 60%);
+           background-attachment: fixed; }
     button { font-family: inherit; }
+    .num { font-family: 'Space Grotesk', sans-serif; font-variant-numeric: tabular-nums;
+           letter-spacing: -.01em; }
 
-    /* ── Top bar ── */
+    /* ── Top bar (cartão flutuante, como no LP11) ── */
     .topbar { display: flex; align-items: center; justify-content: space-between;
-              padding: 14px 24px; background: var(--surface);
-              border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 50;
+              padding: 14px 18px; background: var(--card); backdrop-filter: blur(10px);
+              border: 1px solid var(--border); border-radius: var(--r-card);
+              position: sticky; top: 12px; z-index: 50;
+              width: calc(100% - 48px); max-width: 1232px; margin: 12px auto 0;
               gap: 12px; flex-wrap: wrap; }
-    .topbar-left { display: flex; align-items: baseline; gap: 8px; }
-    .topbar-name { font-size: 1.1rem; font-weight: 700; color: #f1f5f9; }
-    .topbar-badge { font-size: .75rem; color: var(--muted); }
+    .topbar-left { display: flex; flex-direction: column; gap: 2px; }
+    .topbar-name { font-size: 1.05rem; font-weight: 600; color: var(--text); }
+    .topbar-badge { font-size: .72rem; color: var(--muted); letter-spacing: .04em; }
     .topbar-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
     /* ── Date Range Picker (portado do /cruzamento) ────────────────── */
@@ -155,58 +170,65 @@
 
     /* ── Status bar ── */
     .status-bar { display: flex; align-items: center; gap: 8px; padding: 10px 14px;
-                  border-radius: 8px; background: var(--surface); border: 1px solid var(--border);
-                  margin-bottom: 18px; font-size: .85rem; color: var(--muted); }
+                  border-radius: var(--r-card); background: var(--card); border: 1px solid var(--border);
+                  margin-bottom: 16px; font-size: .8rem; color: var(--muted); }
     .spinner { width: 14px; height: 14px; border: 2px solid var(--border);
                border-top-color: var(--accent); border-radius: 50%;
                animation: spin .7s linear infinite; flex-shrink: 0; }
     @keyframes spin { to { transform: rotate(360deg); } }
-    .status-bar.done { color: var(--green); border-color: #14532d; background: #052e16; }
-    .status-bar.error { color: var(--red); border-color: #3f1f1f; background: #1a0505; }
+    .status-bar.done { color: var(--green); border-color: rgba(61,214,140,.3); }
+    .status-bar.error { color: var(--red); border-color: rgba(245,94,122,.4);
+                        background: rgba(245,94,122,.08); }
     .status-bar.done .spinner, .status-bar.error .spinner { display: none; }
 
     /* ── KPI cards ── */
-    .kpi-section-title { font-size: .75rem; font-weight: 700; color: var(--muted);
-                          text-transform: uppercase; letter-spacing: .08em;
+    .kpi-section-title { font-size: .72rem; font-weight: 600; color: var(--muted);
+                          text-transform: uppercase; letter-spacing: .09em;
                           margin: 4px 2px 10px; }
     .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-                gap: 12px; margin-bottom: 18px; }
-    .kpi-card { background: var(--surface); border: 1px solid var(--border);
-                border-radius: 10px; padding: 14px 16px; position: relative; }
-    .kpi-card.highlight { border-color: rgba(99,102,241,0.5);
-                          background: linear-gradient(135deg, rgba(99,102,241,0.08), var(--surface)); }
-    .kpi-card.profit-pos { border-color: rgba(34,197,94,0.35); }
-    .kpi-card.profit-neg { border-color: rgba(248,113,113,0.35); }
-    .kpi-label { font-size: .72rem; color: var(--muted); text-transform: uppercase;
-                 letter-spacing: .05em; margin-bottom: 6px; }
-    .kpi-value { font-size: 1.45rem; font-weight: 700; color: #f1f5f9;
-                 line-height: 1.2; word-break: break-word; }
-    .kpi-sub   { font-size: .75rem; color: var(--muted); margin-top: 4px; }
+                gap: 14px; margin-bottom: 18px; }
+    .kpi-card { background: var(--card); border: 1px solid var(--border); backdrop-filter: blur(6px);
+                border-radius: var(--r-card); padding: 18px 20px; position: relative; }
+    .kpi-card.highlight { border-color: rgba(61,79,245,.55);
+                          background: linear-gradient(135deg, rgba(61,79,245,.14), var(--card)); }
+    .kpi-card.profit-pos { border-color: rgba(61,214,140,.4); }
+    .kpi-card.profit-neg { border-color: rgba(245,94,122,.4); }
+    .kpi-label { font-size: .66rem; color: var(--muted); text-transform: uppercase;
+                 letter-spacing: .09em; font-weight: 600; margin-bottom: 8px; }
+    .kpi-value { font-family: 'Space Grotesk', sans-serif; font-variant-numeric: tabular-nums;
+                 font-size: 1.9rem; font-weight: 700; color: var(--text); letter-spacing: -.01em;
+                 line-height: 1.1; word-break: break-word; }
+    .kpi-sub   { font-size: .72rem; color: var(--muted); margin-top: 6px; }
     .kpi-delta { display: inline-flex; align-items: center; gap: 3px;
-                 font-size: .72rem; font-weight: 700; padding: 2px 6px;
-                 border-radius: 4px; margin-top: 6px; }
-    .kpi-delta.up   { background: rgba(34,197,94,0.15);  color: #22c55e; }
-    .kpi-delta.down { background: rgba(248,113,113,0.15); color: #f87171; }
-    .kpi-delta.neutral { background: rgba(100,116,139,0.15); color: var(--muted); }
+                 font-size: .7rem; font-weight: 600; padding: 2px 7px;
+                 border-radius: 10px; margin-top: 8px; }
+    .kpi-delta.up   { background: rgba(61,214,140,.14); color: var(--green); }
+    .kpi-delta.down { background: rgba(245,94,122,.14); color: var(--red); }
+    .kpi-delta.neutral { background: rgba(154,160,199,.12); color: var(--muted); }
 
     /* ── Chart card ── */
-    .chart-card { background: var(--surface); border: 1px solid var(--border);
-                  border-radius: 10px; padding: 18px 20px; margin-bottom: 20px; }
-    .card-title { font-size: .9rem; font-weight: 600; color: #cbd5e1; margin-bottom: 16px; }
+    .chart-card { background: var(--card); border: 1px solid var(--border); backdrop-filter: blur(6px);
+                  border-radius: var(--r-card); padding: 20px; margin-bottom: 18px; }
+    .card-title { font-size: .72rem; font-weight: 600; color: var(--muted); text-transform: uppercase;
+                  letter-spacing: .09em; margin-bottom: 16px; display: flex;
+                  justify-content: space-between; align-items: center; gap: 8px; }
+    .card-title .dim { text-transform: none; letter-spacing: 0; font-weight: 400; }
 
     /* ── Table ── */
-    .table-card { background: var(--surface); border: 1px solid var(--border);
-                  border-radius: 10px; overflow: hidden; margin-bottom: 20px; }
+    .table-card { background: var(--card); border: 1px solid var(--border); backdrop-filter: blur(6px);
+                  border-radius: var(--r-card); overflow: hidden; margin-bottom: 18px; }
+    .table-card > .card-title { padding: 20px 20px 0; }
     .table-card table { width: 100%; border-collapse: collapse; }
-    .table-card th { background: #131621; padding: 10px 14px; text-align: right;
-                     font-size: .75rem; text-transform: uppercase; letter-spacing: .05em;
+    .table-card th { background: rgba(26,26,74,.6); padding: 10px 14px; text-align: right;
+                     font-size: .66rem; text-transform: uppercase; letter-spacing: .08em;
                      color: var(--muted); border-bottom: 1px solid var(--border); font-weight: 600; }
     .table-card th:first-child { text-align: left; }
     .table-card td { padding: 9px 14px; text-align: right; border-bottom: 1px solid var(--border);
                      font-size: .85rem; color: var(--text); }
     .table-card td:first-child { text-align: left; color: var(--muted); }
     .table-card tbody tr:last-child td { border-bottom: none; }
-    .table-card tfoot td { font-weight: 700; background: #131621;
+    .table-card td { font-variant-numeric: tabular-nums; }
+    .table-card tfoot td { font-weight: 700; background: rgba(26,26,74,.6);
                            border-top: 1px solid var(--border); font-size: .88rem; }
     .table-card tfoot td:first-child { color: var(--muted); text-transform: uppercase;
                                        font-size: .75rem; letter-spacing: .05em; }
@@ -218,15 +240,15 @@
     .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
     /* ── Top criativos ── */
-    .top-ads-card { background: var(--surface); border: 1px solid var(--border);
-                    border-radius: 10px; padding: 18px 20px; margin-bottom: 20px; }
+    .top-ads-card { background: var(--card); border: 1px solid var(--border); backdrop-filter: blur(6px);
+                    border-radius: var(--r-card); padding: 20px; margin-bottom: 18px; }
     .top-ads-list { display: flex; flex-direction: column; gap: 0; margin-top: 6px; }
     .top-ad-row { display: grid; grid-template-columns: 36px 1fr auto; gap: 14px;
                   align-items: center; padding: 12px 14px;
                   border-bottom: 1px solid var(--border); }
     .top-ad-row:last-child { border-bottom: none; }
     .top-ad-rank { width: 32px; height: 32px; border-radius: 50%;
-                   background: rgba(99,102,241,0.18); color: var(--accent);
+                   background: rgba(61,79,245,.2); color: var(--accent-soft);
                    display: flex; align-items: center; justify-content: center;
                    font-weight: 700; font-size: .9rem; }
     .top-ad-rank.gold   { background: rgba(250,204,21,0.18);  color: #facc15; }
@@ -243,10 +265,48 @@
     .top-ad-roas { font-size: .72rem; color: var(--muted); }
 
     /* ── Mobile (≤ 720px) ───────────────────────────────────────── */
+    .dim { color: var(--muted); }
+
+    /* Funil de e-commerce */
+    .funil { display: flex; flex-direction: column; gap: 10px; }
+    .funil-row { display: grid; grid-template-columns: 120px 1fr 64px 150px;
+                 align-items: center; gap: 14px; }
+    .funil-label { font-size: .8rem; color: var(--text-secondary); }
+    .funil-track { height: 26px; background: var(--surface-alt); border-radius: 6px; overflow: hidden; }
+    .funil-fill { height: 100%; border-radius: 6px; min-width: 2px;
+                  background: linear-gradient(90deg, var(--accent), var(--accent-soft)); }
+    .funil-val { font-family: 'Space Grotesk', sans-serif; font-weight: 700; text-align: right;
+                 font-variant-numeric: tabular-nums; }
+    .funil-taxa { font-size: .72rem; color: var(--muted); text-align: right; }
+    .funil-taxa b { color: var(--text); font-weight: 600; }
+    .funil-taxa.gargalo b { color: var(--red); }
+    .funil-nota { font-size: .72rem; color: var(--muted); margin-top: 14px; line-height: 1.5; }
+
+    /* Meta do mês */
+    .meta-top { display: flex; justify-content: space-between; align-items: baseline;
+                gap: 12px; flex-wrap: wrap; }
+    .meta-pct { font-family: 'Space Grotesk', sans-serif; font-size: 2.1rem; font-weight: 700;
+                color: var(--accent-soft); line-height: 1; }
+    .meta-desc { font-size: .8rem; color: var(--muted); }
+    .meta-bar { position: relative; height: 10px; background: var(--surface-alt);
+                border-radius: 99px; margin-top: 16px; }
+    .meta-fill { height: 100%; border-radius: 99px; max-width: 100%;
+                 background: linear-gradient(90deg, var(--accent), var(--accent-soft)); }
+    .meta-fill.ok { background: linear-gradient(90deg, #2BB673, var(--green)); }
+    /* Marcador de onde a barra deveria estar pelo calendário */
+    .meta-ritmo { position: absolute; top: -5px; bottom: -5px; width: 2px;
+                  background: var(--muted); border-radius: 2px; }
+    .meta-legenda { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap;
+                    font-size: .72rem; color: var(--muted); margin-top: 12px; }
+
     @media (max-width: 720px) {
       body { font-size: 13px; }
 
-      .topbar { padding: 10px 14px; gap: 8px; }
+      .topbar { padding: 10px 14px; gap: 8px; width: calc(100% - 24px); top: 8px; margin-top: 8px; }
+      .funil-row { grid-template-columns: 1fr auto; row-gap: 4px; }
+      .funil-track { grid-column: 1 / -1; grid-row: 2; height: 18px; }
+      .funil-taxa { grid-column: 1 / -1; text-align: left; }
+      .meta-pct { font-size: 1.6rem; }
       .topbar-name { font-size: 1rem; }
       .topbar-badge { display: none; }
       .topbar-right { width: 100%; justify-content: space-between; }
@@ -310,7 +370,7 @@
 <div class="topbar">
   <div class="topbar-left">
     <span class="topbar-name">{{ client_name }}</span>
-    <span class="topbar-badge">Dashboard</span>
+    <span class="topbar-badge">Resultados Meta Ads · custos com imposto</span>
   </div>
   <div class="topbar-right">
     <div class="drp-wrap" id="drp-wrap">
@@ -407,7 +467,24 @@
     </div>
   </div>
 
-  <!-- KPIs — Eficiência / Funil -->
+  <!-- Meta do mês (só aparece se o cliente tiver meta cadastrada) -->
+  <div class="chart-card" id="meta-card" style="display:none">
+    <div class="card-title"><span id="meta-titulo">Meta do mês</span><span class="dim" id="meta-mes"></span></div>
+    <div class="meta-top">
+      <div class="meta-pct" id="meta-pct">—</div>
+      <div class="meta-desc" id="meta-desc"></div>
+    </div>
+    <div class="meta-bar">
+      <div class="meta-fill" id="meta-fill" style="width:0"></div>
+      <div class="meta-ritmo" id="meta-ritmo" title="onde deveria estar pelo calendário"></div>
+    </div>
+    <div class="meta-legenda">
+      <span id="meta-projecao"></span>
+      <span id="meta-dias"></span>
+    </div>
+  </div>
+
+  <!-- KPIs — Eficiência -->
   <div id="kpi-section-funnel" style="display:none">
     <div class="kpi-section-title">🔍 Eficiência</div>
     <div class="kpi-grid">
@@ -415,11 +492,6 @@
         <div class="kpi-label">🖱️ Cliques link</div>
         <div class="kpi-value" id="kpi-clicks">—</div>
         <div class="kpi-sub" id="kpi-ctr">CTR —</div>
-      </div>
-      <div class="kpi-card">
-        <div class="kpi-label">📄 Visitas LP</div>
-        <div class="kpi-value" id="kpi-lpv">—</div>
-        <div class="kpi-sub" id="kpi-cr">Connect Rate —</div>
       </div>
       <div class="kpi-card">
         <div class="kpi-label">💵 CPC link</div>
@@ -434,9 +506,16 @@
     </div>
   </div>
 
+  <!-- Funil de e-commerce (só cliente de venda) -->
+  <div class="chart-card" id="funil-card" style="display:none">
+    <div class="card-title"><span>Funil de compra</span><span class="dim">eventos do pixel no período</span></div>
+    <div class="funil" id="funil"></div>
+    <div class="funil-nota" id="funil-nota"></div>
+  </div>
+
   <!-- Comparativo mês passado × mês atual -->
   <div class="table-card" id="compare-card" style="display:none">
-    <div class="card-title">📅 Mês passado × Mês atual</div>
+    <div class="card-title"><span>Mês passado × Mês atual</span><span class="dim">mês atual até hoje</span></div>
     <div class="table-scroll">
       <table>
         <thead>
@@ -450,7 +529,18 @@
         <tbody id="compare-body"></tbody>
       </table>
     </div>
-    <div class="empty" id="compare-empty" style="display:none">Não foi possível carregar a comparação.</div>
+    <div class="empty" id="compare-empty">Carregando comparação…</div>
+  </div>
+
+  <!-- Campanhas -->
+  <div class="table-card" id="campanhas-card" style="display:none">
+    <div class="card-title"><span>Campanhas</span><span class="dim">período selecionado · custo com imposto</span></div>
+    <div class="table-scroll">
+      <table>
+        <thead><tr id="campanhas-head"></tr></thead>
+        <tbody id="campanhas-body"></tbody>
+      </table>
+    </div>
   </div>
 
   <!-- Top criativos -->
@@ -462,12 +552,13 @@
 
   <!-- Chart -->
   <div class="chart-card" id="chart-card" style="display:none">
-    <div class="card-title">Gasto × Vendas por dia</div>
+    <div class="card-title"><span>Gasto × Vendas por dia</span><span class="dim">barras = gasto · linha = vendas</span></div>
     <canvas id="main-chart" height="80"></canvas>
   </div>
 
   <!-- Table -->
   <div class="table-card" id="table-card" style="display:none">
+    <div class="card-title"><span>Dados diários</span></div>
     <div class="table-scroll">
       <table>
         <thead>
@@ -476,9 +567,9 @@
             <th>Gasto</th>
             <th>Cliques</th>
             <th>CTR</th>
-            <th>Vis. LP</th>
-            <th>Connect Rate</th>
             <th>Vendas</th>
+            <th class="col-rev">Faturamento</th>
+            <th class="col-rev">ROAS</th>
           </tr>
         </thead>
         <tbody id="table-body"></tbody>
@@ -752,7 +843,7 @@ function renderKpis(t, deltas) {
     const revSub = document.getElementById('kpi-revenue-sub');
     if (t.revenue_real > 0) {
         // Tem dado real do Pixel
-        revSub.innerHTML = `<span style="color:#22c55e">✓ Pixel</span> · est. ${fmtBRL(t.revenue_est)} (ticket ${fmtBRL(t.ticket)})`;
+        revSub.innerHTML = `<span style="color:var(--green)">✓ Pixel</span> · est. ${fmtBRL(t.revenue_est)} (ticket ${fmtBRL(t.ticket)})`;
     } else if (t.revenue_est > 0) {
         // Só estimativa via ticket fixo
         revSub.textContent = `estimado · ticket ${fmtBRL(t.ticket)}`;
@@ -775,8 +866,6 @@ function renderKpis(t, deltas) {
     // ── Eficiência ──
     document.getElementById('kpi-clicks').textContent = fmtN(t.clicks);
     document.getElementById('kpi-ctr').textContent    = 'CTR ' + fmtPct(t.ctr);
-    document.getElementById('kpi-lpv').textContent    = fmtN(t.lpv);
-    document.getElementById('kpi-cr').textContent     = 'Connect Rate ' + fmtPct(t.connect_rate);
     document.getElementById('kpi-cpc').textContent    = fmtBRL(t.cpc_link);
     document.getElementById('kpi-cpm').textContent    = fmtBRL(t.cpm);
 
@@ -846,25 +935,27 @@ function renderTable(rows) {
     // Ordem crescente (mesma do gráfico — dia mais antigo no topo, mais recente embaixo)
     const sorted = [...rows].sort((a, b) => a.date.localeCompare(b.date));
 
+    // Faturamento/ROAS só fazem sentido para cliente de venda
+    const colsReceita = (rev, roas) => IS_MSG ? '' : `<td>${fmtBRL(rev)}</td><td>${fmtX(roas)}</td>`;
+
     tbody.innerHTML = sorted.map(r => `
         <tr>
           <td>${r.date}</td>
           <td>${fmtBRL(r.spend)}</td>
           <td>${fmtN(r.clicks)}</td>
           <td>${fmtPct(r.ctr)}</td>
-          ${IS_MSG ? '' : `<td>${fmtN(r.lpv)}</td><td>${fmtPct(r.connect_rate)}</td>`}
           <td>${fmtN(r.conversions)}</td>
+          ${colsReceita(r.revenue, r.roas)}
         </tr>`).join('');
 
     const tot = rows.reduce((acc, r) => {
         acc.spend += r.spend; acc.clicks += r.clicks;
-        acc.lpv   += r.lpv;   acc.conv   += r.conversions;
-        acc.impr  += r.impressions;
+        acc.conv  += r.conversions; acc.impr += r.impressions;
+        acc.rev   += r.revenue || 0;
         return acc;
-    }, {spend: 0, clicks: 0, lpv: 0, conv: 0, impr: 0});
+    }, {spend: 0, clicks: 0, conv: 0, impr: 0, rev: 0});
 
-    const totCtr = tot.impr   > 0 ? (tot.clicks / tot.impr   * 100).toFixed(1) : '—';
-    const totCr  = tot.clicks > 0 ? (tot.lpv    / tot.clicks * 100).toFixed(1) : '—';
+    const totCtr = tot.impr > 0 ? (tot.clicks / tot.impr * 100).toFixed(1) : '—';
 
     tfoot.innerHTML = `
         <tr>
@@ -872,8 +963,8 @@ function renderTable(rows) {
           <td>${fmtBRL(tot.spend)}</td>
           <td>${fmtN(tot.clicks)}</td>
           <td>${totCtr !== '—' ? totCtr + '%' : '—'}</td>
-          ${IS_MSG ? '' : `<td>${fmtN(tot.lpv)}</td><td>${totCr !== '—' ? totCr + '%' : '—'}</td>`}
           <td>${fmtN(tot.conv)}</td>
+          ${colsReceita(tot.rev, tot.spend > 0 ? tot.rev / tot.spend : 0)}
         </tr>`;
 }
 
@@ -895,17 +986,18 @@ function renderChart(rows) {
                     type:        'bar',
                     label:       'Gasto (R$)',
                     data:        spends,
-                    backgroundColor: 'rgba(99,102,241,.5)',
-                    borderColor:     '#6366f1',
-                    borderWidth:     1,
+                    backgroundColor: 'rgba(61,79,245,.55)',
+                    borderColor:     '#3D4FF5',
+                    borderWidth:     0,
+                    borderRadius:    4,
                     yAxisID:     'y',
                 },
                 {
                     type:        'line',
-                    label:       'Vendas',
+                    label:       CONV_LABEL,
                     data:        convs,
-                    borderColor: '#22c55e',
-                    backgroundColor: 'rgba(34,197,94,.15)',
+                    borderColor: '#3DD68C',
+                    backgroundColor: 'rgba(61,214,140,.12)',
                     borderWidth: 2,
                     pointRadius: 3,
                     tension:     .3,
@@ -917,12 +1009,12 @@ function renderChart(rows) {
         options: {
             responsive: true,
             interaction: { mode: 'index', intersect: false },
-            plugins: { legend: { labels: { color: '#94a3b8', font: { size: 12 } } } },
+            plugins: { legend: { labels: { color: '#9AA0C7', font: { size: 12 } } } },
             scales: {
-                x:  { ticks: { color: '#64748b', maxTicksLimit: 14 }, grid: { color: '#1e2333' } },
-                y:  { position: 'left',  ticks: { color: '#64748b',
-                        callback: v => 'R$ ' + v.toLocaleString('pt-BR') }, grid: { color: '#1e2333' } },
-                y2: { position: 'right', ticks: { color: '#22c55e' }, grid: { drawOnChartArea: false } },
+                x:  { ticks: { color: '#9AA0C7', maxTicksLimit: 14 }, grid: { color: 'rgba(42,42,94,.5)' } },
+                y:  { position: 'left',  ticks: { color: '#9AA0C7',
+                        callback: v => 'R$ ' + v.toLocaleString('pt-BR') }, grid: { color: 'rgba(42,42,94,.5)' } },
+                y2: { position: 'right', ticks: { color: '#3DD68C', precision: 0 }, grid: { drawOnChartArea: false } },
             }
         }
     });
@@ -945,6 +1037,7 @@ async function load() {
 
     hide('kpi-section-result'); hide('kpi-section-funnel');
     hide('top-ads-card'); hide('chart-card'); hide('table-card'); hide('error-msg');
+    hide('campanhas-card'); hide('funil-card');
     setStatus('Carregando...');
 
     try {
@@ -981,6 +1074,10 @@ async function load() {
                 } else if (d.stage === 'top_ads') {
                     renderTopAds(d.rows, d.ticket);
                     show('top-ads-card');
+                } else if (d.stage === 'campanhas') {
+                    if (renderCampanhas(d.rows)) show('campanhas-card');
+                } else if (d.stage === 'funil') {
+                    if (renderFunil(d.etapas)) show('funil-card');
                 } else if (d.stage === 'daily') {
                     renderTable(d.rows);
                     renderChart(d.rows);
@@ -1023,19 +1120,21 @@ function applyResultKind() {
     const la = labelOf('kpi-cac');  if (la) la.textContent = '🎯 ' + CAC_LABEL;
 
     // Campanha de mensagem não devolve valor de compra à Meta: faturamento,
-    // lucro, ROAS e AOV ficariam sempre zerados. Visitas de LP idem — o clique
-    // abre o WhatsApp, não uma página.
-    ['kpi-revenue', 'kpi-profit', 'kpi-roas', 'kpi-lpv'].forEach(id => {
+    // lucro, ROAS e AOV ficariam sempre zerados.
+    ['kpi-revenue', 'kpi-profit', 'kpi-roas'].forEach(id => {
         const c = cardOf(id); if (c) c.style.display = 'none';
     });
     const aov = document.getElementById('kpi-aov'); if (aov) aov.style.display = 'none';
 
-    // Tabela diária: remove as colunas de LP e renomeia a última
+    // Tabela diária: sem colunas de receita, e a de resultado vira "conversas"
+    document.querySelectorAll('#table-card thead th.col-rev').forEach(th => th.remove());
     const ths = document.querySelectorAll('#table-card thead th');
-    if (ths.length === 7) { ths[4].remove(); ths[5].remove(); ths[6].textContent = CONV_LABEL; }
+    if (ths.length) ths[ths.length - 1].textContent = CONV_LABEL;
 
-    const chartTitle = document.querySelector('#chart-card .card-title');
+    const chartTitle = document.querySelector('#chart-card .card-title span');
     if (chartTitle) chartTitle.textContent = 'Gasto × ' + CONV_LABEL.toLowerCase() + ' por dia';
+    const chartSub = document.querySelector('#chart-card .card-title .dim');
+    if (chartSub) chartSub.textContent = 'barras = gasto · linha = ' + CONV_LABEL.toLowerCase();
     const topEmpty = document.getElementById('top-ads-empty');
     if (topEmpty) topEmpty.textContent = 'Nenhum criativo com conversas no período.';
 }
@@ -1064,36 +1163,6 @@ const COMPARE_ROWS = IS_MSG ? [
     ['CPM',           'cpm',         fmtBRL, 'down'],
 ];
 
-// Lê o stream até o evento 'kpis' — só os totais do período interessam aqui.
-async function fetchKpis(preset) {
-    const resp = await fetch(apiUrl('/meta-only', 'date_preset=' + preset));
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-
-    const reader  = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let   buffer  = '';
-    try {
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-            const parts = buffer.split('\n\n');
-            buffer = parts.pop();
-            for (const part of parts) {
-                const line = part.trim();
-                if (!line.startsWith('data:')) continue;
-                let d;
-                try { d = JSON.parse(line.slice(5).trim()); } catch (_) { continue; }
-                if (d.stage === 'kpis')  return { totals: d.totals || {}, period: d.period };
-                if (d.stage === 'error') throw new Error(d.message);
-            }
-        }
-    } finally {
-        try { reader.cancel(); } catch (_) {}
-    }
-    throw new Error('sem dados no período');
-}
-
 function monthLabel(period) {
     if (!period || !period.since) return '—';
     const [y, m] = period.since.split('-');
@@ -1118,12 +1187,16 @@ async function loadComparativo() {
     const card  = document.getElementById('compare-card');
     const empty = document.getElementById('compare-empty');
     card.style.display = '';
+    empty.textContent = 'Carregando comparação…';
+    empty.style.display = 'block';
     try {
-        const [prev, curr] = await Promise.all([
-            fetchKpis('last_month'), fetchKpis('this_month'),
-        ]);
-        document.getElementById('compare-th-prev').textContent = monthLabel(prev.period);
-        document.getElementById('compare-th-curr').textContent = monthLabel(curr.period);
+        const resp = await fetch(apiUrl('/comparativo'));
+        const d = await resp.json();
+        if (!d.success) throw new Error(d.error || 'HTTP ' + resp.status);
+        const prev = d.anterior, curr = d.atual;
+
+        document.getElementById('compare-th-prev').textContent = monthLabel(prev.periodo);
+        document.getElementById('compare-th-curr').textContent = monthLabel(curr.periodo);
 
         body.innerHTML = COMPARE_ROWS.map(([label, key, fmt, pol]) => `
             <tr>
@@ -1133,11 +1206,106 @@ async function loadComparativo() {
               <td>${varCell(curr.totals[key] || 0, prev.totals[key] || 0, pol)}</td>
             </tr>`).join('');
         empty.style.display = 'none';
+
+        if (d.meta) renderMeta(d.meta, curr.periodo);
     } catch (err) {
         body.innerHTML = '';
         empty.textContent = 'Não foi possível carregar a comparação: ' + err.message;
-        empty.style.display = 'block';
     }
+}
+
+// ── Meta do mês ────────────────────────────────────────────────────────────
+const META_NOMES = { faturamento: 'faturamento', vendas: 'vendas', investimento: 'investimento' };
+
+function renderMeta(m, periodo) {
+    const fmtVal = v => m.tipo === 'vendas' ? fmtN(Math.round(v)) : fmtBRL(v);
+    document.getElementById('meta-titulo').textContent = `Meta de ${META_NOMES[m.tipo] || m.tipo} do mês`;
+    document.getElementById('meta-mes').textContent = monthLabel(periodo);
+    document.getElementById('meta-pct').textContent = m.pct.toFixed(1).replace('.', ',') + '%';
+    document.getElementById('meta-desc').textContent = `${fmtVal(m.realizado)} de ${fmtVal(m.alvo)}`;
+
+    const fill = document.getElementById('meta-fill');
+    fill.style.width = Math.min(100, m.pct) + '%';
+    fill.classList.toggle('ok', m.pct >= 100);
+
+    // Onde a barra deveria estar se o mês seguisse ritmo linear até a meta
+    const ritmo = m.dias.decorridos / m.dias.mes * 100;
+    document.getElementById('meta-ritmo').style.left = Math.min(100, ritmo) + '%';
+
+    const falta = m.alvo - m.realizado;
+    const proj = document.getElementById('meta-projecao');
+    proj.innerHTML = m.projecao == null ? '' :
+        `No ritmo atual o mês fecha em <b style="color:${m.projecao >= m.alvo ? 'var(--green)' : 'var(--text)'}">${fmtVal(m.projecao)}</b>` +
+        (falta > 0 ? ` · faltam ${fmtVal(falta)}` : ' · meta batida');
+    document.getElementById('meta-dias').textContent =
+        `dia ${m.dias.decorridos} de ${m.dias.mes} · marcador = ritmo esperado`;
+    show('meta-card');
+}
+
+// ── Campanhas ──────────────────────────────────────────────────────────────
+function renderCampanhas(rows) {
+    if (!rows || !rows.length) return false;
+    const head = document.getElementById('campanhas-head');
+    const body = document.getElementById('campanhas-body');
+    const cols = IS_MSG
+        ? ['Campanha', 'Gasto', 'Impressões', 'CTR', CONV_LABEL, CAC_LABEL]
+        : ['Campanha', 'Gasto', 'CTR', 'Vendas', 'Faturamento', 'CAC', 'ROAS'];
+    head.innerHTML = cols.map(c => `<th>${escapeHtml(c)}</th>`).join('');
+
+    const gastoTotal = rows.reduce((s, r) => s + r.spend, 0);
+    body.innerHTML = rows.map(r => {
+        const share = gastoTotal > 0 ? ` <span class="dim">(${Math.round(r.spend / gastoTotal * 100)}%)</span>` : '';
+        const base = `<td style="color:var(--text)">${escapeHtml(r.campanha)}</td>
+                      <td>${fmtBRL(r.spend)}${share}</td>`;
+        return IS_MSG
+            ? `<tr>${base}<td>${fmtN(r.impressions)}</td><td>${fmtPct(r.ctr)}</td>
+                 <td>${fmtN(r.conversions)}</td><td>${r.cpa == null ? '—' : fmtBRL(r.cpa)}</td></tr>`
+            : `<tr>${base}<td>${fmtPct(r.ctr)}</td><td>${fmtN(r.conversions)}</td>
+                 <td>${fmtBRL(r.revenue_real)}</td><td>${r.cpa == null ? '—' : fmtBRL(r.cpa)}</td>
+                 <td>${r.roas == null ? '—' : fmtX(r.roas)}</td></tr>`;
+    }).join('');
+    return true;
+}
+
+// ── Funil de compra ────────────────────────────────────────────────────────
+function renderFunil(etapas) {
+    // Cliente de mensagem não tem funil de e-commerce; sem evento nenhum,
+    // o pixel não está configurado para ele — não mostra um funil de zeros.
+    if (IS_MSG || !etapas || !etapas.some(e => e.valor > 0)) return false;
+    const topo = Math.max(...etapas.map(e => e.valor), 1);
+
+    // Etapa com a menor taxa de passagem = onde mais gente desiste
+    let gargalo = -1, menor = Infinity;
+    etapas.forEach((e, i) => {
+        if (i === 0 || !etapas[i - 1].valor) return;
+        const t = e.valor / etapas[i - 1].valor;
+        if (t < menor) { menor = t; gargalo = i; }
+    });
+
+    document.getElementById('funil').innerHTML = etapas.map((e, i) => {
+        const ant = i > 0 ? etapas[i - 1].valor : null;
+        const taxa = ant ? e.valor / ant * 100 : null;
+        const taxaTxt = i === 0 ? '<span class="dim">topo do funil</span>'
+            : (taxa == null ? '—' : `<b>${taxa.toFixed(1).replace('.', ',')}%</b> da etapa anterior`);
+        return `<div class="funil-row">
+            <div class="funil-label">${escapeHtml(e.label)}</div>
+            <div class="funil-track"><div class="funil-fill" style="width:${e.valor / topo * 100}%"></div></div>
+            <div class="funil-val">${fmtN(e.valor)}</div>
+            <div class="funil-taxa${i === gargalo ? ' gargalo' : ''}">${taxaTxt}</div>
+        </div>`;
+    }).join('');
+
+    const primeira = etapas[0].valor, ultima = etapas[etapas.length - 1].valor;
+    document.getElementById('funil-nota').innerHTML =
+        (gargalo > 0 ? `Maior perda: de <b>${escapeHtml(etapas[gargalo - 1].label.toLowerCase())}</b> para ` +
+                       `<b>${escapeHtml(etapas[gargalo].label.toLowerCase())}</b>. ` : '') +
+        (primeira ? `De cada 100 pessoas que viram o produto, ${(ultima / primeira * 100).toFixed(1).replace('.', ',')} compraram.` : '');
+    return true;
+}
+
+function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c =>
+        ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 }
 
 // ── Boot ───────────────────────────────────────────────────────────────────
