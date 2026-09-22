@@ -393,20 +393,14 @@ def _fetch_meta_ads_daily_live(account_id, access_token, conversion_event,
     return rows
 
 
-# Etapas do funil de e-commerce, antes da compra (que vem do conversion_event
-# do cliente). Cada etapa usa o PRIMEIRO action_type presente: a Meta devolve o
-# mesmo evento com vários nomes (view_content, omni_view_content,
-# offsite_conversion.fb_pixel_view_content) e somar contaria em dobro.
-FUNIL_ECOMMERCE = [
-    ('produto',   'Produto visto', ('view_content', 'omni_view_content',
-                                    'offsite_conversion.fb_pixel_view_content')),
-    ('carrinho',  'Carrinho',      ('add_to_cart', 'omni_add_to_cart',
-                                    'offsite_conversion.fb_pixel_add_to_cart')),
-    ('checkout',  'Checkout',      ('initiate_checkout', 'omni_initiated_checkout',
-                                    'offsite_conversion.fb_pixel_initiate_checkout')),
-    ('pagamento', 'Pagamento',     ('add_payment_info',
-                                    'offsite_conversion.fb_pixel_add_payment_info')),
-]
+# Eventos de funil coletados por anúncio. Cada chave usa o PRIMEIRO
+# action_type presente: a Meta devolve o mesmo evento com vários nomes
+# (landing_page_view, omni_landing_page_view) e somar contaria em dobro.
+FUNIL_EVENTOS = {
+    'lpv':      ('landing_page_view', 'omni_landing_page_view'),
+    'checkout': ('initiate_checkout', 'omni_initiated_checkout',
+                 'offsite_conversion.fb_pixel_initiate_checkout'),
+}
 
 
 def _first_action(actions, candidatos):
@@ -479,13 +473,80 @@ def campanhas_de(rows):
     return out
 
 
-def funil_de(rows):
-    """Totais de cada etapa do funil de e-commerce, terminando na compra."""
-    etapas = [{'key': k, 'label': label, 'valor': sum(r['funil'][k] for r in rows)}
-              for k, label, _ in FUNIL_ECOMMERCE]
-    etapas.append({'key': 'compra', 'label': 'Compra',
-                   'valor': sum(r['conversions'] for r in rows)})
-    return etapas
+def funil_de(rows, alcance=None):
+    """
+    Funil da veiculação até a compra. Cada etapa traz o total e a taxa de
+    passagem da etapa anterior — que é como esses nomes já são usados no dia a
+    dia: CTR é clique/impressão, Connect Rate é visita/clique, e assim por diante.
+    """
+    imp      = sum(r['impressions'] for r in rows)
+    cliques  = sum(r['clicks'] for r in rows)
+    lpv      = sum(r['funil']['lpv'] for r in rows)
+    checkout = sum(r['funil']['checkout'] for r in rows)
+    compras  = sum(r['conversions'] for r in rows)
+
+    def _taxa(parte, total):
+        return round(parte / total * 100, 2) if total else None
+
+    etapas = [
+        {'key': 'impressoes', 'label': 'Impressões',    'valor': imp,
+         'taxa': None,                    'taxa_label': None},
+        {'key': 'cliques',    'label': 'Cliques no link', 'valor': cliques,
+         'taxa': _taxa(cliques, imp),     'taxa_label': 'CTR'},
+        {'key': 'lpv',        'label': 'Visualizações da página', 'valor': lpv,
+         'taxa': _taxa(lpv, cliques),     'taxa_label': 'Connect Rate'},
+        {'key': 'checkout',   'label': 'Checkouts',     'valor': checkout,
+         'taxa': _taxa(checkout, lpv),    'taxa_label': 'checkout por visita'},
+        {'key': 'compra',     'label': 'Compras',       'valor': compras,
+         'taxa': _taxa(compras, checkout), 'taxa_label': 'compra por checkout'},
+    ]
+    return {
+        'etapas':     etapas,
+        'alcance':    alcance,
+        'frequencia': round(imp / alcance, 2) if alcance else None,
+    }
+
+
+def fetch_meta_account_reach(account_id, access_token, since=None, until=None,
+                             date_preset='last_30d'):
+    """
+    Alcance do período no nível da CONTA. Não dá para somar o alcance por
+    anúncio: quem viu dois anúncios contaria duas vezes e a frequência sairia
+    menor do que é.
+    """
+    from modules.cruzamento import preset_to_dates
+    from modules.meta_cache import get_or_fetch, ttl_for_period
+
+    if not (since and until):
+        since_d, until_d = preset_to_dates(date_preset)
+        if since_d and until_d:
+            since, until = str(since_d), str(until_d)
+
+    cache_key = ('dash_reach', account_id, since, until, date_preset)
+    return get_or_fetch(cache_key, ttl_for_period(until),
+                        lambda: _fetch_account_reach_live(
+                            account_id, access_token, since, until))
+
+
+def _fetch_account_reach_live(account_id, access_token, since, until):
+    """Fetch real (sem cache) — chamado apenas em cache miss."""
+    params = {
+        'access_token': access_token,
+        'fields':       'impressions,reach',
+        'limit':        100,
+        # sem level=ad e sem time_increment: uma linha agregada da conta
+    }
+    if since and until:
+        params['time_range'] = json.dumps({'since': since, 'until': until},
+                                          separators=(',', ':'))
+    else:
+        params['date_preset'] = 'last_30d'
+
+    from modules.meta_client import meta_get_insights_rows
+    linhas = meta_get_insights_rows(f'{GRAPH_BASE}/{account_id}/insights', params)
+    # Período > 90 dias é fragmentado pelo client; aí o alcance vira soma de
+    # blocos e deixa de ser exato (pessoa alcançada em dois blocos conta duas).
+    return sum(int(l.get('reach') or 0) for l in linhas)
 
 
 def _fetch_meta_ads_by_ad_live(account_id, access_token, conversion_event,
@@ -524,14 +585,14 @@ def _fetch_meta_ads_by_ad_live(account_id, access_token, conversion_event,
             'campaign_name': item.get('campaign_name', ''),
             'spend': 0.0, 'impressions': 0, 'clicks': 0,
             'conversions': 0, 'revenue_real': 0.0,
-            'funil': {k: 0 for k, _, _ in FUNIL_ECOMMERCE},
+            'funil': {k: 0 for k in FUNIL_EVENTOS},
         })
         entry['spend']        += apply_meta_tax(item.get('spend', 0))
         entry['impressions']  += int(item.get('impressions', 0) or 0)
         entry['clicks']       += int(item.get('inline_link_clicks', 0) or 0)
         entry['conversions']  += _sum_action_value(actions, conversion_event)
         entry['revenue_real'] += _sum_action_money(action_values, conversion_event)
-        for k, _, candidatos in FUNIL_ECOMMERCE:
+        for k, candidatos in FUNIL_EVENTOS.items():
             entry['funil'][k] += _first_action(actions, candidatos)
 
     rows = list(by_ad.values())
@@ -1134,13 +1195,18 @@ def api_dash_meta_only(slug):
             # atual (esses alimentam top criativos, campanhas e funil)
             prev_rows = []
             ads_rows  = []
-            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
+            alcance   = None
+            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as ex:
                 fut_prev = (ex.submit(
                     fetch_meta_ads_daily, meta_account_id, meta_token, conversion_event,
                     date_preset, prev_since, prev_until,
                 ) if prev_since and prev_until else None)
                 fut_ads  = ex.submit(
                     fetch_meta_ads_by_ad, meta_account_id, meta_token, conversion_event,
+                    curr_since, curr_until, date_preset,
+                )
+                fut_reach = ex.submit(
+                    fetch_meta_account_reach, meta_account_id, meta_token,
                     curr_since, curr_until, date_preset,
                 )
                 if fut_prev:
@@ -1150,6 +1216,9 @@ def api_dash_meta_only(slug):
                 try:    ads_rows = fut_ads.result()
                 except Exception as e:
                     logger.warning(f'[dash:{slug}] insights por anúncio falharam: {e}')
+                try:    alcance = fut_reach.result()
+                except Exception as e:
+                    logger.warning(f'[dash:{slug}] alcance da conta falhou: {e}')
 
             totals      = _meta_totals(rows, ticket_value)
             prev_totals = _meta_totals(prev_rows, ticket_value)
@@ -1187,7 +1256,7 @@ def api_dash_meta_only(slug):
             yield _sse('daily',     {'rows': daily})
             yield _sse('top_ads',   {'rows': top_ads_de(ads_rows, 5), 'ticket': ticket_value})
             yield _sse('campanhas', {'rows': campanhas_de(ads_rows)})
-            yield _sse('funil',     {'etapas': funil_de(ads_rows)})
+            yield _sse('funil',     funil_de(ads_rows, alcance))
 
             yield _sse('done', {
                 'meta': {

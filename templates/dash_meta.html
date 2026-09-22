@@ -508,7 +508,7 @@
 
   <!-- Funil de e-commerce (só cliente de venda) -->
   <div class="chart-card" id="funil-card" style="display:none">
-    <div class="card-title"><span>Funil de compra</span><span class="dim">eventos do pixel no período</span></div>
+    <div class="card-title"><span>Funil de compra</span><span class="dim">da veiculação até a compra</span></div>
     <div class="funil" id="funil"></div>
     <div class="funil-nota" id="funil-nota"></div>
   </div>
@@ -1079,7 +1079,7 @@ async function load() {
                 } else if (d.stage === 'campanhas') {
                     if (renderCampanhas(d.rows)) show('campanhas-card');
                 } else if (d.stage === 'funil') {
-                    if (renderFunil(d.etapas)) show('funil-card');
+                    if (renderFunil(d)) show('funil-card');
                 } else if (d.stage === 'daily') {
                     renderTable(d.rows);
                     renderChart(d.rows);
@@ -1270,38 +1270,52 @@ function renderCampanhas(rows) {
 }
 
 // ── Funil de compra ────────────────────────────────────────────────────────
-function renderFunil(etapas) {
-    // Cliente de mensagem não tem funil de e-commerce; sem evento nenhum,
-    // o pixel não está configurado para ele — não mostra um funil de zeros.
+function renderFunil(d) {
+    const etapas = d && d.etapas;
+    // Cliente de mensagem não tem funil de compra; sem evento nenhum, o pixel
+    // não está configurado — não mostra um funil de zeros.
     if (IS_MSG || !etapas || !etapas.some(e => e.valor > 0)) return false;
-    const topo = Math.max(...etapas.map(e => e.valor), 1);
 
-    // Etapa com a menor taxa de passagem = onde mais gente desiste
+    // As impressões são ordens de grandeza maiores que o resto (260 mil contra
+    // 25 compras): barra proporcional ao valor deixaria tudo depois da primeira
+    // etapa invisível. A barra mostra a TAXA DE PASSAGEM da etapa anterior.
+    const pct = v => v.toFixed(2).replace('.', ',') + '%';
+
+    // Etapa que mais perde gente
     let gargalo = -1, menor = Infinity;
     etapas.forEach((e, i) => {
-        if (i === 0 || !etapas[i - 1].valor) return;
-        const t = e.valor / etapas[i - 1].valor;
-        if (t < menor) { menor = t; gargalo = i; }
+        if (i === 0 || e.taxa == null) return;
+        if (e.taxa < menor) { menor = e.taxa; gargalo = i; }
     });
 
     document.getElementById('funil').innerHTML = etapas.map((e, i) => {
-        const ant = i > 0 ? etapas[i - 1].valor : null;
-        const taxa = ant ? e.valor / ant * 100 : null;
-        const taxaTxt = i === 0 ? '<span class="dim">topo do funil</span>'
-            : (taxa == null ? '—' : `<b>${taxa.toFixed(1).replace('.', ',')}%</b> da etapa anterior`);
+        let direita;
+        if (i === 0) {
+            direita = d.frequencia
+                ? `<b>${d.frequencia.toLocaleString('pt-BR', {minimumFractionDigits: 2})}x</b> de frequência` +
+                  (d.alcance ? ` <span class="dim">· ${fmtN(d.alcance)} pessoas</span>` : '')
+                : '<span class="dim">topo do funil</span>';
+        } else {
+            direita = e.taxa == null ? '—' : `<b>${pct(e.taxa)}</b> ${escapeHtml(e.taxa_label || '')}`;
+        }
+        const largura = i === 0 ? 100 : Math.min(100, e.taxa || 0);
         return `<div class="funil-row">
             <div class="funil-label">${escapeHtml(e.label)}</div>
-            <div class="funil-track"><div class="funil-fill" style="width:${e.valor / topo * 100}%"></div></div>
+            <div class="funil-track"><div class="funil-fill" style="width:${largura}%"></div></div>
             <div class="funil-val">${fmtN(e.valor)}</div>
-            <div class="funil-taxa${i === gargalo ? ' gargalo' : ''}">${taxaTxt}</div>
+            <div class="funil-taxa${i === gargalo ? ' gargalo' : ''}">${direita}</div>
         </div>`;
     }).join('');
 
-    const primeira = etapas[0].valor, ultima = etapas[etapas.length - 1].valor;
+    const cliques = etapas.find(e => e.key === 'cliques');
+    const compras = etapas.find(e => e.key === 'compra');
+    const porCliques = (cliques && cliques.valor)
+        ? `De cada 100 cliques no link, ${pct(compras.valor / cliques.valor * 100)
+             .replace('%', '')} viram compra. ` : '';
     document.getElementById('funil-nota').innerHTML =
-        (gargalo > 0 ? `Maior perda: de <b>${escapeHtml(etapas[gargalo - 1].label.toLowerCase())}</b> para ` +
-                       `<b>${escapeHtml(etapas[gargalo].label.toLowerCase())}</b>. ` : '') +
-        (primeira ? `De cada 100 pessoas que viram o produto, ${(ultima / primeira * 100).toFixed(1).replace('.', ',')} compraram.` : '');
+        porCliques +
+        (gargalo > 0 ? `Maior queda: <b>${escapeHtml(etapas[gargalo].taxa_label || etapas[gargalo].label)}</b>. ` : '') +
+        'A barra mostra a taxa de passagem de cada etapa, não o volume.';
     return true;
 }
 
