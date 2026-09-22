@@ -386,10 +386,10 @@
             <label class="drp-preset" data-preset="today"><input type="radio" name="drp" value="today"> Hoje</label>
             <label class="drp-preset" data-preset="yesterday"><input type="radio" name="drp" value="yesterday"> Ontem</label>
             <label class="drp-preset" data-preset="last_3d"><input type="radio" name="drp" value="last_3d"> Últimos 3 dias</label>
-            <label class="drp-preset" data-preset="last_7d"><input type="radio" name="drp" value="last_7d" checked> Últimos 7 dias</label>
+            <label class="drp-preset" data-preset="last_7d"><input type="radio" name="drp" value="last_7d"> Últimos 7 dias</label>
             <label class="drp-preset" data-preset="last_14d"><input type="radio" name="drp" value="last_14d"> Últimos 14 dias</label>
             <label class="drp-preset" data-preset="last_30d"><input type="radio" name="drp" value="last_30d"> Últimos 30 dias</label>
-            <label class="drp-preset" data-preset="this_month"><input type="radio" name="drp" value="this_month"> Este mês</label>
+            <label class="drp-preset" data-preset="this_month"><input type="radio" name="drp" value="this_month" checked> Este mês</label>
             <label class="drp-preset" data-preset="last_month"><input type="radio" name="drp" value="last_month"> Mês passado</label>
             <label class="drp-preset" data-preset="last_60d"><input type="radio" name="drp" value="last_60d"> Últimos 60 dias</label>
             <label class="drp-preset" data-preset="maximum"><input type="radio" name="drp" value="maximum"> Tempo todo</label>
@@ -615,12 +615,14 @@ function apiUrl(path, qs) {
 const MONTHS_PT = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
 const DAYS_PT   = ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
 
+const PRESET_PADRAO = LOCKED_PERIOD || 'this_month';
+
 let drpOpen = false;
-let drpPreset      = LOCKED_PERIOD || 'last_7d';
+let drpPreset      = PRESET_PADRAO;
 let drpTempSince   = null, drpTempUntil = null;
 let drpClickState  = 0;
 let drpLeftMonth   = null, drpRightMonth = null;
-let appliedPreset  = LOCKED_PERIOD || 'last_7d';
+let appliedPreset  = PRESET_PADRAO;
 let appliedSince   = null, appliedUntil  = null;
 
 function todayDate() { const d = new Date(); d.setHours(0,0,0,0); return d; }
@@ -654,7 +656,7 @@ function getDateQS() {
         p.set('since', dateStr(appliedSince));
         p.set('until', dateStr(appliedUntil));
     } else {
-        p.set('date_preset', appliedPreset || 'last_7d');
+        p.set('date_preset', appliedPreset || PRESET_PADRAO);
     }
     return p.toString();
 }

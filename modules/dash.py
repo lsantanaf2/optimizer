@@ -1074,7 +1074,9 @@ def api_dash_meta_only(slug):
     from app import obter_token
     meta_token = obter_token()
 
-    date_preset = request.args.get('date_preset', 'last_7_days')
+    # Padrão da dash Meta-only: mês atual (o front manda o preset explícito;
+    # isto vale para chamada direta à API)
+    date_preset = request.args.get('date_preset', 'this_month')
     since       = request.args.get('since')
     until       = request.args.get('until')
 
