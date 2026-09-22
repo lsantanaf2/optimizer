@@ -1276,10 +1276,14 @@ function renderFunil(d) {
     // não está configurado — não mostra um funil de zeros.
     if (IS_MSG || !etapas || !etapas.some(e => e.valor > 0)) return false;
 
-    // As impressões são ordens de grandeza maiores que o resto (260 mil contra
-    // 25 compras): barra proporcional ao valor deixaria tudo depois da primeira
-    // etapa invisível. A barra mostra a TAXA DE PASSAGEM da etapa anterior.
     const pct = v => v.toFixed(2).replace('.', ',') + '%';
+
+    // A barra representa VOLUME, mas em escala logarítmica: de 178 mil
+    // impressões a 21 compras, escala linear deixaria tudo depois da primeira
+    // etapa invisível. Log mantém a ordem (mais volume = barra maior) e ainda
+    // dá para enxergar o fim do funil.
+    const topo = Math.max(...etapas.map(e => e.valor), 1);
+    const escala = v => v <= 0 ? 0 : Math.log(v + 1) / Math.log(topo + 1) * 100;
 
     // Etapa que mais perde gente
     let gargalo = -1, menor = Infinity;
@@ -1288,6 +1292,11 @@ function renderFunil(d) {
         if (e.taxa < menor) { menor = e.taxa; gargalo = i; }
     });
 
+    // Etapa que registrou MAIS que a anterior. Não existe num funil real:
+    // é o evento de cima subcontando (o pixel não disparou em todo mundo).
+    const furados = [];
+
+    let larguraAnterior = 100;
     document.getElementById('funil').innerHTML = etapas.map((e, i) => {
         let direita;
         if (i === 0) {
@@ -1297,8 +1306,12 @@ function renderFunil(d) {
                 : '<span class="dim">topo do funil</span>';
         } else {
             direita = e.taxa == null ? '—' : `<b>${pct(e.taxa)}</b> ${escapeHtml(e.taxa_label || '')}`;
+            if (e.valor > etapas[i - 1].valor) furados.push(etapas[i - 1].label.toLowerCase());
         }
-        const largura = i === 0 ? 100 : Math.min(100, e.taxa || 0);
+        // Trava: uma etapa nunca desenha mais larga que a anterior, mesmo
+        // quando o número vem maior por falha de rastreamento.
+        const largura = i === 0 ? 100 : Math.min(escala(e.valor), larguraAnterior);
+        larguraAnterior = largura;
         return `<div class="funil-row">
             <div class="funil-label">${escapeHtml(e.label)}</div>
             <div class="funil-track"><div class="funil-fill" style="width:${largura}%"></div></div>
@@ -1312,10 +1325,16 @@ function renderFunil(d) {
     const porCliques = (cliques && cliques.valor)
         ? `De cada 100 cliques no link, ${pct(compras.valor / cliques.valor * 100)
              .replace('%', '')} viram compra. ` : '';
+    const aviso = furados.length
+        ? `<span style="color:var(--red)">Atenção:</span> há mais eventos depois de ` +
+          `<b>${escapeHtml([...new Set(furados)].join(' e '))}</b> do que nessa etapa, o que é ` +
+          `impossível num funil real — esse evento do pixel está subcontando, e as taxas ` +
+          `vizinhas saem distorcidas. `
+        : '';
     document.getElementById('funil-nota').innerHTML =
-        porCliques +
+        aviso + porCliques +
         (gargalo > 0 ? `Maior queda: <b>${escapeHtml(etapas[gargalo].taxa_label || etapas[gargalo].label)}</b>. ` : '') +
-        'A barra mostra a taxa de passagem de cada etapa, não o volume.';
+        'Barras em escala logarítmica, senão as etapas finais não apareceriam.';
     return true;
 }
 
