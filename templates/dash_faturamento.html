@@ -149,7 +149,8 @@ function clearPresetHighlight() {
   document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
 }
 
-const FUNIL_FLAGS = { 'EMA-PT': '🇧🇷', 'EMA-ES': '🇪🇸', 'EMA-EN': '🇺🇸', 'EMA-FR': '🇫🇷' };
+const FUNIL_FLAGS = { 'EMA-PT': '🇧🇷', 'EMA-ES': '🇪🇸', 'EMA-EN': '🇺🇸', 'EMA-FR': '🇫🇷',
+                      'EMA-IT': '🇮🇹', 'EMA-DE': '🇩🇪' };
 const fmtPct = v => Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
 
 function tipoTable(por_tipo, brutoTotal) {

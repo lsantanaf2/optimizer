@@ -11,7 +11,7 @@ Rotas:
   GET /api/dash/faturamento/data     — JSON agregado (?since=&until=&refresh=1)
 
 Regras de negócio (ver docstring de _aggregate):
-  - 5 produtos TOPO FUNIL definem os funis (EMA em 4 idiomas + SSM)
+  - 7 produtos TOPO FUNIL definem os funis (EMA em 6 idiomas + SSM)
   - Bumps/upsells herdam o funil da transação mãe (coluna E, cadeia recursiva)
   - Sem mãe/DE-PARA → bucket "Sem atribuição" (exibido para auditoria)
   - Valores SEMPRE da coluna 'Comissão BRL'
@@ -40,12 +40,14 @@ CACHE_TTL = 600  # 10 min
 FUNIS = {
     '2301254': 'EMA-PT',   # Emissões Avançadas
     '5096685': 'EMA-ES',   # Emisiones Avanzadas
-    '7084722': 'EMA-EN',   # EMA Assistant
-    '7527383': 'EMA-FR',   # EMA Assistant. (com ponto)
+    '7084722': 'EMA-EN',   # EMA Assistant 🇺🇸
+    '7527383': 'EMA-FR',   # EMA Assistant 🇫🇷
+    '8298713': 'EMA-IT',   # EMA Assistant 🇮🇹 — vendas desde 12/09/2026
+    '8299099': 'EMA-DE',   # EMA Assistant 🇩🇪 — vendas desde 12/09/2026
     '8126548': 'SSM',      # Segundo Salário com Milhas
 }
-FUNIL_ORDER = ['EMA-PT', 'EMA-ES', 'EMA-EN', 'EMA-FR', 'SSM']
-EMA_KEYS = ['EMA-PT', 'EMA-ES', 'EMA-EN', 'EMA-FR']
+FUNIL_ORDER = ['EMA-PT', 'EMA-ES', 'EMA-EN', 'EMA-FR', 'EMA-IT', 'EMA-DE', 'SSM']
+EMA_KEYS = ['EMA-PT', 'EMA-ES', 'EMA-EN', 'EMA-FR', 'EMA-IT', 'EMA-DE']
 TIPOS = ['TOPO FUNIL', 'ORDER BUMP', 'UPSELL']
 
 
@@ -245,7 +247,7 @@ def _aggregate(rows, since_d=None, until_d=None):
         }
         return out
 
-    # EMA Global = soma dos 4 idiomas
+    # EMA Global = soma de todos os idiomas (EMA_KEYS)
     ema = _new_bucket()
     for k in EMA_KEYS:
         b = funis[k]
