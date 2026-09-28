@@ -219,9 +219,15 @@ async function load(forceRefresh) {
         <div class="kpi-value txt-green">${fmtBRL(d.totals.liquido)}</div>
         <div class="kpi-sub">bruto − reembolsos</div></div>`;
 
-    // EMA Global + funis
-    let grid = funilCard({ ...d.ema_global, key: 'EMA Global' }, 'global', '🌎 EMA Global (PT+ES+EN+FR)');
+    // EMA Global + funis + renovações
+    let grid = funilCard({ ...d.ema_global, key: 'EMA Global' },
+                         'global', '🌎 EMA Global (PT+ES+EN+FR+IT+DE)');
     for (const f of d.funis) grid += funilCard(f);
+    // Renovação é cobrança recorrente da base, não venda nova de funil
+    const rn = d.renovacoes;
+    if (rn && (rn.qtd_vendas > 0 || rn.qtd_reembolsos > 0)) {
+      grid += funilCard({ ...rn, key: 'Renovações' }, '', '🔁 Renovações de assinatura');
+    }
     document.getElementById('funis-grid').innerHTML = grid;
 
     // Sem atribuição

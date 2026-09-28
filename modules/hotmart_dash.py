@@ -21,6 +21,7 @@ Regras de negócio (ver docstring de _aggregate):
 
 import csv
 import io
+import json
 import logging
 from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
@@ -62,14 +63,21 @@ TIPOS = ['TOPO FUNIL', 'ORDER BUMP', 'UPSELL']
 # ── Leitura da planilha ───────────────────────────────────────────────────────
 
 def _rows_from_values(values):
-    """Converte a matriz da Sheets API em lista de dicts pelo cabeçalho."""
+    """Converte a matriz da Sheets API em lista de dicts pelo cabeçalho.
+
+    Guarda o número da linha na planilha ('_linha') para poder buscar depois a
+    coluna Payload só das linhas que interessarem — ela sozinha é 85% do
+    volume e não vale baixar inteira.
+    """
     if not values:
         return []
     headers = [h.strip() for h in values[0]]
     rows = []
-    for row in values[1:]:
+    for i, row in enumerate(values[1:]):
         padded = row + [''] * (len(headers) - len(row))
-        rows.append(dict(zip(headers, padded)))
+        d = dict(zip(headers, padded))
+        d['_linha'] = i + 2   # 1-based, pulando o cabeçalho
+        rows.append(d)
     return rows
 
 
@@ -93,7 +101,10 @@ def _fetch_via_public_csv():
     resp.raise_for_status()
     if resp.text.lstrip().startswith('<'):
         raise RuntimeError('Planilha não é pública (retornou HTML de login)')
-    return list(csv.DictReader(io.StringIO(resp.text)))
+    linhas = list(csv.DictReader(io.StringIO(resp.text)))
+    for i, d in enumerate(linhas):
+        d['_linha'] = i + 2
+    return linhas
 
 
 def _fetch_sheet_rows():
@@ -135,24 +146,85 @@ def _parse_date(s):
         return None
 
 
+# ── Renovações de assinatura ──────────────────────────────────────────────────
+
+MAX_LINHAS_PAYLOAD = 400   # teto de segurança para o batchGet
+
+
+def _fetch_recorrencias(linhas):
+    """Lê a coluna Payload SÓ das linhas indicadas e devolve {transaction: n}.
+
+    `n` é o recurrence_number da Hotmart: 1 é a primeira cobrança da assinatura
+    e acima disso é renovação. A coluna Payload tem ~2 KB por linha (85% da
+    planilha), então ela é buscada por faixas individuais, nunca inteira.
+    """
+    if not linhas:
+        return {}
+    from modules.cruzamento import _get_google_token
+    token = _get_google_token()
+
+    out = {}
+    linhas = linhas[:MAX_LINHAS_PAYLOAD]
+    for bloco in range(0, len(linhas), 100):
+        pedaco = linhas[bloco:bloco + 100]
+        params = [('ranges', f"'{SHEET_TAB}'!S{n}") for n, _ in pedaco]
+        resp = requests.get(
+            f'https://sheets.googleapis.com/v4/spreadsheets/{SHEET_ID}/values:batchGet',
+            headers={'Authorization': f'Bearer {token}'}, params=params, timeout=30)
+        resp.raise_for_status()
+        for (n, tx), faixa in zip(pedaco, resp.json().get('valueRanges', [])):
+            vals = faixa.get('values') or []
+            if not vals or not vals[0]:
+                continue
+            try:
+                p = json.loads(vals[0][0])
+            except (ValueError, TypeError):
+                continue
+            rec = ((p.get('data') or {}).get('purchase') or {}).get('recurrence_number')
+            if isinstance(rec, int):
+                out[tx] = rec
+    return out
+
+
+def renovacoes_de(rows, resolve_funil):
+    """Transações de RENOVAÇÃO entre as vendas que não caem em nenhum funil.
+
+    Renovação não passa por funil: é cobrança automática de uma assinatura que
+    pode ter nascido antes da planilha existir. Por isso ela chega sem venda
+    mãe e sem rastreamento, e ficava no balde "sem atribuição".
+    """
+    alvo = []
+    vistos = set()
+    for r in rows:
+        if (r.get('Status') or '').strip().upper() not in ('APPROVED', 'REFUNDED', 'CHARGEBACK'):
+            continue
+        tx = (r.get('Transaction') or '').strip()
+        n = r.get('_linha')
+        if not tx or not n or tx in vistos:
+            continue
+        if FUNIS.get((r.get('Product ID') or '').strip()) or resolve_funil(tx):
+            continue
+        vistos.add(tx)
+        alvo.append((n, tx))
+
+    try:
+        recs = _fetch_recorrencias(alvo)
+    except Exception as e:
+        # Sem o Payload seguimos como antes: tudo fica em "sem atribuição"
+        logger.warning(f'[faturamento] recorrências não lidas ({e}) — sem card de renovações')
+        return set()
+    return {tx for tx, n in recs.items() if n > 1}
+
+
 # ── Agregação ─────────────────────────────────────────────────────────────────
 
-def _new_bucket():
-    return {
-        'bruto': 0.0, 'reembolsos': 0.0,
-        'por_tipo': {t: {'valor': 0.0, 'qtd': 0} for t in TIPOS},
-        'qtd_vendas': 0, 'qtd_reembolsos': 0,
-    }
+def _resolver(rows):
+    """Passada 1 (planilha inteira): âncoras e cadeia de transações mãe.
 
-
-def _aggregate(rows, since_d=None, until_d=None):
-    """Agrega vendas por funil no período.
-
-    IMPORTANTE: a resolução de âncoras (transação topo → funil) e a cadeia de
-    parents usam a planilha INTEIRA, não só o período — um upsell de hoje pode
-    ter a venda mãe do mês passado. Só o SOMATÓRIO respeita o filtro de data.
+    Devolve (resolve_funil, approved_date). Fica separado da agregação porque a
+    detecção de renovações precisa saber, antes de somar, quais vendas não caem
+    em funil nenhum.
     """
-    # Passada 1 (planilha inteira): âncoras, cadeia de parents e datas das vendas
     anchors = {}      # transaction → funil
     parents = {}      # transaction → parent transaction
     approved_date = {}  # transaction → date da venda APPROVED (p/ datar reembolsos)
@@ -164,7 +236,8 @@ def _aggregate(rows, since_d=None, until_d=None):
             continue
         pid = (r.get('Product ID') or '').strip()
         par = (r.get('Parent Transaction') or '').strip()
-        if par:
+        # Transação que aponta para si mesma como mãe é ruído do webhook
+        if par and par != tx:
             parents[tx] = par
         if pid in FUNIS:
             anchors[tx] = FUNIS[pid]
@@ -203,9 +276,35 @@ def _aggregate(rows, since_d=None, until_d=None):
                 return None
         return None
 
+    return resolve_funil, approved_date
+
+
+def _new_bucket():
+    return {
+        'bruto': 0.0, 'reembolsos': 0.0,
+        'por_tipo': {t: {'valor': 0.0, 'qtd': 0} for t in TIPOS},
+        'qtd_vendas': 0, 'qtd_reembolsos': 0,
+    }
+
+
+def _aggregate(rows, since_d=None, until_d=None, renovacoes=None):
+    """Agrega vendas por funil no período.
+
+    IMPORTANTE: a resolução de âncoras (transação topo → funil) e a cadeia de
+    parents usam a planilha INTEIRA, não só o período — um upsell de hoje pode
+    ter a venda mãe do mês passado. Só o SOMATÓRIO respeita o filtro de data.
+
+    `renovacoes`: transações de renovação de assinatura (ver renovacoes_de).
+    Vão para um bucket próprio em vez de "sem atribuição" — não são venda nova
+    de funil, são cobrança recorrente da base.
+    """
+    renovacoes = renovacoes or set()
+    resolve_funil, approved_date = _resolver(rows)
+
     # Passada 2 (com filtro de data): somatório
     funis = {k: _new_bucket() for k in FUNIL_ORDER}
     sem_atrib = _new_bucket()
+    renov = _new_bucket()
     sem_atrib_produtos = {}  # (pid, nome) → {'bruto', 'reembolsos', 'qtd'}
     reembolsos_sem_data_fora = 0  # excluídos do período por não terem data
 
@@ -242,7 +341,12 @@ def _aggregate(rows, since_d=None, until_d=None):
         tx = (r.get('Transaction') or '').strip()
 
         funil_key = FUNIS.get(pid) or resolve_funil(tx)
-        bucket = funis[funil_key] if funil_key else sem_atrib
+        if funil_key:
+            bucket = funis[funil_key]
+        elif tx in renovacoes:
+            bucket = renov
+        else:
+            bucket = sem_atrib
 
         if status == 'APPROVED':
             bucket['bruto'] += valor
@@ -253,7 +357,7 @@ def _aggregate(rows, since_d=None, until_d=None):
             bucket['reembolsos'] += valor
             bucket['qtd_reembolsos'] += 1
 
-        if not funil_key:
+        if not funil_key and bucket is sem_atrib:
             key = (pid, (r.get('Produto') or '').strip())
             p = sem_atrib_produtos.setdefault(key, {'bruto': 0.0, 'reembolsos': 0.0, 'qtd': 0})
             if status == 'APPROVED':
@@ -286,9 +390,9 @@ def _aggregate(rows, since_d=None, until_d=None):
             ema['por_tipo'][t]['valor'] += b['por_tipo'][t]['valor']
             ema['por_tipo'][t]['qtd'] += b['por_tipo'][t]['qtd']
 
-    # Totais gerais (funis + sem atribuição — bate com a planilha inteira)
+    # Totais gerais (funis + renovações + sem atribuição — bate com a planilha)
     tot = _new_bucket()
-    for b in list(funis.values()) + [sem_atrib]:
+    for b in list(funis.values()) + [renov, sem_atrib]:
         tot['bruto'] += b['bruto']
         tot['reembolsos'] += b['reembolsos']
         tot['qtd_vendas'] += b['qtd_vendas']
@@ -298,6 +402,7 @@ def _aggregate(rows, since_d=None, until_d=None):
         'totals': _finalize(tot),
         'reembolsos_sem_data_fora': reembolsos_sem_data_fora,
         'ema_global': _finalize(ema),
+        'renovacoes': _finalize(renov),
         'funis': [{'key': k, **_finalize(funis[k])} for k in FUNIL_ORDER],
         'sem_atribuicao': {
             **_finalize(sem_atrib),
@@ -346,7 +451,17 @@ def faturamento_data():
     except ValueError:
         return jsonify({'success': False, 'error': 'Datas inválidas (use YYYY-MM-DD)'}), 400
 
-    result = _aggregate(rows, since_d, until_d)
+    # Renovações dependem do Payload (coluna S), lido só das linhas sem funil.
+    # Cacheado à parte: o conjunto não muda com o filtro de data.
+    try:
+        resolve_funil, _ = _resolver(rows)
+        renovacoes = get_or_fetch(('hotmart_renovacoes', len(rows)), CACHE_TTL,
+                                  lambda: renovacoes_de(rows, resolve_funil))
+    except Exception as e:
+        logger.warning(f'[faturamento] renovações indisponíveis: {e}')
+        renovacoes = set()
+
+    result = _aggregate(rows, since_d, until_d, renovacoes)
     result['success'] = True
     result['meta'] = {
         'linhas_planilha': len(rows),
