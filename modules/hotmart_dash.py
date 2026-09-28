@@ -12,6 +12,7 @@ Rotas:
 
 Regras de negócio (ver docstring de _aggregate):
   - 7 produtos TOPO FUNIL definem os funis (EMA em 6 idiomas + SSM)
+  - SFD só define funil quando é a venda de entrada (ver FUNIS_SO_ENTRADA)
   - Bumps/upsells herdam o funil da transação mãe (coluna E, cadeia recursiva)
   - Sem mãe/DE-PARA → bucket "Sem atribuição" (exibido para auditoria)
   - Valores SEMPRE da coluna 'Comissão BRL'
@@ -46,7 +47,14 @@ FUNIS = {
     '8299099': 'EMA-DE',   # EMA Assistant 🇩🇪 — vendas desde 12/09/2026
     '8126548': 'SSM',      # Segundo Salário com Milhas
 }
-FUNIL_ORDER = ['EMA-PT', 'EMA-ES', 'EMA-EN', 'EMA-FR', 'EMA-IT', 'EMA-DE', 'SSM']
+# Produtos que só definem funil quando são a ENTRADA (venda sem transação mãe).
+# O SFD é vendido como upsell dentro dos funis de EMA desde julho e, desde
+# 27/09/2026, também como produto de front. Ancorar pelo ID, como os demais,
+# levaria ~R$ 170 mil de upsells antigos para fora dos funis de EMA.
+FUNIS_SO_ENTRADA = {
+    '7763423': 'SFD',      # Secret Flight Deals
+}
+FUNIL_ORDER = ['EMA-PT', 'EMA-ES', 'EMA-EN', 'EMA-FR', 'EMA-IT', 'EMA-DE', 'SSM', 'SFD']
 EMA_KEYS = ['EMA-PT', 'EMA-ES', 'EMA-EN', 'EMA-FR', 'EMA-IT', 'EMA-DE']
 TIPOS = ['TOPO FUNIL', 'ORDER BUMP', 'UPSELL']
 
@@ -148,20 +156,39 @@ def _aggregate(rows, since_d=None, until_d=None):
     anchors = {}      # transaction → funil
     parents = {}      # transaction → parent transaction
     approved_date = {}  # transaction → date da venda APPROVED (p/ datar reembolsos)
+    candidatas_entrada = {}  # transaction → funil, se for venda de entrada (ver abaixo)
+    aprovadas = set()  # transactions com linha de compra aprovada
     for r in rows:
         tx = (r.get('Transaction') or '').strip()
         if not tx:
             continue
         pid = (r.get('Product ID') or '').strip()
-        if pid in FUNIS:
-            anchors[tx] = FUNIS[pid]
         par = (r.get('Parent Transaction') or '').strip()
         if par:
             parents[tx] = par
+        if pid in FUNIS:
+            anchors[tx] = FUNIS[pid]
+        elif pid in FUNIS_SO_ENTRADA:
+            candidatas_entrada[tx] = FUNIS_SO_ENTRADA[pid]
         if (r.get('Status') or '').strip().upper() == 'APPROVED':
+            aprovadas.add(tx)
             d = _parse_date(r.get('Recebido em'))
             if d:
                 approved_date[tx] = d
+
+    # Produto de entrada só vira âncora depois de ver a planilha inteira, com
+    # duas condições:
+    #
+    # 1. Sem mãe em NENHUMA linha. A mesma transação pode ter uma linha com mãe
+    #    e outra sem — em HP3816891780 a linha de reembolso veio sem mãe e como
+    #    TOPO FUNIL, e sozinha tiraria a venda do funil de EMA a que pertence.
+    # 2. Com linha de compra aprovada. Há 20 reembolsos de SFD cuja venda não
+    #    está na planilha: sem ela não dá para saber de que funil vieram, e
+    #    chutar encheria o funil novo de reembolsos alheios. Seguem em "Sem
+    #    atribuição", que existe para esse tipo de auditoria.
+    for tx, funil in candidatas_entrada.items():
+        if tx not in parents and tx not in anchors and tx in aprovadas:
+            anchors[tx] = funil
 
     def resolve_funil(tx):
         """Segue a cadeia de parents até uma âncora (máx 6 saltos, anti-ciclo)."""
