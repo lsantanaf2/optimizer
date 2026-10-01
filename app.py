@@ -4,7 +4,7 @@ import time
 import glob
 import uuid
 import requests
-from modules.meta_client import GRAPH_BASE as req_lib
+from modules.meta_client import GRAPH_BASE, meta_get
 import tempfile
 import queue
 import threading
@@ -83,7 +83,7 @@ from modules.account_settings import (
 import atexit
 atexit.register(close_db)
 
-VERSION = "v2.36.0"
+VERSION = "v2.36.1"
 
 # ======================== STAGING DE UPLOAD (v2.11.0) ========================
 # Desacoplamento: o Service Worker sobe cada arquivo UMA vez para a VPS (staging),
@@ -516,7 +516,8 @@ def api_campanhas(account_id):
 
         statuses = [s.strip() for s in status_filter.split(',')]
 
-        # Usa requests direto para controlar paginação via cursor
+        # Chamada direta (não o SDK) para controlar a paginação por cursor,
+        # mas via meta_get: throttle, backoff e monitor de uso da API
         url = f"{GRAPH_BASE}/{account_id}/campaigns"
         params = {
             'access_token': access_token,
@@ -527,8 +528,7 @@ def api_campanhas(account_id):
         if after_cursor:
             params['after'] = after_cursor
 
-        resp = req_lib.get(url, params=params, timeout=30)
-        body = resp.json()
+        body = meta_get(url, params)
 
         campanhas = []
         for c in body.get('data', []):
