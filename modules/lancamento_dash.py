@@ -598,7 +598,8 @@ def _fetch_por_anuncio(cfg, since, until):
         'level':        'ad',
         'fields':       ('campaign_name,adset_name,ad_id,ad_name,'
                          'spend,impressions,reach,frequency,inline_link_clicks,'
-                         'video_play_actions,video_p75_watched_actions,'
+                         'video_continuous_2_sec_watched_actions,'
+                         'video_p75_watched_actions,'
                          'video_p95_watched_actions,actions'),
         'limit':        500,
         'time_range':   json.dumps({'since': since, 'until': until}, separators=(',', ':')),
@@ -618,7 +619,10 @@ def _fetch_por_anuncio(cfg, since, until):
             continue
         gasto_bruto = float(r.get('spend', 0) or 0)
         imp   = int(r.get('impressions', 0) or 0)
-        v3s   = _vv(r.get('video_play_actions'))
+        # Hook: view CONTÍNUO de 2s. O antigo video_3_sec_watched_actions saiu
+        # da API, e video_play_actions conta reprodução iniciada — com autoplay
+        # isso dá ~97% das impressões e não mede retenção nenhuma.
+        v2s   = _vv(r.get('video_continuous_2_sec_watched_actions'))
         p75   = _vv(r.get('video_p75_watched_actions'))
         p95   = _vv(r.get('video_p95_watched_actions'))
         custo = round(gasto_bruto * (1 + META_TAX_RATE), 2)   # custo real
@@ -633,12 +637,12 @@ def _fetch_por_anuncio(cfg, since, until):
             'alcance':     int(r.get('reach', 0) or 0),
             'frequencia':  round(float(r.get('frequency', 0) or 0), 2),
             'cliques':     int(r.get('inline_link_clicks', 0) or 0),
-            'video_3s':    v3s,
+            'video_2s':    v2s,
             'video_p75':   p75,
             'video_p95':   p95,
             # Hook rate: quem parou nos 3 primeiros segundos, sobre quem viu
-            'hook_rate':   round(v3s / imp * 100, 2) if imp else None,
-            'retencao_75': round(p75 / v3s * 100, 2) if v3s else None,
+            'hook_rate':   round(v2s / imp * 100, 2) if imp else None,
+            'retencao_75': round(p75 / v2s * 100, 2) if v2s else None,
             'custo_vv75':  round(custo / p75, 2) if p75 else None,
             'custo_vv95':  round(custo / p95, 2) if p95 else None,
             'cpm':         round(custo / imp * 1000, 2) if imp else None,
@@ -650,11 +654,11 @@ def _fetch_por_anuncio(cfg, since, until):
 def _totais_fase(ads):
     """Soma os anúncios de uma fase, recalculando as taxas sobre o total."""
     t = {k: sum(a[k] or 0 for a in ads) for k in
-         ('custo', 'impressoes', 'alcance', 'cliques', 'video_3s', 'video_p75', 'video_p95')}
+         ('custo', 'impressoes', 'alcance', 'cliques', 'video_2s', 'video_p75', 'video_p95')}
     t['custo'] = round(t['custo'], 2)
     t['ads'] = len(ads)
-    t['hook_rate']  = round(t['video_3s'] / t['impressoes'] * 100, 2) if t['impressoes'] else None
-    t['retencao_75'] = round(t['video_p75'] / t['video_3s'] * 100, 2) if t['video_3s'] else None
+    t['hook_rate']  = round(t['video_2s'] / t['impressoes'] * 100, 2) if t['impressoes'] else None
+    t['retencao_75'] = round(t['video_p75'] / t['video_2s'] * 100, 2) if t['video_2s'] else None
     t['custo_vv75'] = round(t['custo'] / t['video_p75'], 2) if t['video_p75'] else None
     t['custo_vv95'] = round(t['custo'] / t['video_p95'], 2) if t['video_p95'] else None
     t['cpm']        = round(t['custo'] / t['impressoes'] * 1000, 2) if t['impressoes'] else None

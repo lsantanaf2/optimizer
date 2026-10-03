@@ -351,7 +351,7 @@ function render() {
   document.getElementById('aq-kpis').innerHTML = [
     card('💸 Investido', brl(ta.custo), `${ta.ads} anúncio(s) · custo com imposto`),
     card('👁️ Impressões', num(ta.impressoes), `${num(ta.alcance)} pessoas · ${ta.frequencia || '—'}x`),
-    card('🪝 Hook rate', pct(ta.hook_rate), `${num(ta.video_3s)} views de 3s`),
+    card('🪝 Hook rate', pct(ta.hook_rate), `${num(ta.video_2s)} views de 2s contínuos`),
     card('🎬 Custo VV75', brl(ta.custo_vv75), `${num(ta.video_p75)} views · retenção ${pct(ta.retencao_75)}`),
     card('🏁 Custo VV95', brl(ta.custo_vv95), `${num(ta.video_p95)} views até o fim`),
   ].join('');
@@ -400,7 +400,7 @@ function render() {
   const sf = DADOS.sem_fase;
   document.getElementById('rodape').innerHTML =
     `Custo com os ${pct(DADOS.config.imposto * 100)} de imposto da Meta. ` +
-    'Hook rate = views de 3 segundos ÷ impressões. ' +
+    'Hook rate = views contínuos de 2 segundos ÷ impressões (a Meta aposentou a métrica de 3s). ' +
     'Custo por VV = investido ÷ views do marco.' +
     (sf.totais.ads ? ` <b>${sf.totais.ads} anúncio(s)</b> do lançamento estão fora das duas fases ` +
       `(sem tag [AQUECIMENTO] ou [CAPTURA]), somando ${brl(sf.totais.custo)}.` : '');
