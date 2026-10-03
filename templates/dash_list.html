@@ -32,6 +32,42 @@
 <body>
   <h1>🖥️ Dashboards — Visão Admin</h1>
 
+  <h2 style="margin:1.2rem 0 .6rem;font-size:1rem;color:#94a3b8">🚀 Lançamentos</h2>
+  <div class="grid">
+    {% for l in lancamentos %}
+    <div class="card">
+      <h2>{{ l.nome }}</h2>
+      <div class="slug">slug: {{ l.slug }}{% if l.fases %} · duas fases{% endif %}</div>
+      <div class="meta">{{ l.expert }}{% if l.edicao %} · {{ l.edicao }}{% endif %}</div>
+      <div class="meta" style="margin-top:.5rem">
+        <span class="badge on">link público</span>
+      </div>
+      <a class="link-btn" href="{{ l.url }}" target="_blank">Abrir dashboard ↗</a>
+      <div class="meta" style="margin-top:.5rem;font-size:.75rem;font-family:monospace;word-break:break-all">
+        {{ l.url }}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <h2 style="margin:1.6rem 0 .6rem;font-size:1rem;color:#94a3b8">📊 Outras</h2>
+  <div class="grid">
+    {% for f in fixas %}
+    <div class="card">
+      <h2>{{ f.nome }}</h2>
+      <div class="meta">{{ f.desc }}</div>
+      <div class="meta" style="margin-top:.5rem">
+        <span class="badge on">link público</span>
+      </div>
+      <a class="link-btn" href="{{ f.url }}" target="_blank">Abrir dashboard ↗</a>
+      <div class="meta" style="margin-top:.5rem;font-size:.75rem;font-family:monospace;word-break:break-all">
+        {{ f.url }}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <h2 style="margin:1.6rem 0 .6rem;font-size:1rem;color:#94a3b8">👤 Clientes</h2>
   {% if clients %}
   <div class="grid">
     {% for c in clients %}

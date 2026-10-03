@@ -671,13 +671,33 @@ def _meta_mensal(slug, totals, since, until):
 
 @dash_bp.route('/dash')
 def dash_list():
-    """Admin: lista todos os clientes configurados. Requer login do sistema."""
+    """Admin: índice de TODAS as dashboards. Requer login do sistema.
+
+    Clientes vêm do banco; lançamentos e faturamento são rotas fixas. Reunidos
+    aqui porque estavam espalhados e não havia um lugar com todos os links.
+    """
     from app import obter_token
     token = obter_token()
     if not token:
         return redirect(url_for('pagina_login'))
-    clients = list_clients()
-    return render_template('dash_list.html', clients=clients)
+
+    from modules.lancamento_dash import LANCAMENTOS
+    lancamentos = [
+        {'slug': slug,
+         'nome': cfg.get('nome', slug),
+         'expert': cfg.get('expert', ''),
+         'edicao': cfg.get('edicao', ''),
+         'fases': bool(cfg.get('duas_fases')),
+         'url': f'/dash/lancamento/{slug}'}
+        for slug, cfg in LANCAMENTOS.items()
+    ]
+    fixas = [
+        {'nome': 'Faturamento (Hotmart)',
+         'desc': 'Funis de EMA, SSM, SFD e renovações — Iuri Castro',
+         'url': '/dash/faturamento'},
+    ]
+    return render_template('dash_list.html', clients=list_clients(),
+                           lancamentos=lancamentos, fixas=fixas)
 
 
 @dash_bp.route('/dash/<slug>')

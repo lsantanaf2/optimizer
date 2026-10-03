@@ -35,6 +35,37 @@ CACHE_TTL = 600  # 10 min
 
 # ── Configuração dos lançamentos (brief seção 1 — nada hardcoded no cálculo) ──
 LANCAMENTOS = {
+    # Lançamento em duas fases: aquecimento (distribuição de conteúdo) e
+    # captura de leads. A fase sai da tag no nome da campanha.
+    'black2026': {
+        'nome': 'Black 2026',
+        'expert': 'Edu — Sorveteiro Raiz',
+        'edicao': 'BLACK 2026',
+        'ad_account_id': '741348911043132',
+        'campaign_patterns': ['[BLACK 2026]'],
+        'duas_fases': True,
+        'fases': {
+            'aquecimento': {
+                'label': 'Aquecimento',
+                'patterns': ['[AQUECIMENTO]'],
+            },
+            'captura': {
+                'label': 'Captura',
+                'patterns': ['[CAPTURA]'],
+                # Preenchido quando a planilha de leads existir. Sem isso a aba
+                # mostra o investimento e avisa que a fonte de leads falta.
+                'leads': {
+                    'spreadsheet_id': None,
+                    'gid': '0',
+                    'coluna_data': None,   # ex: 'Carimbo de data/hora'
+                },
+            },
+        },
+        'datas': {
+            'inicio_aquecimento': '2026-09-24',
+            'inicio_captura': None,
+        },
+    },
     'lp11': {
         'nome': 'Aulão de Balanceamento',
         'expert': 'Edu — Sorveteiro Raiz',
@@ -534,6 +565,138 @@ def _fetch_pesquisa(cfg):
     return out
 
 
+# ── Lançamento em duas fases (aquecimento + captura) ─────────────────────────
+
+def _fase_de(nome_campanha, cfg):
+    """Qual fase a campanha pertence, pela tag no nome."""
+    alvo = (nome_campanha or '').lower()
+    for chave, fase in (cfg.get('fases') or {}).items():
+        for p in fase.get('patterns') or []:
+            if p.lower() in alvo:
+                return chave
+    return None
+
+
+def _fetch_por_anuncio(cfg, since, until):
+    """Insights do período agregados por anúncio, com métricas de vídeo.
+
+    Hook rate e custo por VV precisam de video_play_actions (views de 3s) e dos
+    marcos de 75% e 95%, que não vêm na busca diária do lançamento.
+    """
+    from modules.meta_client import meta_get_insights_rows
+    acct = cfg['ad_account_id']
+    if not acct.startswith('act_'):
+        acct = f'act_{acct}'
+
+    from app import obter_token
+    token = obter_token()
+    if not token:
+        raise RuntimeError('Sistema não autenticado na Meta. Contate o administrador.')
+
+    params = {
+        'access_token': token,
+        'level':        'ad',
+        'fields':       ('campaign_name,adset_name,ad_id,ad_name,'
+                         'spend,impressions,reach,frequency,inline_link_clicks,'
+                         'video_play_actions,video_p75_watched_actions,'
+                         'video_p95_watched_actions,actions'),
+        'limit':        500,
+        'time_range':   json.dumps({'since': since, 'until': until}, separators=(',', ':')),
+    }
+    raw = meta_get_insights_rows(f'{GRAPH_BASE}/{acct}/insights', params, timeout=60)
+
+    def _vv(campo):
+        """Soma o marco de vídeo (a Meta devolve como lista de actions)."""
+        return sum(int(float(a.get('value', 0) or 0)) for a in (campo or [])
+                   if a.get('action_type') == 'video_view')
+
+    padroes = [p.lower() for p in (cfg.get('campaign_patterns') or [])]
+    saida = []
+    for r in raw:
+        nome_camp = r.get('campaign_name', '')
+        if padroes and not any(p in nome_camp.lower() for p in padroes):
+            continue
+        gasto_bruto = float(r.get('spend', 0) or 0)
+        imp   = int(r.get('impressions', 0) or 0)
+        v3s   = _vv(r.get('video_play_actions'))
+        p75   = _vv(r.get('video_p75_watched_actions'))
+        p95   = _vv(r.get('video_p95_watched_actions'))
+        custo = round(gasto_bruto * (1 + META_TAX_RATE), 2)   # custo real
+        saida.append({
+            'fase':        _fase_de(nome_camp, cfg),
+            'campanha':    nome_camp,
+            'adset':       r.get('adset_name', ''),
+            'ad_id':       r.get('ad_id', ''),
+            'ad':          r.get('ad_name', ''),
+            'custo':       custo,
+            'impressoes':  imp,
+            'alcance':     int(r.get('reach', 0) or 0),
+            'frequencia':  round(float(r.get('frequency', 0) or 0), 2),
+            'cliques':     int(r.get('inline_link_clicks', 0) or 0),
+            'video_3s':    v3s,
+            'video_p75':   p75,
+            'video_p95':   p95,
+            # Hook rate: quem parou nos 3 primeiros segundos, sobre quem viu
+            'hook_rate':   round(v3s / imp * 100, 2) if imp else None,
+            'retencao_75': round(p75 / v3s * 100, 2) if v3s else None,
+            'custo_vv75':  round(custo / p75, 2) if p75 else None,
+            'custo_vv95':  round(custo / p95, 2) if p95 else None,
+            'cpm':         round(custo / imp * 1000, 2) if imp else None,
+        })
+    saida.sort(key=lambda x: x['custo'], reverse=True)
+    return saida
+
+
+def _totais_fase(ads):
+    """Soma os anúncios de uma fase, recalculando as taxas sobre o total."""
+    t = {k: sum(a[k] or 0 for a in ads) for k in
+         ('custo', 'impressoes', 'alcance', 'cliques', 'video_3s', 'video_p75', 'video_p95')}
+    t['custo'] = round(t['custo'], 2)
+    t['ads'] = len(ads)
+    t['hook_rate']  = round(t['video_3s'] / t['impressoes'] * 100, 2) if t['impressoes'] else None
+    t['retencao_75'] = round(t['video_p75'] / t['video_3s'] * 100, 2) if t['video_3s'] else None
+    t['custo_vv75'] = round(t['custo'] / t['video_p75'], 2) if t['video_p75'] else None
+    t['custo_vv95'] = round(t['custo'] / t['video_p95'], 2) if t['video_p95'] else None
+    t['cpm']        = round(t['custo'] / t['impressoes'] * 1000, 2) if t['impressoes'] else None
+    t['frequencia'] = round(t['impressoes'] / t['alcance'], 2) if t['alcance'] else None
+    return t
+
+
+def _fetch_leads(fase_cfg, since, until):
+    """Leads por dia da planilha de captura. Sem planilha configurada: None."""
+    lcfg = (fase_cfg or {}).get('leads') or {}
+    sid, gid = lcfg.get('spreadsheet_id'), lcfg.get('gid', '0')
+    if not sid:
+        return None
+
+    url = (f'https://docs.google.com/spreadsheets/d/{sid}'
+           f'/gviz/tq?tqx=out:csv&gid={gid}')
+    resp = requests.get(url, timeout=25)
+    resp.raise_for_status()
+    if resp.text.lstrip().startswith('<'):
+        raise RuntimeError('planilha de leads não é pública')
+    linhas = list(csv.DictReader(io.StringIO(resp.text)))
+    if not linhas:
+        return {}
+
+    col = lcfg.get('coluna_data') or list(linhas[0].keys())[0]
+    since_d = datetime.strptime(since, '%Y-%m-%d').date()
+    until_d = datetime.strptime(until, '%Y-%m-%d').date()
+    por_dia = {}
+    for r in linhas:
+        bruto = (r.get(col) or '').strip()[:10]
+        for fmt in ('%d/%m/%Y', '%Y-%m-%d'):
+            try:
+                d = datetime.strptime(bruto, fmt).date()
+                break
+            except ValueError:
+                d = None
+        if not d or d < since_d or d > until_d:
+            continue
+        por_dia[d.isoformat()] = por_dia.get(d.isoformat(), 0) + 1
+    return por_dia
+
+
 # ── Rotas ────────────────────────────────────────────────────────────────────
 
 @lancamento_bp.route('/dash/lancamento/<slug>')
@@ -544,7 +707,8 @@ def lancamento_page(slug):
     if not cfg:
         return render_template('dash_error.html',
                                message='Ocorreu um erro ao carregar o dashboard. Avise o desenvolvedor.', code='DSH-104'), 404
-    return render_template('dash_lancamento.html', slug=slug,
+    template = 'dash_fases.html' if cfg.get('duas_fases') else 'dash_lancamento.html'
+    return render_template(template, slug=slug,
                            nome=cfg['nome'], expert=cfg['expert'], edicao=cfg['edicao'])
 
 
@@ -627,6 +791,77 @@ def lancamento_instagram(slug):
             'custo_seguidor': tot['custo_seguidor'],
         },
         'avisos': avisos,
+        'gerado_em': datetime.now().isoformat(),
+    })
+
+
+@lancamento_bp.route('/api/dash/lancamento/<slug>/fases')
+def lancamento_fases(slug):
+    """Lançamento em duas fases: aquecimento (conteúdo) e captura (leads)."""
+    from modules.rate_limiter import check_rate_limit
+    check_rate_limit(f'lancamento-fases:{slug}')
+
+    cfg = _cfg(slug)
+    if not cfg or not cfg.get('duas_fases'):
+        return jsonify({'success': False, 'error': 'Lançamento não encontrado'}), 404
+
+    hoje = date.today().isoformat()
+    dts = cfg.get('datas') or {}
+    since = request.args.get('since') or dts.get('inicio_aquecimento') or hoje
+    until = min(request.args.get('until') or hoje, hoje)
+
+    from modules.meta_cache import get_or_fetch, invalidate
+    if request.args.get('refresh') == '1':
+        invalidate(f'lancamento:{slug}')
+
+    try:
+        ads = get_or_fetch((f'lancamento:{slug}', 'por_anuncio', since, until), CACHE_TTL,
+                           lambda: _fetch_por_anuncio(cfg, since, until))
+    except Exception as e:
+        logger.error(f'[lancamento:{slug}] fases/Meta falhou: {e}')
+        return jsonify({'success': False, 'error': f'Meta Ads: {e}'}), 502
+
+    fases_cfg = cfg.get('fases') or {}
+    saida = {}
+    for chave, fcfg in fases_cfg.items():
+        desta = [a for a in ads if a['fase'] == chave]
+        saida[chave] = {
+            'label':  fcfg.get('label', chave.title()),
+            'ads':    desta,
+            'totais': _totais_fase(desta),
+        }
+
+    # Leads da fase de captura (planilha), quando houver fonte configurada
+    cap = fases_cfg.get('captura') or {}
+    leads_por_dia, leads_erro = None, None
+    try:
+        leads_por_dia = get_or_fetch((f'lancamento:{slug}', 'leads', since, until), CACHE_TTL,
+                                     lambda: _fetch_leads(cap, since, until))
+    except Exception as e:
+        leads_erro = str(e)
+        logger.warning(f'[lancamento:{slug}] leads falharam: {e}')
+
+    if 'captura' in saida:
+        total_leads = sum((leads_por_dia or {}).values()) if leads_por_dia else None
+        custo_cap = saida['captura']['totais']['custo']
+        saida['captura']['leads'] = {
+            'configurada': bool((cap.get('leads') or {}).get('spreadsheet_id')),
+            'erro':        leads_erro,
+            'por_dia':     [{'data': d, 'leads': n} for d, n in sorted((leads_por_dia or {}).items())],
+            'total':       total_leads,
+            'cpl':         round(custo_cap / total_leads, 2) if total_leads else None,
+        }
+
+    # Fora das duas fases (campanha do lançamento sem tag de fase)
+    sem_fase = [a for a in ads if not a['fase']]
+
+    return jsonify({
+        'success': True,
+        'config': {'nome': cfg['nome'], 'expert': cfg['expert'], 'edicao': cfg['edicao'],
+                   'imposto': META_TAX_RATE, 'datas': dts},
+        'periodo': {'since': since, 'until': until},
+        'fases':   saida,
+        'sem_fase': {'ads': sem_fase, 'totais': _totais_fase(sem_fase)},
         'gerado_em': datetime.now().isoformat(),
     })
 
