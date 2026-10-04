@@ -799,6 +799,51 @@ def lancamento_instagram(slug):
     })
 
 
+@lancamento_bp.route('/api/dash/lancamento/<slug>/criativo/<ad_id>')
+def lancamento_criativo(slug, ad_id):
+    """Miniatura e textos de um anúncio, para o modal da dash.
+
+    Devolve só campos seguros. O endpoint de preview da Meta retorna um iframe
+    com o access token na URL — como esta dash é link público, ele não pode ser
+    repassado ao navegador.
+    """
+    from modules.rate_limiter import check_rate_limit
+    check_rate_limit(f'lancamento-criativo:{slug}')
+
+    if not ad_id.isdigit():
+        return jsonify({'success': False, 'error': 'id inválido'}), 400
+    if not _cfg(slug):
+        return jsonify({'success': False, 'error': 'Lançamento não encontrado'}), 404
+
+    from app import obter_token
+    from modules.meta_client import meta_get
+    token = obter_token()
+    if not token:
+        return jsonify({'success': False, 'error': 'Sem token Meta'}), 503
+
+    try:
+        d = meta_get(f'{GRAPH_BASE}/{ad_id}', {
+            'access_token': token,
+            'fields': ('name,creative{thumbnail_url,image_url,title,body,'
+                       'effective_object_story_spec}'),
+        })
+    except Exception as e:
+        logger.warning(f'[lancamento:{slug}] criativo {ad_id} falhou: {e}')
+        return jsonify({'success': False, 'error': str(e)}), 502
+
+    c = d.get('creative') or {}
+    spec = c.get('effective_object_story_spec') or {}
+    video = spec.get('video_data') or {}
+    link = (spec.get('link_data') or {})
+    return jsonify({
+        'success': True,
+        'ad': d.get('name', ''),
+        'thumb': c.get('thumbnail_url') or c.get('image_url') or video.get('image_url'),
+        'titulo': c.get('title') or link.get('name') or video.get('title') or '',
+        'texto': c.get('body') or link.get('message') or video.get('message') or '',
+    })
+
+
 @lancamento_bp.route('/api/dash/lancamento/<slug>/fases')
 def lancamento_fases(slug):
     """Lançamento em duas fases: aquecimento (conteúdo) e captura (leads)."""

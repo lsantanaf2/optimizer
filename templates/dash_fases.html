@@ -216,6 +216,23 @@
   .mini-bar{height:6px;border-radius:99px;background:var(--surface-alt);width:52px;flex:none}
   .mini-fill{height:100%;border-radius:99px;background:linear-gradient(90deg,var(--accent),var(--accent-soft))}
   .vazio-fase{padding:34px 20px;text-align:center;color:var(--text-muted);font-size:.84rem;line-height:1.6}
+  .ad-link{color:var(--accent-soft);cursor:pointer;text-decoration:underline;
+    text-decoration-style:dotted;text-underline-offset:3px}
+  .ad-link:hover{color:var(--text)}
+  .modal-bg{position:fixed;inset:0;background:rgba(7,7,24,.82);backdrop-filter:blur(3px);
+    display:flex;align-items:center;justify-content:center;z-index:200;padding:20px}
+  .modal{background:var(--surface);border:1px solid var(--stroke);border-radius:var(--r-card);
+    max-width:460px;width:100%;max-height:88vh;overflow:auto}
+  .modal-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;
+    padding:16px 18px;border-bottom:1px solid var(--stroke)}
+  .modal-top b{font-size:.92rem}
+  .modal-x{background:none;border:0;color:var(--text-muted);font-size:1.3rem;cursor:pointer;line-height:1}
+  .modal-x:hover{color:var(--text)}
+  .modal-body{padding:18px}
+  .modal-body img{width:100%;border-radius:8px;display:block;background:var(--surface-alt)}
+  .modal-tit{font-size:.9rem;font-weight:600;margin-top:14px}
+  .modal-txt{font-size:.82rem;color:var(--text-muted);line-height:1.6;margin-top:8px;
+    white-space:pre-wrap}
 </style>
 </head>
 <body>
@@ -295,6 +312,16 @@
     </div>
 
     <div class="note" id="rodape"></div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal" style="display:none" onclick="fecharModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-top">
+      <b id="modal-nome">—</b>
+      <button class="modal-x" onclick="fecharModal()" title="fechar">×</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
   </div>
 </div>
 
@@ -391,7 +418,8 @@ function render() {
   } else {
     vz.style.display = 'none';
     tb.innerHTML = cap.ads.map(a => `<tr>
-      <td class="ad-nome" title="${esc(a.ad)}">${esc(a.ad)}</td>
+      <td class="ad-nome"><span class="ad-link" title="ver o criativo"
+        onclick="verCriativo('${esc(a.ad_id)}')">${esc(a.ad)}</span></td>
       <td>${brl(a.custo)}</td><td>${num(a.impressoes)}</td>
       <td>${num(a.cliques)}</td><td>${brl(a.cpm)}</td></tr>`).join('');
   }
@@ -432,7 +460,8 @@ function renderAds() {
   });
   const maxHook = Math.max(...ads.map(a => a.hook_rate || 0), 1);
   tb.innerHTML = ads.map(a => `<tr>
-    <td class="ad-nome" title="${esc(a.ad)}">${esc(a.ad)}</td>
+    <td class="ad-nome"><span class="ad-link" title="ver o criativo"
+        onclick="verCriativo('${esc(a.ad_id)}')">${esc(a.ad)}</span></td>
     <td>${brl(a.custo)}</td>
     <td>${num(a.impressoes)}</td>
     <td><div class="bar-cell"><span>${pct(a.hook_rate)}</span>
@@ -474,6 +503,33 @@ function renderGrafico(linhas) {
     },
   });
 }
+
+// ── Modal do criativo ──────────────────────────────────────────────────────
+async function verCriativo(adId) {
+  const m = document.getElementById('modal'), body = document.getElementById('modal-body');
+  document.getElementById('modal-nome').textContent = 'Carregando…';
+  body.innerHTML = '<div style="text-align:center;padding:30px"><span class="sp"></span></div>';
+  m.style.display = 'flex';
+  try {
+    const r = await fetch(`/api/dash/lancamento/${SLUG}/criativo/${adId}`);
+    const d = await r.json();
+    if (!d.success) throw new Error(d.error || 'falha');
+    document.getElementById('modal-nome').textContent = d.ad || adId;
+    body.innerHTML =
+      (d.thumb ? `<img src="${esc(d.thumb)}" alt="">` : '<div class="vazio-fase">Sem miniatura disponível.</div>') +
+      (d.titulo ? `<div class="modal-tit">${esc(d.titulo)}</div>` : '') +
+      (d.texto ? `<div class="modal-txt">${esc(d.texto)}</div>` : '');
+  } catch (err) {
+    document.getElementById('modal-nome').textContent = 'Erro';
+    body.innerHTML = `<div class="warnbox">Não foi possível carregar o criativo: ${esc(err.message)}</div>`;
+  }
+}
+
+function fecharModal(ev) {
+  if (ev && ev.target !== ev.currentTarget) return;
+  document.getElementById('modal').style.display = 'none';
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') fecharModal(); });
 
 document.addEventListener('DOMContentLoaded', () => load(false));
 </script>
