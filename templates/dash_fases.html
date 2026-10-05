@@ -216,6 +216,23 @@
   .mini-bar{height:6px;border-radius:99px;background:var(--surface-alt);width:52px;flex:none}
   .mini-fill{height:100%;border-radius:99px;background:linear-gradient(90deg,var(--accent),var(--accent-soft))}
   .vazio-fase{padding:34px 20px;text-align:center;color:var(--text-muted);font-size:.84rem;line-height:1.6}
+  /* Tooltip de métrica. Abre para BAIXO de propósito: nos cabeçalhos de
+     tabela, que são sticky dentro de um container com overflow, abrir para
+     cima seria cortado pela borda. */
+  .dica{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;
+    border-radius:50%;border:1px solid var(--stroke);color:var(--text-muted);font-size:9px;
+    font-weight:700;margin-left:5px;cursor:help;position:relative;vertical-align:middle}
+  .dica:hover{border-color:var(--accent-soft);color:var(--accent-soft)}
+  .dica::after{content:attr(data-dica);position:absolute;top:calc(100% + 7px);left:50%;
+    transform:translateX(-50%);background:var(--surface-alt);border:1px solid var(--stroke);
+    border-radius:8px;padding:9px 11px;width:215px;font-size:11px;line-height:1.5;
+    color:var(--text);text-align:left;white-space:normal;text-transform:none;
+    letter-spacing:0;font-weight:400;font-family:'Inter Tight',sans-serif;
+    opacity:0;visibility:hidden;transition:opacity .12s;z-index:300;pointer-events:none;
+    box-shadow:0 8px 24px rgba(0,0,0,.35)}
+  .dica:hover::after{opacity:1;visibility:visible}
+  /* Nas últimas colunas o balão centralizado sairia pela direita */
+  .dica.fim::after{left:auto;right:-6px;transform:none}
   .ad-link{color:var(--accent-soft);cursor:pointer;text-decoration:underline;
     text-decoration-style:dotted;text-underline-offset:3px}
   .ad-link:hover{color:var(--text)}
@@ -272,15 +289,24 @@
         </div>
         <div class="tbl-wrap" style="max-height:560px">
           <table class="ads-tbl"><thead><tr>
-            <th class="ad-nome" onclick="ordenar('ad')">Anúncio</th>
-            <th onclick="ordenar('custo')">Investido</th>
-            <th onclick="ordenar('impressoes')">Impressões</th>
-            <th onclick="ordenar('hook_rate')">Hook rate</th>
-            <th onclick="ordenar('video_p75')">VV 75%</th>
-            <th onclick="ordenar('custo_vv75')">Custo VV75</th>
-            <th onclick="ordenar('video_p95')">VV 95%</th>
-            <th onclick="ordenar('custo_vv95')">Custo VV95</th>
-            <th onclick="ordenar('cpm')">CPM</th>
+            <th class="ad-nome" onclick="ordenar('ad')">Anúncio
+              <span class="dica" data-dica="Clique no nome para ver o vídeo do criativo.">?</span></th>
+            <th onclick="ordenar('custo')">Investido
+              <span class="dica" data-dica="Gasto do Gerenciador já com os 12,15% de imposto que a Meta cobra sobre a veiculação. Por isso não bate com o número do Gerenciador.">?</span></th>
+            <th onclick="ordenar('impressoes')">Impressões
+              <span class="dica" data-dica="Quantas vezes o anúncio apareceu na tela, contando quem viu mais de uma vez.">?</span></th>
+            <th onclick="ordenar('hook_rate')">Hook rate
+              <span class="dica" data-dica="De cada 100 pessoas impactadas, quantas pararam pelo menos 2 segundos no vídeo. Mede se a abertura segura a atenção. A Meta aposentou a métrica de 3 segundos.">?</span></th>
+            <th onclick="ordenar('video_p75')">VV 75%
+              <span class="dica" data-dica="Quantas pessoas assistiram 75% do vídeo.">?</span></th>
+            <th onclick="ordenar('custo_vv75')">Custo VV75
+              <span class="dica" data-dica="Quanto custou cada pessoa que chegou aos 75% do vídeo: investido ÷ views de 75%.">?</span></th>
+            <th onclick="ordenar('video_p95')">VV 95%
+              <span class="dica" data-dica="Quantas pessoas assistiram o vídeo praticamente inteiro (95%).">?</span></th>
+            <th onclick="ordenar('custo_vv95')">Custo VV95
+              <span class="dica fim" data-dica="Quanto custou cada pessoa que viu o vídeo quase inteiro: investido ÷ views de 95%.">?</span></th>
+            <th onclick="ordenar('cpm')">CPM
+              <span class="dica fim" data-dica="Custo para mil impressões. Sobe quando a disputa pelo público aumenta.">?</span></th>
           </tr></thead>
           <tbody id="aq-tbody"></tbody>
           <tfoot id="aq-tfoot"></tfoot></table>
@@ -295,8 +321,14 @@
         </div>
         <div class="tbl-wrap" style="max-height:420px">
           <table class="ads-tbl"><thead><tr>
-            <th class="ad-nome">Conjunto</th><th>Investido</th>
-            <th>Alcance</th><th>Impressões</th><th>Frequência</th>
+            <th class="ad-nome">Conjunto
+              <span class="dica" data-dica="O conjunto é onde o público é definido (interesses, idade, região). Cada linha é um público diferente.">?</span></th>
+            <th>Investido</th>
+            <th>Alcance
+              <span class="dica" data-dica="Pessoas diferentes que viram o anúncio neste conjunto. Quem viu várias vezes conta uma só.">?</span></th>
+            <th>Impressões</th>
+            <th>Frequência
+              <span class="dica fim" data-dica="Quantas vezes, em média, cada pessoa viu. Acima de 3 costuma indicar público pequeno demais ou já saturado.">?</span></th>
           </tr></thead><tbody id="aq-pub-tbody"></tbody></table>
         </div>
         <div class="vazio-fase" id="aq-pub-vazio" style="display:none">
@@ -384,8 +416,10 @@ async function load(refresh) {
   }
 }
 
-function card(l, v, c) {
-  return `<div class="card"><div class="kpi-l">${l}</div>
+const dica = t => `<span class="dica" data-dica="${esc(t)}">?</span>`;
+
+function card(l, v, c, explica) {
+  return `<div class="card"><div class="kpi-l">${l}${explica ? dica(explica) : ''}</div>
     <div class="kpi-v num">${v}</div><div class="kpi-c">${c || ''}</div></div>`;
 }
 
@@ -394,14 +428,20 @@ function render() {
   const ta = aq.totais;
 
   document.getElementById('aq-kpis').innerHTML = [
-    card('💸 Investido', brl(ta.custo), `${ta.ads} anúncio(s) · custo com imposto`),
+    card('💸 Investido', brl(ta.custo), `${ta.ads} anúncio(s) · custo com imposto`,
+         'Gasto do Gerenciador já com os 12,15% de imposto da Meta. Por isso não bate com o número do Gerenciador.'),
     card('👁️ Alcance', num(ta.alcance),
-         `${num(ta.impressoes)} impressões` + (ta.alcance_exato === false ? ' · soma de campanhas' : '')),
+         `${num(ta.impressoes)} impressões` + (ta.alcance_exato === false ? ' · soma de campanhas' : ''),
+         'Pessoas diferentes que viram o conteúdo. Vem do nível da campanha, onde a Meta não conta a mesma pessoa duas vezes.'),
     card('🔁 Frequência', (ta.frequencia || '—') + 'x',
-         ta.frequencia ? 'vezes que cada pessoa viu' : 'sem alcance no período'),
-    card('🪝 Hook rate', pct(ta.hook_rate), `${num(ta.video_2s)} views de 2s contínuos`),
-    card('🎬 Custo VV75', brl(ta.custo_vv75), `${num(ta.video_p75)} views · retenção ${pct(ta.retencao_75)}`),
-    card('🏁 Custo VV95', brl(ta.custo_vv95), `${num(ta.video_p95)} views até o fim`),
+         ta.frequencia ? 'vezes que cada pessoa viu' : 'sem alcance no período',
+         'Impressões ÷ alcance: quantas vezes, em média, cada pessoa viu o conteúdo. Acima de 3 costuma indicar público saturado.'),
+    card('🪝 Hook rate', pct(ta.hook_rate), `${num(ta.video_2s)} views de 2s contínuos`,
+         'De cada 100 pessoas impactadas, quantas pararam pelo menos 2 segundos no vídeo. Mede se a abertura segura a atenção.'),
+    card('🎬 Custo VV75', brl(ta.custo_vv75), `${num(ta.video_p75)} views · retenção ${pct(ta.retencao_75)}`,
+         'Quanto custou cada pessoa que assistiu 75% do vídeo. A retenção ao lado é quantos dos que pararam chegaram até os 75%.'),
+    card('🏁 Custo VV95', brl(ta.custo_vv95), `${num(ta.video_p95)} views até o fim`,
+         'Quanto custou cada pessoa que viu o vídeo praticamente inteiro (95%).'),
   ].join('');
   document.getElementById('aq-info').textContent =
     `${dataBR(DADOS.periodo.since)} a ${dataBR(DADOS.periodo.until)}`;
@@ -416,8 +456,10 @@ function render() {
   document.getElementById('cap-kpis').innerHTML = [
     card('💸 Investido', brl(tc.custo), `${tc.ads} anúncio(s)`),
     card('🎯 Leads', lead.total == null ? '—' : num(lead.total),
-         lead.configurada ? 'da planilha de captura' : 'aguardando planilha'),
-    card('💵 Custo por lead', brl(lead.cpl), lead.cpl == null ? 'sem leads ainda' : 'investido ÷ leads'),
+         lead.configurada ? 'da planilha de captura' : 'aguardando planilha',
+         'Leads contados na planilha de captura dentro do período selecionado, não o total da planilha.'),
+    card('💵 Custo por lead', brl(lead.cpl), lead.cpl == null ? 'sem leads ainda' : 'investido ÷ leads',
+         'Investido nas campanhas de captura ÷ leads do período. Só considera o que foi gasto nesta fase.'),
     card('👁️ Impressões', num(tc.impressoes), `${num(tc.alcance)} pessoas`),
   ].join('');
 
