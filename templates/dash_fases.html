@@ -229,7 +229,8 @@
   .modal-x{background:none;border:0;color:var(--text-muted);font-size:1.3rem;cursor:pointer;line-height:1}
   .modal-x:hover{color:var(--text)}
   .modal-body{padding:18px}
-  .modal-body img{width:100%;border-radius:8px;display:block;background:var(--surface-alt)}
+  .modal-body img,.modal-body video{width:100%;border-radius:8px;display:block;
+    background:var(--surface-alt);max-height:62vh}
   .modal-tit{font-size:.9rem;font-weight:600;margin-top:14px}
   .modal-txt{font-size:.82rem;color:var(--text-muted);line-height:1.6;margin-top:8px;
     white-space:pre-wrap}
@@ -555,7 +556,12 @@ async function verCriativo(adId) {
     if (!d.success) throw new Error(d.error || 'falha');
     document.getElementById('modal-nome').textContent = d.ad || adId;
     body.innerHTML =
-      (d.thumb ? `<img src="${esc(d.thumb)}" alt="">` : '<div class="vazio-fase">Sem miniatura disponível.</div>') +
+      (d.video
+        ? `<video controls playsinline preload="metadata" src="${esc(d.video)}"
+             ${d.thumb ? `poster="${esc(d.thumb)}"` : ''}></video>`
+        : d.thumb
+          ? `<img src="${esc(d.thumb)}" alt="">`
+          : '<div class="vazio-fase">Sem mídia disponível.</div>') +
       (d.titulo ? `<div class="modal-tit">${esc(d.titulo)}</div>` : '') +
       (d.texto ? `<div class="modal-txt">${esc(d.texto)}</div>` : '');
   } catch (err) {

@@ -895,7 +895,8 @@ def lancamento_criativo(slug, ad_id):
     try:
         d = meta_get(f'{GRAPH_BASE}/{ad_id}', {
             'access_token': token,
-            'fields': 'name,creative{thumbnail_url,image_url,title,body,object_story_spec}',
+            'fields': ('name,creative{thumbnail_url,image_url,title,body,'
+                       'object_story_spec,asset_feed_spec}'),
         })
     except Exception as e:
         logger.warning(f'[lancamento:{slug}] criativo {ad_id} falhou: {e}')
@@ -905,9 +906,28 @@ def lancamento_criativo(slug, ad_id):
     spec = c.get('object_story_spec') or {}
     video = spec.get('video_data') or {}
     link = (spec.get('link_data') or {})
+
+    # O vídeo do anúncio não vem no criativo: é preciso buscar o arquivo pelo
+    # video_id. A URL devolvida é assinada e temporária, sem token dentro.
+    video_id = video.get('video_id')
+    if not video_id:
+        for v in ((c.get('asset_feed_spec') or {}).get('videos') or []):
+            if v.get('video_id'):
+                video_id = v['video_id']
+                break
+    video_url = None
+    if video_id:
+        try:
+            vd = meta_get(f'{GRAPH_BASE}/{video_id}',
+                          {'access_token': token, 'fields': 'source,picture'})
+            video_url = vd.get('source')
+        except Exception as e:
+            logger.warning(f'[lancamento:{slug}] vídeo {video_id} indisponível: {e}')
+
     return jsonify({
         'success': True,
         'ad': d.get('name', ''),
+        'video': video_url,
         'thumb': c.get('thumbnail_url') or c.get('image_url') or video.get('image_url'),
         'titulo': c.get('title') or link.get('name') or video.get('title') or '',
         'texto': c.get('body') or link.get('message') or video.get('message') or '',
