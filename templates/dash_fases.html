@@ -307,6 +307,8 @@
               <span class="dica fim" data-dica="Quanto custou cada pessoa que viu o vídeo quase inteiro: investido ÷ views de 95%.">?</span></th>
             <th onclick="ordenar('cpm')">CPM
               <span class="dica fim" data-dica="Custo para mil impressões. Sobe quando a disputa pelo público aumenta.">?</span></th>
+            <th onclick="ordenar('cliques')">Cliques
+              <span class="dica fim" data-dica="Cliques no link que levam ao destino do anúncio. O CTR abaixo é esses cliques ÷ impressões.">?</span></th>
           </tr></thead>
           <tbody id="aq-tbody"></tbody>
           <tfoot id="aq-tfoot"></tfoot></table>
@@ -442,6 +444,8 @@ function render() {
          'Quanto custou cada pessoa que assistiu 75% do vídeo. A retenção ao lado é quantos dos que pararam chegaram até os 75%.'),
     card('🏁 Custo VV95', brl(ta.custo_vv95), `${num(ta.video_p95)} views até o fim`,
          'Quanto custou cada pessoa que viu o vídeo praticamente inteiro (95%).'),
+    card('🖱️ Cliques no link', num(ta.cliques), `CTR ${pct(ta.ctr)}`,
+         'Cliques que levaram ao destino do anúncio. O CTR é esses cliques ÷ impressões.'),
   ].join('');
   document.getElementById('aq-info').textContent =
     `${dataBR(DADOS.periodo.since)} a ${dataBR(DADOS.periodo.until)}`;
@@ -552,12 +556,14 @@ function renderAds() {
     <td>${brl(a.custo_vv75)}</td>
     <td>${num(a.video_p95)}</td>
     <td>${brl(a.custo_vv95)}</td>
-    <td>${brl(a.cpm)}</td></tr>`).join('');
+    <td>${brl(a.cpm)}</td>
+    <td>${num(a.cliques)}<br><span class="dim" style="font-size:.72rem">${pct(a.ctr)}</span></td></tr>`).join('');
   document.getElementById('aq-tfoot').innerHTML = `<tr>
     <td style="text-align:left">Total · ${t.ads} anúncios</td>
     <td>${brl(t.custo)}</td><td>${num(t.impressoes)}</td><td>${pct(t.hook_rate)}</td>
     <td>${num(t.video_p75)}</td><td>${brl(t.custo_vv75)}</td>
-    <td>${num(t.video_p95)}</td><td>${brl(t.custo_vv95)}</td><td>${brl(t.cpm)}</td></tr>`;
+    <td>${num(t.video_p95)}</td><td>${brl(t.custo_vv95)}</td><td>${brl(t.cpm)}</td>
+    <td>${num(t.cliques)}<br><span class="dim" style="font-size:.72rem">${pct(t.ctr)}</span></td></tr>`;
 }
 
 function renderGrafico(linhas) {

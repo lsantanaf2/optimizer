@@ -642,6 +642,7 @@ def _fetch_por_anuncio(cfg, since, until):
             'video_p75':   p75,
             'video_p95':   p95,
             # Hook rate: quem parou nos 3 primeiros segundos, sobre quem viu
+            'ctr':         round(int(r.get('inline_link_clicks', 0) or 0) / imp * 100, 2) if imp else None,
             'hook_rate':   round(v2s / imp * 100, 2) if imp else None,
             'retencao_75': round(p75 / v2s * 100, 2) if v2s else None,
             'custo_vv75':  round(custo / p75, 2) if p75 else None,
@@ -728,6 +729,7 @@ def _totais_fase(ads):
          ('custo', 'impressoes', 'alcance', 'cliques', 'video_2s', 'video_p75', 'video_p95')}
     t['custo'] = round(t['custo'], 2)
     t['ads'] = len(ads)
+    t['ctr']        = round(t['cliques'] / t['impressoes'] * 100, 2) if t['impressoes'] else None
     t['hook_rate']  = round(t['video_2s'] / t['impressoes'] * 100, 2) if t['impressoes'] else None
     t['retencao_75'] = round(t['video_p75'] / t['video_2s'] * 100, 2) if t['video_2s'] else None
     t['custo_vv75'] = round(t['custo'] / t['video_p75'], 2) if t['video_p75'] else None
