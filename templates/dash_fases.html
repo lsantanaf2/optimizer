@@ -261,6 +261,7 @@
 
     <!-- FASE 1 — AQUECIMENTO -->
     <div class="tab-panel on" id="tab-aq">
+      <div id="aq-aviso"></div>
       <div class="kpis" id="aq-kpis"></div>
 
       <div class="card" style="padding:0">
@@ -405,6 +406,9 @@ function render() {
     `${dataBR(DADOS.periodo.since)} a ${dataBR(DADOS.periodo.until)}`;
   renderAds();
   renderPublicos(aq.publicos || []);
+  const avisosServidor = DADOS.avisos || [];
+  document.getElementById('aq-aviso').innerHTML =
+    avisosServidor.length ? `<div class="warnbox">${avisosServidor.map(esc).join('<br>')}</div>` : '';
 
   // ── Captura ──
   const tc = cap.totais, lead = cap.leads || {};

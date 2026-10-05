@@ -652,14 +652,16 @@ def _fetch_por_anuncio(cfg, since, until):
     return saida
 
 
-def _fetch_insights_nivel(cfg, since, until, nivel, campos):
-    """Insights do período num nível (adset/campaign), filtrados pelo lançamento."""
+def _fetch_insights_nivel(cfg, since, until, nivel, campos, token):
+    """Insights do período num nível (adset/campaign), filtrados pelo lançamento.
+
+    O token vem de fora: estas buscas rodam em thread paralela, e obter_token()
+    lê a sessão do Flask, que não existe fora do contexto da requisição.
+    """
     from modules.meta_client import meta_get_insights_rows
     acct = cfg['ad_account_id']
     if not acct.startswith('act_'):
         acct = f'act_{acct}'
-    from app import obter_token
-    token = obter_token()
     if not token:
         raise RuntimeError('Sistema não autenticado na Meta.')
 
@@ -672,11 +674,11 @@ def _fetch_insights_nivel(cfg, since, until, nivel, campos):
             if not padroes or any(p in (r.get('campaign_name') or '').lower() for p in padroes)]
 
 
-def _fetch_publicos(cfg, since, until):
+def _fetch_publicos(cfg, since, until, token):
     """Alcance e frequência por CONJUNTO — é onde o público é definido."""
     linhas = _fetch_insights_nivel(
         cfg, since, until, 'adset',
-        'campaign_name,adset_id,adset_name,spend,impressions,reach,frequency')
+        'campaign_name,adset_id,adset_name,spend,impressions,reach,frequency', token)
     saida = []
     for r in linhas:
         imp = int(r.get('impressions', 0) or 0)
@@ -694,7 +696,7 @@ def _fetch_publicos(cfg, since, until):
     return saida
 
 
-def _fetch_alcance_campanha(cfg, since, until):
+def _fetch_alcance_campanha(cfg, since, until, token):
     """Alcance por CAMPANHA.
 
     Não dá para somar o alcance dos anúncios: quem viu três criativos entraria
@@ -703,7 +705,7 @@ def _fetch_alcance_campanha(cfg, since, until):
     """
     linhas = _fetch_insights_nivel(
         cfg, since, until, 'campaign',
-        'campaign_name,impressions,reach,frequency,spend')
+        'campaign_name,impressions,reach,frequency,spend', token)
     por_fase = {}
     for r in linhas:
         fase = _fase_de(r.get('campaign_name', ''), cfg)
@@ -940,18 +942,23 @@ def lancamento_fases(slug):
 
     # Alcance por conjunto e por campanha: a Meta deduplica em cada nível, e é
     # a única forma de ter frequência real.
-    publicos, alcance_fase = [], {}
+    publicos, alcance_fase, avisos = [], {}, []
+    from app import obter_token
+    token = obter_token()   # resolvido aqui: a sessão não existe nas threads
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
         f_pub = ex.submit(get_or_fetch, (f'lancamento:{slug}', 'publicos', since, until),
-                          CACHE_TTL, lambda: _fetch_publicos(cfg, since, until))
+                          CACHE_TTL, lambda: _fetch_publicos(cfg, since, until, token))
         f_alc = ex.submit(get_or_fetch, (f'lancamento:{slug}', 'alcance', since, until),
-                          CACHE_TTL, lambda: _fetch_alcance_campanha(cfg, since, until))
+                          CACHE_TTL, lambda: _fetch_alcance_campanha(cfg, since, until, token))
         try:    publicos = f_pub.result()
         except Exception as e:
             logger.warning(f'[lancamento:{slug}] públicos falharam: {e}')
+            avisos.append(f'Públicos por conjunto indisponíveis: {e}')
         try:    alcance_fase = f_alc.result()
         except Exception as e:
             logger.warning(f'[lancamento:{slug}] alcance por campanha falhou: {e}')
+            avisos.append(f'Alcance por campanha indisponível ({e}) — '
+                          f'a frequência cai para a soma por anúncio, que é imprecisa.')
 
     fases_cfg = cfg.get('fases') or {}
     saida = {}
@@ -1001,6 +1008,7 @@ def lancamento_fases(slug):
                    'imposto': META_TAX_RATE, 'datas': dts},
         'periodo': {'since': since, 'until': until},
         'fases':   saida,
+        'avisos':  avisos,
         'sem_fase': {'ads': sem_fase, 'totais': _totais_fase(sem_fase)},
         'gerado_em': datetime.now().isoformat(),
     })
