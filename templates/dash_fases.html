@@ -285,6 +285,22 @@
         </div>
         <div class="vazio-fase" id="aq-vazio" style="display:none"></div>
       </div>
+
+      <div class="card" style="padding:0;margin-top:14px">
+        <div class="card-t" style="padding:20px 20px 0;margin-bottom:10px">
+          <span>Públicos (conjuntos)</span>
+          <span class="dim">alcance e frequência dentro de cada público</span>
+        </div>
+        <div class="tbl-wrap" style="max-height:420px">
+          <table class="ads-tbl"><thead><tr>
+            <th class="ad-nome">Conjunto</th><th>Investido</th>
+            <th>Alcance</th><th>Impressões</th><th>Frequência</th>
+          </tr></thead><tbody id="aq-pub-tbody"></tbody></table>
+        </div>
+        <div class="vazio-fase" id="aq-pub-vazio" style="display:none">
+          Sem dados de conjunto no período.
+        </div>
+      </div>
     </div>
 
     <!-- FASE 2 — CAPTURA -->
@@ -377,7 +393,10 @@ function render() {
 
   document.getElementById('aq-kpis').innerHTML = [
     card('💸 Investido', brl(ta.custo), `${ta.ads} anúncio(s) · custo com imposto`),
-    card('👁️ Impressões', num(ta.impressoes), `${num(ta.alcance)} pessoas · ${ta.frequencia || '—'}x`),
+    card('👁️ Alcance', num(ta.alcance),
+         `${num(ta.impressoes)} impressões` + (ta.alcance_exato === false ? ' · soma de campanhas' : '')),
+    card('🔁 Frequência', (ta.frequencia || '—') + 'x',
+         ta.frequencia ? 'vezes que cada pessoa viu' : 'sem alcance no período'),
     card('🪝 Hook rate', pct(ta.hook_rate), `${num(ta.video_2s)} views de 2s contínuos`),
     card('🎬 Custo VV75', brl(ta.custo_vv75), `${num(ta.video_p75)} views · retenção ${pct(ta.retencao_75)}`),
     card('🏁 Custo VV95', brl(ta.custo_vv95), `${num(ta.video_p95)} views até o fim`),
@@ -385,6 +404,7 @@ function render() {
   document.getElementById('aq-info').textContent =
     `${dataBR(DADOS.periodo.since)} a ${dataBR(DADOS.periodo.until)}`;
   renderAds();
+  renderPublicos(aq.publicos || []);
 
   // ── Captura ──
   const tc = cap.totais, lead = cap.leads || {};
@@ -432,6 +452,21 @@ function render() {
     'Custo por VV = investido ÷ views do marco.' +
     (sf.totais.ads ? ` <b>${sf.totais.ads} anúncio(s)</b> do lançamento estão fora das duas fases ` +
       `(sem tag [AQUECIMENTO] ou [CAPTURA]), somando ${brl(sf.totais.custo)}.` : '');
+}
+
+function renderPublicos(pubs) {
+  const tb = document.getElementById('aq-pub-tbody'), vz = document.getElementById('aq-pub-vazio');
+  if (!pubs.length) { tb.innerHTML = ''; vz.style.display = 'block'; return; }
+  vz.style.display = 'none';
+  const maxFreq = Math.max(...pubs.map(p => p.frequencia || 0), 1);
+  tb.innerHTML = pubs.map(p => `<tr>
+    <td class="ad-nome" title="${esc(p.conjunto)}">${esc(p.conjunto)}</td>
+    <td>${brl(p.custo)}</td>
+    <td>${num(p.alcance)}</td>
+    <td>${num(p.impressoes)}</td>
+    <td><div class="bar-cell"><span>${(p.frequencia || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}x</span>
+      <span class="mini-bar"><span class="mini-fill" style="width:${(p.frequencia || 0) / maxFreq * 100}%"></span></span></div></td>
+  </tr>`).join('');
 }
 
 function ordenar(campo) {

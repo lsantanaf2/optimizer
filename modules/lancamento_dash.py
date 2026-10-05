@@ -13,6 +13,7 @@ Rotas:
   GET /api/dash/lancamento/<slug>/data     — JSON completo (?since=&until=&refresh=1)
 """
 
+import concurrent.futures
 import csv
 import io
 import json
@@ -651,6 +652,74 @@ def _fetch_por_anuncio(cfg, since, until):
     return saida
 
 
+def _fetch_insights_nivel(cfg, since, until, nivel, campos):
+    """Insights do período num nível (adset/campaign), filtrados pelo lançamento."""
+    from modules.meta_client import meta_get_insights_rows
+    acct = cfg['ad_account_id']
+    if not acct.startswith('act_'):
+        acct = f'act_{acct}'
+    from app import obter_token
+    token = obter_token()
+    if not token:
+        raise RuntimeError('Sistema não autenticado na Meta.')
+
+    raw = meta_get_insights_rows(f'{GRAPH_BASE}/{acct}/insights', {
+        'access_token': token, 'level': nivel, 'fields': campos, 'limit': 500,
+        'time_range': json.dumps({'since': since, 'until': until}, separators=(',', ':')),
+    }, timeout=60)
+    padroes = [p.lower() for p in (cfg.get('campaign_patterns') or [])]
+    return [r for r in raw
+            if not padroes or any(p in (r.get('campaign_name') or '').lower() for p in padroes)]
+
+
+def _fetch_publicos(cfg, since, until):
+    """Alcance e frequência por CONJUNTO — é onde o público é definido."""
+    linhas = _fetch_insights_nivel(
+        cfg, since, until, 'adset',
+        'campaign_name,adset_id,adset_name,spend,impressions,reach,frequency')
+    saida = []
+    for r in linhas:
+        imp = int(r.get('impressions', 0) or 0)
+        alc = int(r.get('reach', 0) or 0)
+        saida.append({
+            'fase':       _fase_de(r.get('campaign_name', ''), cfg),
+            'conjunto':   r.get('adset_name', ''),
+            'custo':      round(float(r.get('spend', 0) or 0) * (1 + META_TAX_RATE), 2),
+            'impressoes': imp,
+            'alcance':    alc,
+            # Vem pronta da Meta e é deduplicada dentro do conjunto
+            'frequencia': round(float(r.get('frequency', 0) or 0), 2),
+        })
+    saida.sort(key=lambda x: x['alcance'], reverse=True)
+    return saida
+
+
+def _fetch_alcance_campanha(cfg, since, until):
+    """Alcance por CAMPANHA.
+
+    Não dá para somar o alcance dos anúncios: quem viu três criativos entraria
+    três vezes, inflando o alcance e afundando a frequência. A Meta deduplica
+    dentro da campanha, então a frequência geral sai daqui.
+    """
+    linhas = _fetch_insights_nivel(
+        cfg, since, until, 'campaign',
+        'campaign_name,impressions,reach,frequency,spend')
+    por_fase = {}
+    for r in linhas:
+        fase = _fase_de(r.get('campaign_name', ''), cfg)
+        if not fase:
+            continue
+        e = por_fase.setdefault(fase, {'alcance': 0, 'impressoes': 0, 'campanhas': 0})
+        e['alcance'] += int(r.get('reach', 0) or 0)
+        e['impressoes'] += int(r.get('impressions', 0) or 0)
+        e['campanhas'] += 1
+    for e in por_fase.values():
+        e['frequencia'] = round(e['impressoes'] / e['alcance'], 2) if e['alcance'] else None
+        # Com mais de uma campanha a soma volta a contar gente repetida
+        e['exato'] = e['campanhas'] <= 1
+    return por_fase
+
+
 def _totais_fase(ads):
     """Soma os anúncios de uma fase, recalculando as taxas sobre o total."""
     t = {k: sum(a[k] or 0 for a in ads) for k in
@@ -824,15 +893,14 @@ def lancamento_criativo(slug, ad_id):
     try:
         d = meta_get(f'{GRAPH_BASE}/{ad_id}', {
             'access_token': token,
-            'fields': ('name,creative{thumbnail_url,image_url,title,body,'
-                       'effective_object_story_spec}'),
+            'fields': 'name,creative{thumbnail_url,image_url,title,body,object_story_spec}',
         })
     except Exception as e:
         logger.warning(f'[lancamento:{slug}] criativo {ad_id} falhou: {e}')
         return jsonify({'success': False, 'error': str(e)}), 502
 
     c = d.get('creative') or {}
-    spec = c.get('effective_object_story_spec') or {}
+    spec = c.get('object_story_spec') or {}
     video = spec.get('video_data') or {}
     link = (spec.get('link_data') or {})
     return jsonify({
@@ -870,14 +938,37 @@ def lancamento_fases(slug):
         logger.error(f'[lancamento:{slug}] fases/Meta falhou: {e}')
         return jsonify({'success': False, 'error': f'Meta Ads: {e}'}), 502
 
+    # Alcance por conjunto e por campanha: a Meta deduplica em cada nível, e é
+    # a única forma de ter frequência real.
+    publicos, alcance_fase = [], {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
+        f_pub = ex.submit(get_or_fetch, (f'lancamento:{slug}', 'publicos', since, until),
+                          CACHE_TTL, lambda: _fetch_publicos(cfg, since, until))
+        f_alc = ex.submit(get_or_fetch, (f'lancamento:{slug}', 'alcance', since, until),
+                          CACHE_TTL, lambda: _fetch_alcance_campanha(cfg, since, until))
+        try:    publicos = f_pub.result()
+        except Exception as e:
+            logger.warning(f'[lancamento:{slug}] públicos falharam: {e}')
+        try:    alcance_fase = f_alc.result()
+        except Exception as e:
+            logger.warning(f'[lancamento:{slug}] alcance por campanha falhou: {e}')
+
     fases_cfg = cfg.get('fases') or {}
     saida = {}
     for chave, fcfg in fases_cfg.items():
         desta = [a for a in ads if a['fase'] == chave]
+        totais = _totais_fase(desta)
+        real = alcance_fase.get(chave)
+        if real:
+            # Substitui a soma por anúncio, que conta a mesma pessoa várias vezes
+            totais['alcance'] = real['alcance']
+            totais['frequencia'] = real['frequencia']
+            totais['alcance_exato'] = real['exato']
         saida[chave] = {
-            'label':  fcfg.get('label', chave.title()),
-            'ads':    desta,
-            'totais': _totais_fase(desta),
+            'label':    fcfg.get('label', chave.title()),
+            'ads':      desta,
+            'publicos': [p for p in publicos if p['fase'] == chave],
+            'totais':   totais,
         }
 
     # Leads da fase de captura (planilha), quando houver fonte configurada
