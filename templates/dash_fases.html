@@ -216,6 +216,8 @@
   .mini-bar{height:6px;border-radius:99px;background:var(--surface-alt);width:52px;flex:none}
   .mini-fill{height:100%;border-radius:99px;background:linear-gradient(90deg,var(--accent),var(--accent-soft))}
   .vazio-fase{padding:34px 20px;text-align:center;color:var(--text-muted);font-size:.84rem;line-height:1.6}
+  .chart-wrap{position:relative;height:260px}
+  @media(max-width:720px){.chart-wrap{height:210px}}
   .utm-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
   .utm-bloco{background:var(--bg-deep);border:1px solid var(--stroke);border-radius:var(--r-badge);
     overflow:hidden}
@@ -367,9 +369,17 @@
       </div>
 
       <div class="card" id="cap-chart-card" style="display:none;margin-top:14px">
-        <div class="card-t"><span>Leads e investimento por dia</span>
+        <div class="card-t"><span>Leads por dia</span>
           <span class="dim" id="cap-chart-info"></span></div>
-        <canvas id="cap-chart" height="90"></canvas>
+        <!-- Altura fixa: com maintainAspectRatio:false o Chart.js mede o
+             container, e sem altura definida ele cresce em laço infinito. -->
+        <div class="chart-wrap"><canvas id="cap-chart"></canvas></div>
+      </div>
+
+      <div class="card" id="cap-chart2-card" style="display:none;margin-top:14px">
+        <div class="card-t"><span>Investimento e custo por lead por dia</span>
+          <span class="dim">barras = investido · linha = custo por lead</span></div>
+        <div class="chart-wrap"><canvas id="cap-chart2"></canvas></div>
       </div>
 
       <div class="card" id="cap-utms-card" style="display:none;margin-top:14px">
@@ -429,7 +439,7 @@ const pct = (v, d = 2) => v == null ? '—' : Number(v).toLocaleString('pt-BR', 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const dataBR = s => s ? s.slice(8, 10) + '/' + s.slice(5, 7) : '—';
 
-let DADOS = null, ordem = {campo: 'custo', desc: true}, grafico = null;
+let DADOS = null, ordem = {campo: 'custo', desc: true}, grafico = null, grafico2 = null;
 
 function setTab(t) {
   for (const k of ['aq', 'cap']) {
@@ -578,8 +588,9 @@ function renderCaptura() {
             impressoes: m.impressoes || 0, cliques: m.cliques || 0,
             cpl: leads ? (m.custo || 0) / leads : null};
   });
-  document.getElementById('cap-chart-card').style.display = serie.length ? '' : 'none';
-  document.getElementById('cap-serie-card').style.display = serie.length ? '' : 'none';
+  for (const id of ['cap-chart-card', 'cap-chart2-card', 'cap-serie-card']) {
+    document.getElementById(id).style.display = serie.length ? '' : 'none';
+  }
   if (serie.length) { renderGrafico(serie); renderSerie(serie); }
 
   // ── Tabelas por UTM ──
@@ -750,30 +761,49 @@ function renderSerie(linhas) {
     <td>${num(t.imp)}</td><td>${num(t.cli)}</td></tr>`;
 }
 
+const EIXO = {ticks: {color: '#9AA0C7'}, grid: {color: 'rgba(42,42,94,.5)'}};
+
 function renderGrafico(linhas) {
-  const cap = DADOS.fases.captura;
-  document.getElementById('cap-chart-info').textContent =
-    `${num(cap.leads.total)} leads · barras = leads · linha = investido`;
+  const labels = linhas.map(l => dataBR(l.data));
+  const total = linhas.reduce((s, l) => s + l.leads, 0);
+  document.getElementById('cap-chart-info').textContent = `${num(total)} leads no período`;
+
   if (grafico) grafico.destroy();
   grafico = new Chart(document.getElementById('cap-chart').getContext('2d'), {
+    type: 'bar',
+    data: {labels, datasets: [{
+      label: 'Leads', data: linhas.map(l => l.leads),
+      backgroundColor: 'rgba(61,79,245,.65)', borderRadius: 4,
+    }]},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {legend: {display: false}},
+      scales: {x: {...EIXO, grid: {display: false}},
+               y: {...EIXO, beginAtZero: true, ticks: {color: '#9AA0C7', precision: 0}}},
+    },
+  });
+
+  if (grafico2) grafico2.destroy();
+  grafico2 = new Chart(document.getElementById('cap-chart2').getContext('2d'), {
     data: {
-      labels: linhas.map(l => dataBR(l.data)),
+      labels,
       datasets: [
-        {type: 'bar', label: 'Leads', data: linhas.map(l => l.leads),
-         backgroundColor: 'rgba(61,79,245,.55)', borderRadius: 4, yAxisID: 'y'},
-        {type: 'line', label: 'Investido', data: linhas.map(l => l.custo),
+        {type: 'bar', label: 'Investido', data: linhas.map(l => l.custo),
+         backgroundColor: 'rgba(139,147,248,.5)', borderRadius: 4, yAxisID: 'y'},
+        {type: 'line', label: 'Custo por lead', data: linhas.map(l => l.cpl),
          borderColor: '#3DD68C', backgroundColor: 'rgba(61,214,140,.12)',
-         borderWidth: 2, pointRadius: 3, tension: .3, fill: true, yAxisID: 'y2'},
+         borderWidth: 2, pointRadius: 3, tension: .3, spanGaps: true, yAxisID: 'y2'},
       ],
     },
     options: {
       responsive: true, maintainAspectRatio: false,
       interaction: {mode: 'index', intersect: false},
-      plugins: {legend: {labels: {color: '#9AA0C7'}}},
+      plugins: {legend: {labels: {color: '#9AA0C7'}},
+        tooltip: {callbacks: {label: c => `${c.dataset.label}: ${brl(c.raw)}`}}},
       scales: {
-        x:  {ticks: {color: '#9AA0C7'}, grid: {display: false}},
-        y:  {beginAtZero: true, position: 'left',
-             ticks: {color: '#9AA0C7', precision: 0}, grid: {color: 'rgba(42,42,94,.5)'}},
+        x:  {...EIXO, grid: {display: false}},
+        y:  {...EIXO, beginAtZero: true, position: 'left',
+             ticks: {color: '#9AA0C7', callback: v => 'R$ ' + v.toLocaleString('pt-BR')}},
         y2: {beginAtZero: true, position: 'right',
              ticks: {color: '#3DD68C', callback: v => 'R$ ' + v.toLocaleString('pt-BR')},
              grid: {drawOnChartArea: false}},
