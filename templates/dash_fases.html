@@ -216,6 +216,21 @@
   .mini-bar{height:6px;border-radius:99px;background:var(--surface-alt);width:52px;flex:none}
   .mini-fill{height:100%;border-radius:99px;background:linear-gradient(90deg,var(--accent),var(--accent-soft))}
   .vazio-fase{padding:34px 20px;text-align:center;color:var(--text-muted);font-size:.84rem;line-height:1.6}
+  .utm-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+  .utm-bloco{background:var(--bg-deep);border:1px solid var(--stroke);border-radius:var(--r-badge);
+    overflow:hidden}
+  .utm-bloco h4{font-size:.68rem;text-transform:uppercase;letter-spacing:.08em;
+    color:var(--text-muted);font-weight:600;padding:12px 14px;border-bottom:1px solid var(--stroke)}
+  .utm-bloco table{font-size:.76rem}
+  .utm-bloco td{padding:7px 12px}
+  .utm-bloco td:first-child{max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .toggle{display:inline-flex;align-items:center;gap:7px;padding:6px 13px;cursor:pointer;
+    background:var(--bg-deep);border:1px solid var(--stroke);border-radius:99px;
+    color:var(--text-muted);font:inherit;font-size:.76rem}
+  .toggle:hover{border-color:var(--accent-soft);color:var(--text)}
+  .toggle.on{background:rgba(61,79,245,.18);border-color:var(--accent);color:var(--text)}
+  .toggle .pin{width:8px;height:8px;border-radius:50%;background:var(--stroke)}
+  .toggle.on .pin{background:var(--accent-soft)}
   /* Tooltip de métrica. Abre para BAIXO de propósito: nos cabeçalhos de
      tabela, que são sticky dentro de um container com overflow, abrir para
      cima seria cortado pela borda. */
@@ -342,11 +357,40 @@
     <!-- FASE 2 — CAPTURA -->
     <div class="tab-panel" id="tab-cap">
       <div class="kpis" id="cap-kpis"></div>
+      <div id="cap-filtro" style="margin-bottom:14px"></div>
       <div id="cap-aviso"></div>
 
-      <div class="card" id="cap-chart-card" style="display:none">
-        <div class="card-t"><span>Leads por dia</span><span class="dim" id="cap-chart-info"></span></div>
+      <div class="card" id="cap-funil-card" style="display:none">
+        <div class="card-t"><span>Funil até o lead</span>
+          <span class="dim">lançamento inteiro, não só a fase de captura</span></div>
+        <div class="funil" id="cap-funil"></div>
+      </div>
+
+      <div class="card" id="cap-chart-card" style="display:none;margin-top:14px">
+        <div class="card-t"><span>Leads e investimento por dia</span>
+          <span class="dim" id="cap-chart-info"></span></div>
         <canvas id="cap-chart" height="90"></canvas>
+      </div>
+
+      <div class="card" id="cap-utms-card" style="display:none;margin-top:14px">
+        <div class="card-t"><span>Leads por UTM</span>
+          <span class="dim" id="cap-utms-info"></span></div>
+        <div class="utm-grid" id="cap-utms"></div>
+      </div>
+
+      <div class="card" id="cap-serie-card" style="display:none;padding:0;margin-top:14px">
+        <div class="card-t" style="padding:20px 20px 0;margin-bottom:10px">
+          <span>Dia a dia</span><span class="dim">leads, investimento e custo por lead</span>
+        </div>
+        <div class="tbl-wrap" style="max-height:380px">
+          <table class="ads-tbl"><thead><tr>
+            <th class="ad-nome">Data</th><th>Investido</th><th>Leads</th>
+            <th>Custo por lead
+              <span class="dica fim" data-dica="Investido do dia ÷ leads do dia. Dias sem lead ficam sem valor em vez de mostrar zero.">?</span></th>
+            <th>Impressões</th><th>Cliques</th>
+          </tr></thead><tbody id="cap-serie-tbody"></tbody>
+          <tfoot id="cap-serie-tfoot"></tfoot></table>
+        </div>
       </div>
 
       <div class="card" style="padding:0;margin-top:14px">
@@ -455,33 +499,93 @@ function render() {
   document.getElementById('aq-aviso').innerHTML =
     avisosServidor.length ? `<div class="warnbox">${avisosServidor.map(esc).join('<br>')}</div>` : '';
 
-  // ── Captura ──
+  renderCaptura();
+}
+
+// Leads de lançamentos anteriores ficam ocultos por padrão: a planilha junta
+// tudo, e até o mês passado os UTMs vinham errados.
+let ocultarOutros = true;
+
+function alternarOutros() { ocultarOutros = !ocultarOutros; renderCaptura(); }
+
+function renderCaptura() {
+  const cap = DADOS.fases.captura;
   const tc = cap.totais, lead = cap.leads || {};
+  const todas = lead.linhas || [];
+  const visiveis = ocultarOutros ? todas.filter(l => l.origem !== 'outro') : todas;
+  const outros = todas.filter(l => l.origem === 'outro').length;
+  const semUtm = todas.filter(l => l.origem === 'sem_utm').length;
+  const entrega = lead.entrega || {};
+
+  // Custo do lançamento inteiro: o lead chega pela campanha que o gerou, que
+  // hoje é a de aquecimento, não só pelas campanhas marcadas como captura.
+  const custoBase = entrega.custo || 0;
+  const n = visiveis.length;
+  const cpl = n ? custoBase / n : null;
+
   document.getElementById('cap-kpis').innerHTML = [
-    card('💸 Investido', brl(tc.custo), `${tc.ads} anúncio(s)`),
-    card('🎯 Leads', lead.total == null ? '—' : num(lead.total),
-         lead.configurada ? 'da planilha de captura' : 'aguardando planilha',
-         'Leads contados na planilha de captura dentro do período selecionado, não o total da planilha.'),
-    card('💵 Custo por lead', brl(lead.cpl), lead.cpl == null ? 'sem leads ainda' : 'investido ÷ leads',
-         'Investido nas campanhas de captura ÷ leads do período. Só considera o que foi gasto nesta fase.'),
-    card('👁️ Impressões', num(tc.impressoes), `${num(tc.alcance)} pessoas`),
+    card('🎯 Leads', num(n),
+         ocultarOutros && outros ? `${outros} de outros lançamentos ocultos` : 'todos os leads do período',
+         'Leads da planilha dentro do período selecionado. O botão abaixo esconde os que vieram de lançamentos anteriores.'),
+    card('💵 Custo por lead', brl(cpl), cpl == null ? 'sem leads ainda' : 'investido ÷ leads',
+         'Investido no lançamento inteiro ÷ leads visíveis. Usa o lançamento todo porque hoje os leads chegam pela campanha de aquecimento.'),
+    card('💸 Investido', brl(custoBase), 'lançamento inteiro',
+         'Gasto de todas as campanhas do lançamento, já com os 12,15% de imposto.'),
+    card('🖱️ Cliques no link', num(entrega.cliques), `${num(entrega.impressoes)} impressões`),
   ].join('');
 
+  // Botão de ocultar
+  document.getElementById('cap-filtro').innerHTML = outros || semUtm
+    ? `<button class="toggle ${ocultarOutros ? 'on' : ''}" onclick="alternarOutros()">
+         <span class="pin"></span>
+         ${ocultarOutros ? 'Ocultando' : 'Mostrando'} ${outros} lead(s) de lançamentos anteriores
+       </button>`
+    : '';
+
   const avisos = [];
-  if (!lead.configurada) {
-    avisos.push('A planilha de leads ainda não foi configurada: leads e custo por lead aparecem assim que você passar o link dela.');
-  }
   if (lead.erro) avisos.push('Erro ao ler a planilha: ' + esc(lead.erro));
   if (!tc.ads) {
-    avisos.push('Nenhuma campanha com a tag <b>[CAPTURA]</b> no ar ainda — esta aba se preenche sozinha quando a fase começar.');
+    avisos.push('Nenhuma campanha com a tag <b>[CAPTURA]</b> no ar ainda — os leads estão chegando pela campanha de aquecimento.');
+  }
+  if (semUtm) {
+    avisos.push(`${semUtm} lead(s) chegaram sem UTM na planilha. Eles entram na contagem, mas não aparecem quebrados por origem.`);
   }
   document.getElementById('cap-aviso').innerHTML =
     avisos.length ? `<div class="warnbox">${avisos.join('<br>')}</div>` : '';
 
-  const linhas = lead.por_dia || [];
-  document.getElementById('cap-chart-card').style.display = linhas.length ? '' : 'none';
-  if (linhas.length) renderGrafico(linhas);
+  // ── Funil até o lead ──
+  const funil = [
+    {label: 'Impressões', valor: entrega.impressoes || 0, taxa: null},
+    {label: 'Cliques no link', valor: entrega.cliques || 0,
+     taxa: entrega.impressoes ? entrega.cliques / entrega.impressoes * 100 : null, taxa_label: 'CTR'},
+    {label: 'Visitas na página', valor: entrega.lpv || 0,
+     taxa: entrega.cliques ? entrega.lpv / entrega.cliques * 100 : null, taxa_label: 'dos cliques'},
+    {label: 'Leads', valor: n,
+     taxa: entrega.lpv ? n / entrega.lpv * 100 : null, taxa_label: 'das visitas'},
+  ];
+  document.getElementById('cap-funil-card').style.display = entrega.impressoes ? '' : 'none';
+  if (entrega.impressoes) renderFunil(funil);
 
+  // ── Série por dia: investimento da Meta + leads visíveis ──
+  const porDia = {};
+  for (const l of visiveis) porDia[l.data] = (porDia[l.data] || 0) + 1;
+  const diario = lead.diario || [];
+  const dias = [...new Set([...diario.map(d => d.data), ...Object.keys(porDia)])].sort();
+  const serie = dias.map(d => {
+    const m = diario.find(x => x.data === d) || {};
+    const leads = porDia[d] || 0;
+    return {data: d, leads, custo: m.custo || 0,
+            impressoes: m.impressoes || 0, cliques: m.cliques || 0,
+            cpl: leads ? (m.custo || 0) / leads : null};
+  });
+  document.getElementById('cap-chart-card').style.display = serie.length ? '' : 'none';
+  document.getElementById('cap-serie-card').style.display = serie.length ? '' : 'none';
+  if (serie.length) { renderGrafico(serie); renderSerie(serie); }
+
+  // ── Tabelas por UTM ──
+  renderUtms(visiveis);
+
+  // ── Anúncios de captura ──
   const tb = document.getElementById('cap-tbody'), vz = document.getElementById('cap-vazio');
   if (!cap.ads.length) {
     tb.innerHTML = ''; vz.style.display = 'block';
@@ -503,6 +607,41 @@ function render() {
     'Custo por VV = investido ÷ views do marco.' +
     (sf.totais.ads ? ` <b>${sf.totais.ads} anúncio(s)</b> do lançamento estão fora das duas fases ` +
       `(sem tag [AQUECIMENTO] ou [CAPTURA]), somando ${brl(sf.totais.custo)}.` : '');
+}
+
+const UTM_TABELAS = [
+  {campo: 'source',   titulo: 'Origem (utm_source)'},
+  {campo: 'campanha', titulo: 'Campanha (utm_campaign)'},
+  {campo: 'medium',   titulo: 'Conjunto (utm_medium)'},
+  {campo: 'content',  titulo: 'Criativo (utm_content)'},
+  {campo: 'term',     titulo: 'Termo (utm_term)'},
+  {campo: 'pagina',   titulo: 'Página'},
+];
+
+function renderUtms(linhas) {
+  const card = document.getElementById('cap-utms-card');
+  card.style.display = linhas.length ? '' : 'none';
+  if (!linhas.length) return;
+  document.getElementById('cap-utms-info').textContent = `${num(linhas.length)} leads`;
+
+  document.getElementById('cap-utms').innerHTML = UTM_TABELAS.map(t => {
+    const cont = {};
+    for (const l of linhas) {
+      const v = (l[t.campo] || '').trim() || '(vazio)';
+      cont[v] = (cont[v] || 0) + 1;
+    }
+    const itens = Object.entries(cont).sort((a, b) => b[1] - a[1]);
+    const total = linhas.length;
+    const linhasHtml = itens.map(([v, q]) => `<tr>
+      <td title="${esc(v)}">${esc(v)}</td>
+      <td style="text-align:right">${num(q)}</td>
+      <td style="text-align:right;color:var(--text-muted)">${pct(q / total * 100, 1)}</td>
+    </tr>`).join('');
+    return `<div class="utm-bloco">
+      <h4>${esc(t.titulo)} · ${itens.length}</h4>
+      <div class="tbl-wrap" style="max-height:260px"><table>${linhasHtml}</table></div>
+    </div>`;
+  }).join('');
 }
 
 function renderPublicos(pubs) {
@@ -566,27 +705,78 @@ function renderAds() {
     <td>${num(t.cliques)}<br><span class="dim" style="font-size:.72rem">${pct(t.ctr)}</span></td></tr>`;
 }
 
+// Funil até o lead: barra pela taxa de passagem, porque impressões são ordens
+// de grandeza maiores que leads e a barra por volume sumiria no fim.
+function renderFunil(etapas) {
+  const topo = Math.max(...etapas.map(e => e.valor), 1);
+  const escala = v => v <= 0 ? 0 : Math.log(v + 1) / Math.log(topo + 1) * 100;
+  let gargalo = -1, menor = Infinity;
+  etapas.forEach((e, i) => {
+    if (i === 0 || e.taxa == null) return;
+    if (e.taxa < menor) { menor = e.taxa; gargalo = i; }
+  });
+  let anterior = 100;
+  document.getElementById('cap-funil').innerHTML = etapas.map((e, i) => {
+    const largura = i === 0 ? 100 : Math.min(escala(e.valor), anterior);
+    anterior = largura;
+    const dir = i === 0 ? '<span class="dim">topo do funil</span>'
+      : (e.taxa == null ? '—' : `<b>${pct(e.taxa)}</b> ${esc(e.taxa_label || '')}`);
+    return `<div class="funil-row">
+      <div class="funil-label">${esc(e.label)}</div>
+      <div class="funil-track"><div class="funil-fill" style="width:${largura}%"></div></div>
+      <div class="funil-val">${num(e.valor)}</div>
+      <div class="funil-taxa${i === gargalo ? ' gargalo' : ''}">${dir}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderSerie(linhas) {
+  const tb = document.getElementById('cap-serie-tbody');
+  tb.innerHTML = linhas.map(l => `<tr>
+    <td class="ad-nome">${dataBR(l.data)}</td>
+    <td>${brl(l.custo)}</td>
+    <td>${num(l.leads)}</td>
+    <td>${brl(l.cpl)}</td>
+    <td>${num(l.impressoes)}</td>
+    <td>${num(l.cliques)}</td></tr>`).join('');
+  const t = linhas.reduce((a, l) => ({
+    custo: a.custo + l.custo, leads: a.leads + l.leads,
+    imp: a.imp + l.impressoes, cli: a.cli + l.cliques,
+  }), {custo: 0, leads: 0, imp: 0, cli: 0});
+  document.getElementById('cap-serie-tfoot').innerHTML = `<tr>
+    <td style="text-align:left">Total · ${linhas.length} dia(s)</td>
+    <td>${brl(t.custo)}</td><td>${num(t.leads)}</td>
+    <td>${brl(t.leads ? t.custo / t.leads : null)}</td>
+    <td>${num(t.imp)}</td><td>${num(t.cli)}</td></tr>`;
+}
+
 function renderGrafico(linhas) {
   const cap = DADOS.fases.captura;
   document.getElementById('cap-chart-info').textContent =
-    `${num(cap.leads.total)} leads no período`;
+    `${num(cap.leads.total)} leads · barras = leads · linha = investido`;
   if (grafico) grafico.destroy();
   grafico = new Chart(document.getElementById('cap-chart').getContext('2d'), {
-    type: 'bar',
     data: {
       labels: linhas.map(l => dataBR(l.data)),
-      datasets: [{
-        label: 'Leads', data: linhas.map(l => l.leads),
-        backgroundColor: 'rgba(61,79,245,.55)', borderRadius: 4,
-      }],
+      datasets: [
+        {type: 'bar', label: 'Leads', data: linhas.map(l => l.leads),
+         backgroundColor: 'rgba(61,79,245,.55)', borderRadius: 4, yAxisID: 'y'},
+        {type: 'line', label: 'Investido', data: linhas.map(l => l.custo),
+         borderColor: '#3DD68C', backgroundColor: 'rgba(61,214,140,.12)',
+         borderWidth: 2, pointRadius: 3, tension: .3, fill: true, yAxisID: 'y2'},
+      ],
     },
     options: {
       responsive: true, maintainAspectRatio: false,
-      plugins: {legend: {display: false}},
+      interaction: {mode: 'index', intersect: false},
+      plugins: {legend: {labels: {color: '#9AA0C7'}}},
       scales: {
-        x: {ticks: {color: '#9AA0C7'}, grid: {display: false}},
-        y: {beginAtZero: true, ticks: {color: '#9AA0C7', precision: 0},
-            grid: {color: 'rgba(42,42,94,.5)'}},
+        x:  {ticks: {color: '#9AA0C7'}, grid: {display: false}},
+        y:  {beginAtZero: true, position: 'left',
+             ticks: {color: '#9AA0C7', precision: 0}, grid: {color: 'rgba(42,42,94,.5)'}},
+        y2: {beginAtZero: true, position: 'right',
+             ticks: {color: '#3DD68C', callback: v => 'R$ ' + v.toLocaleString('pt-BR')},
+             grid: {drawOnChartArea: false}},
       },
     },
   });

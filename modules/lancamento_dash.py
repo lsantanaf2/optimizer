@@ -53,12 +53,11 @@ LANCAMENTOS = {
             'captura': {
                 'label': 'Captura',
                 'patterns': ['[CAPTURA]'],
-                # Preenchido quando a planilha de leads existir. Sem isso a aba
-                # mostra o investimento e avisa que a fonte de leads falta.
                 'leads': {
-                    'spreadsheet_id': None,
-                    'gid': '0',
-                    'coluna_data': None,   # ex: 'Carimbo de data/hora'
+                    'spreadsheet_id': '1x4TkWMg9ezHGYG6_JMmwNHpBQG9Bm5QiJNxHp_clRMQ',
+                    'aba': 'BLACK26',
+                    'coluna_data': 'DATA',
+                    'coluna_campanha': 'UTM_CAMPAIGN',
                 },
             },
         },
@@ -597,7 +596,7 @@ def _fetch_por_anuncio(cfg, since, until):
     params = {
         'access_token': token,
         'level':        'ad',
-        'fields':       ('campaign_name,adset_name,ad_id,ad_name,'
+        'fields':       ('campaign_id,campaign_name,adset_name,ad_id,ad_name,'
                          'spend,impressions,reach,frequency,inline_link_clicks,'
                          'video_continuous_2_sec_watched_actions,'
                          'video_p75_watched_actions,'
@@ -627,9 +626,18 @@ def _fetch_por_anuncio(cfg, since, until):
         p75   = _vv(r.get('video_p75_watched_actions'))
         p95   = _vv(r.get('video_p95_watched_actions'))
         custo = round(gasto_bruto * (1 + META_TAX_RATE), 2)   # custo real
+        acoes = r.get('actions') or []
+        lpv = 0
+        for tipo in ('landing_page_view', 'omni_landing_page_view'):
+            lpv = sum(int(float(a.get('value', 0) or 0)) for a in acoes
+                      if a.get('action_type') == tipo)
+            if lpv:
+                break
         saida.append({
             'fase':        _fase_de(nome_camp, cfg),
             'campanha':    nome_camp,
+            'campaign_id': r.get('campaign_id', ''),
+            'lpv':         lpv,
             'adset':       r.get('adset_name', ''),
             'ad_id':       r.get('ad_id', ''),
             'ad':          r.get('ad_name', ''),
@@ -653,7 +661,7 @@ def _fetch_por_anuncio(cfg, since, until):
     return saida
 
 
-def _fetch_insights_nivel(cfg, since, until, nivel, campos, token):
+def _fetch_insights_nivel(cfg, since, until, nivel, campos, token, time_increment=None):
     """Insights do período num nível (adset/campaign), filtrados pelo lançamento.
 
     O token vem de fora: estas buscas rodam em thread paralela, e obter_token()
@@ -666,10 +674,13 @@ def _fetch_insights_nivel(cfg, since, until, nivel, campos, token):
     if not token:
         raise RuntimeError('Sistema não autenticado na Meta.')
 
-    raw = meta_get_insights_rows(f'{GRAPH_BASE}/{acct}/insights', {
+    params = {
         'access_token': token, 'level': nivel, 'fields': campos, 'limit': 500,
         'time_range': json.dumps({'since': since, 'until': until}, separators=(',', ':')),
-    }, timeout=60)
+    }
+    if time_increment:
+        params['time_increment'] = time_increment
+    raw = meta_get_insights_rows(f'{GRAPH_BASE}/{acct}/insights', params, timeout=60)
     padroes = [p.lower() for p in (cfg.get('campaign_patterns') or [])]
     return [r for r in raw
             if not padroes or any(p in (r.get('campaign_name') or '').lower() for p in padroes)]
@@ -725,8 +736,9 @@ def _fetch_alcance_campanha(cfg, since, until, token):
 
 def _totais_fase(ads):
     """Soma os anúncios de uma fase, recalculando as taxas sobre o total."""
-    t = {k: sum(a[k] or 0 for a in ads) for k in
-         ('custo', 'impressoes', 'alcance', 'cliques', 'video_2s', 'video_p75', 'video_p95')}
+    t = {k: sum(a.get(k) or 0 for a in ads) for k in
+         ('custo', 'impressoes', 'alcance', 'cliques', 'lpv',
+          'video_2s', 'video_p75', 'video_p95')}
     t['custo'] = round(t['custo'], 2)
     t['ads'] = len(ads)
     t['ctr']        = round(t['cliques'] / t['impressoes'] * 100, 2) if t['impressoes'] else None
@@ -739,38 +751,104 @@ def _totais_fase(ads):
     return t
 
 
-def _fetch_leads(fase_cfg, since, until):
-    """Leads por dia da planilha de captura. Sem planilha configurada: None."""
+def _normalizar_campanha(valor):
+    """Deixa o UTM comparável.
+
+    A mesma campanha chega de três jeitos na planilha: nome com colchetes,
+    nome URL-encoded ('BLACK+2026+VIDEO+VIEW') e só o ID numérico.
+    """
+    from urllib.parse import unquote_plus
+    v = unquote_plus((valor or '').strip())
+    return ''.join(c for c in v.upper() if c.isalnum() or c == ' ')
+
+
+def _fetch_leads(fase_cfg, cfg, since, until, ids_campanha):
+    """Linhas de lead da planilha, classificadas por origem.
+
+    Devolve as linhas em vez de só a contagem: a dash precisa quebrar por cada
+    UTM e permitir ocultar os leads de lançamentos anteriores sem recarregar.
+    O e-mail NÃO vai junto — a dash é link público.
+    """
     lcfg = (fase_cfg or {}).get('leads') or {}
-    sid, gid = lcfg.get('spreadsheet_id'), lcfg.get('gid', '0')
+    sid = lcfg.get('spreadsheet_id')
     if not sid:
         return None
 
-    url = (f'https://docs.google.com/spreadsheets/d/{sid}'
-           f'/gviz/tq?tqx=out:csv&gid={gid}')
-    resp = requests.get(url, timeout=25)
+    aba = lcfg.get('aba')
+    alvo = f'&sheet={requests.utils.quote(aba)}' if aba else f"&gid={lcfg.get('gid', '0')}"
+    resp = requests.get(
+        f'https://docs.google.com/spreadsheets/d/{sid}/gviz/tq?tqx=out:csv{alvo}', timeout=25)
     resp.raise_for_status()
     if resp.text.lstrip().startswith('<'):
         raise RuntimeError('planilha de leads não é pública')
     linhas = list(csv.DictReader(io.StringIO(resp.text)))
     if not linhas:
-        return {}
+        return {'linhas': []}
 
-    col = lcfg.get('coluna_data') or list(linhas[0].keys())[0]
+    col_data = lcfg.get('coluna_data') or list(linhas[0].keys())[0]
+    col_camp = lcfg.get('coluna_campanha') or 'UTM_CAMPAIGN'
+    padroes = [_normalizar_campanha(p) for p in (cfg.get('campaign_patterns') or [])]
+
+    def _col(r, *nomes):
+        for n in nomes:
+            if r.get(n):
+                return (r.get(n) or '').strip()
+        return ''
+
     since_d = datetime.strptime(since, '%Y-%m-%d').date()
     until_d = datetime.strptime(until, '%Y-%m-%d').date()
-    por_dia = {}
+    saida = []
     for r in linhas:
-        bruto = (r.get(col) or '').strip()[:10]
+        bruto = (r.get(col_data) or '').strip()[:10]
+        d = None
         for fmt in ('%d/%m/%Y', '%Y-%m-%d'):
             try:
                 d = datetime.strptime(bruto, fmt).date()
                 break
             except ValueError:
-                d = None
+                pass
         if not d or d < since_d or d > until_d:
             continue
-        por_dia[d.isoformat()] = por_dia.get(d.isoformat(), 0) + 1
+
+        utm = (r.get(col_camp) or '').strip()
+        norm = _normalizar_campanha(utm)
+        if not utm:
+            origem = 'sem_utm'
+        elif utm in ids_campanha or any(p and p in norm for p in padroes):
+            origem = 'lancamento'
+        else:
+            origem = 'outro'
+
+        saida.append({
+            'data':     d.isoformat(),
+            'origem':   origem,
+            'source':   _col(r, 'UTM_SOURCE', 'utm_source'),
+            'campanha': utm,
+            'medium':   _col(r, 'UTM_MEDIUM', 'utm_medium'),
+            'content':  _col(r, 'UTM_CONTENT', 'utm_content'),
+            'term':     _col(r, 'UTM_TERM', 'utm_term'),
+            'pagina':   _col(r, 'PÁG', 'PAG', 'PÁGINA', 'pagina'),
+        })
+    return {'linhas': saida}
+
+
+def _fetch_diario(cfg, since, until, token):
+    """Investimento e entrega por dia do lançamento inteiro."""
+    linhas = _fetch_insights_nivel(
+        cfg, since, until, 'campaign',
+        'campaign_name,spend,impressions,inline_link_clicks', token,
+        time_increment=1)
+    por_dia = {}
+    for r in linhas:
+        d = r.get('date_start')
+        if not d:
+            continue
+        e = por_dia.setdefault(d, {'custo': 0.0, 'impressoes': 0, 'cliques': 0})
+        e['custo'] += float(r.get('spend', 0) or 0) * (1 + META_TAX_RATE)
+        e['impressoes'] += int(r.get('impressions', 0) or 0)
+        e['cliques'] += int(r.get('inline_link_clicks', 0) or 0)
+    for e in por_dia.values():
+        e['custo'] = round(e['custo'], 2)
     return por_dia
 
 
@@ -1000,25 +1078,37 @@ def lancamento_fases(slug):
             'totais':   totais,
         }
 
-    # Leads da fase de captura (planilha), quando houver fonte configurada
+    # Leads da planilha. O lead chega pela campanha que o gerou, que hoje é a
+    # de aquecimento — por isso o funil e o custo por lead usam o lançamento
+    # inteiro, não só a fase de captura.
     cap = fases_cfg.get('captura') or {}
-    leads_por_dia, leads_erro = None, None
+    ids_camp = {a['campaign_id'] for a in ads if a.get('campaign_id')}
+    leads, leads_erro, diario = None, None, {}
     try:
-        leads_por_dia = get_or_fetch((f'lancamento:{slug}', 'leads', since, until), CACHE_TTL,
-                                     lambda: _fetch_leads(cap, since, until))
+        leads = get_or_fetch((f'lancamento:{slug}', 'leads', since, until), CACHE_TTL,
+                             lambda: _fetch_leads(cap, cfg, since, until, ids_camp))
     except Exception as e:
         leads_erro = str(e)
         logger.warning(f'[lancamento:{slug}] leads falharam: {e}')
+    try:
+        diario = get_or_fetch((f'lancamento:{slug}', 'diario', since, until), CACHE_TTL,
+                              lambda: _fetch_diario(cfg, since, until, token))
+    except Exception as e:
+        avisos.append(f'Série diária indisponível: {e}')
+        logger.warning(f'[lancamento:{slug}] série diária falhou: {e}')
 
+    geral = _totais_fase(ads)          # lançamento inteiro
     if 'captura' in saida:
-        total_leads = sum((leads_por_dia or {}).values()) if leads_por_dia else None
-        custo_cap = saida['captura']['totais']['custo']
         saida['captura']['leads'] = {
             'configurada': bool((cap.get('leads') or {}).get('spreadsheet_id')),
             'erro':        leads_erro,
-            'por_dia':     [{'data': d, 'leads': n} for d, n in sorted((leads_por_dia or {}).items())],
-            'total':       total_leads,
-            'cpl':         round(custo_cap / total_leads, 2) if total_leads else None,
+            # Linhas cruas (sem e-mail): a tela agrega por UTM e permite
+            # ocultar os leads de lançamentos anteriores sem recarregar.
+            'linhas':      (leads or {}).get('linhas') or [],
+            'diario':      [{'data': d, **v} for d, v in sorted(diario.items())],
+            # Entrega do lançamento inteiro, base do funil até o lead
+            'entrega': {'impressoes': geral['impressoes'], 'cliques': geral['cliques'],
+                        'lpv': geral['lpv'], 'custo': geral['custo']},
         }
 
     # Fora das duas fases (campanha do lançamento sem tag de fase)
