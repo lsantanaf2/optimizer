@@ -43,7 +43,9 @@ LANCAMENTOS = {
         'expert': 'Edu — Sorveteiro Raiz',
         'edicao': 'BLACK 2026',
         'ad_account_id': '741348911043132',
-        'campaign_patterns': ['[BLACK 2026]'],
+        # Duas grafias em uso na conta: o aquecimento subiu como [BLACK 2026] e
+        # a captura como [BLACK26]. Aceita as duas.
+        'campaign_patterns': ['[BLACK 2026]', '[BLACK26]'],
         'duas_fases': True,
         'fases': {
             'aquecimento': {
