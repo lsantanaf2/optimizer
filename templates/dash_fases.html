@@ -216,6 +216,24 @@
   .mini-bar{height:6px;border-radius:99px;background:var(--surface-alt);width:52px;flex:none}
   .mini-fill{height:100%;border-radius:99px;background:linear-gradient(90deg,var(--accent),var(--accent-soft))}
   .vazio-fase{padding:34px 20px;text-align:center;color:var(--text-muted);font-size:.84rem;line-height:1.6}
+  /* Funil em degraus, igual ao do LP11 */
+  .funnel{display:flex;flex-direction:column;gap:0}
+  .step{position:relative;background:var(--surface-alt);border:1px solid var(--stroke);
+    border-radius:var(--r-card);padding:14px 16px;margin-bottom:24px}
+  .step:last-child{margin-bottom:0}
+  .step-l{font-size:.68rem;color:var(--text-muted);text-transform:uppercase;
+    letter-spacing:.07em;display:flex;align-items:center;gap:6px}
+  .step-v{font-size:1.65rem;font-weight:700;margin-top:4px}
+  .step-cost{position:absolute;right:14px;top:14px;text-align:right}
+  .step-cost small{display:block;font-size:.6rem;color:var(--text-muted);
+    text-transform:uppercase;letter-spacing:.06em}
+  .step-cost b{font-size:.95rem;font-weight:600;color:var(--accent-soft)}
+  .rate{position:absolute;right:16px;bottom:-17px;z-index:2;background:var(--accent);
+    color:#fff;border-radius:var(--r-badge);padding:5px 11px;font-size:.72rem;font-weight:600;
+    box-shadow:0 4px 14px rgba(61,79,245,.35);display:flex;align-items:center;gap:6px}
+  .rate small{font-weight:400;opacity:.85;font-size:.64rem}
+  .rate.warn{background:#7c4a11;box-shadow:none}
+
   .chart-wrap{position:relative;height:260px}
   @media(max-width:720px){.chart-wrap{height:210px}}
   .utm-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
@@ -363,9 +381,9 @@
       <div id="cap-aviso"></div>
 
       <div class="card" id="cap-funil-card" style="display:none">
-        <div class="card-t"><span>Funil até o lead</span>
-          <span class="dim">lançamento inteiro, não só a fase de captura</span></div>
-        <div class="funil" id="cap-funil"></div>
+        <div class="card-t"><span>Funil</span>
+          <span class="dim">custos c/ imposto · lançamento inteiro</span></div>
+        <div class="funnel" id="cap-funil"></div>
       </div>
 
       <div class="card" id="cap-chart-card" style="display:none;margin-top:14px">
@@ -563,18 +581,21 @@ function renderCaptura() {
   document.getElementById('cap-aviso').innerHTML =
     avisos.length ? `<div class="warnbox">${avisos.join('<br>')}</div>` : '';
 
-  // ── Funil até o lead ──
+  // ── Funil: impressões → cliques → page view → lead ──
+  const imp = entrega.impressoes || 0, cli = entrega.cliques || 0, lpv = entrega.lpv || 0;
+  const div = (a, b) => b ? a / b : null;
   const funil = [
-    {label: 'Impressões', valor: entrega.impressoes || 0, taxa: null},
-    {label: 'Cliques no link', valor: entrega.cliques || 0,
-     taxa: entrega.impressoes ? entrega.cliques / entrega.impressoes * 100 : null, taxa_label: 'CTR'},
-    {label: 'Visitas na página', valor: entrega.lpv || 0,
-     taxa: entrega.cliques ? entrega.lpv / entrega.cliques * 100 : null, taxa_label: 'dos cliques'},
-    {label: 'Leads', valor: n,
-     taxa: entrega.lpv ? n / entrega.lpv * 100 : null, taxa_label: 'das visitas'},
+    {etapa: 'Impressões', volume: imp, custo_label: 'CPM',
+     custo: div(custoBase * 1000, imp)},
+    {etapa: 'Cliques no link', volume: cli, custo_label: 'CPC',
+     custo: div(custoBase, cli), taxa: div(cli * 100, imp), taxa_label: 'CTR'},
+    {etapa: 'Page view', volume: lpv, custo_label: 'CP LPV',
+     custo: div(custoBase, lpv), taxa: div(lpv * 100, cli), taxa_label: 'Connect rate'},
+    {etapa: 'Lead', volume: n, custo_label: 'CP LEAD',
+     custo: div(custoBase, n), taxa: div(n * 100, lpv), taxa_label: 'LP → Lead'},
   ];
-  document.getElementById('cap-funil-card').style.display = entrega.impressoes ? '' : 'none';
-  if (entrega.impressoes) renderFunil(funil);
+  document.getElementById('cap-funil-card').style.display = imp ? '' : 'none';
+  if (imp) renderFunil(funil);
 
   // ── Série por dia: investimento da Meta + leads visíveis ──
   const porDia = {};
@@ -716,27 +737,21 @@ function renderAds() {
     <td>${num(t.cliques)}<br><span class="dim" style="font-size:.72rem">${pct(t.ctr)}</span></td></tr>`;
 }
 
-// Funil até o lead: barra pela taxa de passagem, porque impressões são ordens
-// de grandeza maiores que leads e a barra por volume sumiria no fim.
+// Funil em degraus, mesmo desenho do LP11: cada etapa é um card que estreita,
+// com o custo unitário à direita e a taxa de passagem na emenda.
 function renderFunil(etapas) {
-  const topo = Math.max(...etapas.map(e => e.valor), 1);
-  const escala = v => v <= 0 ? 0 : Math.log(v + 1) / Math.log(topo + 1) * 100;
-  let gargalo = -1, menor = Infinity;
-  etapas.forEach((e, i) => {
-    if (i === 0 || e.taxa == null) return;
-    if (e.taxa < menor) { menor = e.taxa; gargalo = i; }
-  });
-  let anterior = 100;
+  const larguras = [100, 96, 92, 88];
   document.getElementById('cap-funil').innerHTML = etapas.map((e, i) => {
-    const largura = i === 0 ? 100 : Math.min(escala(e.valor), anterior);
-    anterior = largura;
-    const dir = i === 0 ? '<span class="dim">topo do funil</span>'
-      : (e.taxa == null ? '—' : `<b>${pct(e.taxa)}</b> ${esc(e.taxa_label || '')}`);
-    return `<div class="funil-row">
-      <div class="funil-label">${esc(e.label)}</div>
-      <div class="funil-track"><div class="funil-fill" style="width:${largura}%"></div></div>
-      <div class="funil-val">${num(e.valor)}</div>
-      <div class="funil-taxa${i === gargalo ? ' gargalo' : ''}">${dir}</div>
+    const temTaxa = e.taxa_label && e.taxa != null;
+    // Taxa acima de 100% é impossível e denuncia rastreamento inconsistente
+    const suspeita = temTaxa && e.taxa > 100;
+    return `<div class="step" style="width:${larguras[i] || 84}%">
+      <div class="step-l">${esc(e.etapa)}</div>
+      <div class="step-v num">${num(e.volume)}</div>
+      <div class="step-cost"><small>${esc(e.custo_label)}</small>
+        <b class="num">${brl(e.custo)}</b></div>
+      ${temTaxa ? `<div class="rate ${suspeita ? 'warn' : ''}">
+          ${suspeita ? '⚠ ' : ''}${pct(e.taxa)} <small>${esc(e.taxa_label)}</small></div>` : ''}
     </div>`;
   }).join('');
 }
