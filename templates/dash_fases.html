@@ -244,7 +244,9 @@
   .utm-bloco table{font-size:.76rem}
   .utm-bloco td{padding:7px 12px}
   .utm-bloco td:first-child{max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .toggle{display:inline-flex;align-items:center;gap:7px;padding:6px 13px;cursor:pointer;
+  .tag-zero{font-size:10px;padding:2px 6px;border-radius:4px;background:#2a2a35;
+  color:var(--text-muted);border:1px solid #3a3a48;vertical-align:middle}
+.toggle{display:inline-flex;align-items:center;gap:7px;padding:6px 13px;cursor:pointer;
     background:var(--bg-deep);border:1px solid var(--stroke);border-radius:99px;
     color:var(--text-muted);font:inherit;font-size:.76rem}
   .toggle:hover{border-color:var(--accent-soft);color:var(--text)}
@@ -572,8 +574,12 @@ function renderCaptura() {
 
   const avisos = [];
   if (lead.erro) avisos.push('Erro ao ler a planilha: ' + esc(lead.erro));
-  if (!tc.ads) {
+  const noAr = cap.ads.filter(a => !a.sem_entrega).length;
+  if (!cap.ads.length) {
     avisos.push('Nenhuma campanha com a tag <b>[CAPTURA]</b> no ar ainda — os leads estão chegando pela campanha de aquecimento.');
+  } else if (!noAr) {
+    avisos.push(`A campanha de captura já está no ar com <b>${cap.ads.length} anúncio(s) ativo(s)</b>, mas ainda ` +
+                'não teve nenhuma entrega (zero impressões). Enquanto isso os leads chegam pela campanha de aquecimento.');
   }
   if (semUtm) {
     avisos.push(`${semUtm} lead(s) chegaram sem UTM na planilha. Eles entram na contagem, mas não aparecem quebrados por origem.`);
@@ -626,7 +632,8 @@ function renderCaptura() {
     vz.style.display = 'none';
     tb.innerHTML = cap.ads.map(a => `<tr>
       <td class="ad-nome"><span class="ad-link" title="ver o criativo"
-        onclick="verCriativo('${esc(a.ad_id)}')">${esc(a.ad)}</span></td>
+        onclick="verCriativo('${esc(a.ad_id)}')">${esc(a.ad)}</span>${
+        a.sem_entrega ? ' <span class="tag-zero">sem entrega</span>' : ''}</td>
       <td>${brl(a.custo)}</td><td>${num(a.impressoes)}</td>
       <td>${num(a.cliques)}</td><td>${brl(a.cpm)}</td></tr>`).join('');
   }

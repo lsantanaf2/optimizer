@@ -854,6 +854,54 @@ def _fetch_diario(cfg, since, until, token):
     return por_dia
 
 
+def _fetch_ads_ativos(cfg, token):
+    """Anúncios ATIVOS do lançamento, vindos do cadastro — não dos insights.
+
+    Insights só devolve linha para anúncio que entregou. Campanha que subiu
+    hoje e ainda não gastou nada simplesmente não aparece, o que na tela virava
+    "sem anúncios" e parecia bug. Aqui buscamos o cadastro para conseguir
+    listar esses anúncios com zero, deixando claro que ainda não há entrega.
+    """
+    from modules.meta_client import meta_get
+    acct = cfg['ad_account_id']
+    if not acct.startswith('act_'):
+        acct = f'act_{acct}'
+    if not token:
+        raise RuntimeError('Sistema não autenticado na Meta.')
+
+    params = {
+        'access_token': token,
+        'fields': 'id,name,effective_status,campaign{id,name},adset{name}',
+        'limit': 200,
+        'filtering': json.dumps(
+            [{'field': 'ad.effective_status', 'operator': 'IN', 'value': ['ACTIVE']}],
+            separators=(',', ':')),
+    }
+    dados = meta_get(f'{GRAPH_BASE}/{acct}/ads', params, timeout=45) or {}
+    padroes = [p.lower() for p in (cfg.get('campaign_patterns') or [])]
+    saida = []
+    for r in dados.get('data') or []:
+        camp = r.get('campaign') or {}
+        nome_camp = camp.get('name') or ''
+        if padroes and not any(p in nome_camp.lower() for p in padroes):
+            continue
+        saida.append({
+            'fase':        _fase_de(nome_camp, cfg),
+            'campanha':    nome_camp,
+            'campaign_id': camp.get('id', ''),
+            'adset':       (r.get('adset') or {}).get('name', ''),
+            'ad_id':       r.get('id', ''),
+            'ad':          r.get('name', ''),
+            'sem_entrega': True,
+            'lpv': 0, 'custo': 0.0, 'impressoes': 0, 'alcance': 0,
+            'frequencia': 0, 'cliques': 0,
+            'video_2s': 0, 'video_p75': 0, 'video_p95': 0,
+            'ctr': None, 'hook_rate': None, 'retencao_75': None,
+            'custo_vv75': None, 'custo_vv95': None, 'cpm': None,
+        })
+    return saida
+
+
 # ── Rotas ────────────────────────────────────────────────────────────────────
 
 @lancamento_bp.route('/dash/lancamento/<slug>')
@@ -1063,9 +1111,24 @@ def lancamento_fases(slug):
                           f'a frequência cai para a soma por anúncio, que é imprecisa.')
 
     fases_cfg = cfg.get('fases') or {}
+
+    # Fase com campanha no ar mas sem entrega nenhuma não vem nos insights.
+    # Nesse caso buscamos o cadastro para listar os anúncios zerados em vez de
+    # dizer "sem anúncios", que parecia bug.
+    vazias = [c for c in fases_cfg if not any(a['fase'] == c for a in ads)]
+    ativos = []
+    if vazias:
+        try:
+            ativos = get_or_fetch((f'lancamento:{slug}', 'ads_ativos'), CACHE_TTL,
+                                  lambda: _fetch_ads_ativos(cfg, token))
+        except Exception as e:
+            logger.warning(f'[lancamento:{slug}] cadastro de anúncios falhou: {e}')
+
     saida = {}
     for chave, fcfg in fases_cfg.items():
         desta = [a for a in ads if a['fase'] == chave]
+        if not desta and chave in vazias:
+            desta = [a for a in ativos if a['fase'] == chave]
         totais = _totais_fase(desta)
         real = alcance_fase.get(chave)
         if real:
