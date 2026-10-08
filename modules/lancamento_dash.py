@@ -67,6 +67,49 @@ LANCAMENTOS = {
             'inicio_aquecimento': '2026-09-24',
             'inicio_captura': None,
         },
+        # Pesquisa de perfil respondida pelos leads da captura. Formulário
+        # próprio deste lançamento — colunas diferentes do LP11, por isso a
+        # lista vem aqui e não na global PESQUISA_CAMPOS.
+        'pesquisa': {
+            'spreadsheet_id': '19FLdu_C-cY7g4_CK5gzvui3abmx8uRLPRI4huLwuUiE',
+            'gid': '0',
+            # Nome, e-mail e telefone ficam de fora de propósito: só coluna
+            # mapeada é lida, então PII nenhuma sai na resposta da API.
+            'campos': [
+                {'key': 'intencao',    'label': 'Intenção na Black (22/10)', 'tipo': 'single',
+                 'coluna': 'Sobre a Black do dia 22/10, qual frase mais combina com você?'},
+                {'key': 'aluno',       'label': 'Já é aluno?',               'tipo': 'single',
+                 'coluna': 'Você já é aluno do curso Profissão Sorveteiro?'},
+                {'key': 'impedimento', 'label': 'O que impediu de entrar',   'tipo': 'single',
+                 'coluna': 'O que mais te impediu de entrar no Profissão Sorveteiro até hoje?'},
+                {'key': 'tema',        'label': 'Tema de maior interesse',   'tipo': 'single',
+                 'coluna': 'Qual destes temas mais te interessa aprender agora? (escolha só um)'},
+                {'key': 'dificuldade', 'label': 'Maior dificuldade',         'tipo': 'single',
+                 'coluna': 'Qual é a sua MAIOR dificuldade hoje no ramo? (escolha só uma)'},
+                {'key': 'negocio',     'label': 'Negócio hoje',              'tipo': 'multi',
+                 'coluna': 'Qual é o seu negócio hoje?'},
+                # O formulário já entrega faixa pronta: sem norm, para não cair
+                # em "Não informado" quem respondeu "Ainda vou começar".
+                {'key': 'faturamento', 'label': 'Faturamento mensal',        'tipo': 'single',
+                 'coluna': 'Qual é o seu faturamento mensal hoje?'},
+                {'key': 'tempo',       'label': 'Tempo no ramo',             'tipo': 'single',
+                 'coluna': 'Há quanto tempo você trabalha com sorvete ou açaí?'},
+                {'key': 'producao',    'label': 'Como produz hoje',          'tipo': 'single',
+                 'coluna': 'Como você faz o seu sorvete hoje?'},
+                {'key': 'equipe',      'label': 'Tamanho da equipe',         'tipo': 'single',
+                 'coluna': 'Quantas pessoas trabalham no seu negócio (contando você)?'},
+                {'key': 'aulas',       'label': 'Já assistiu aula',          'tipo': 'multi',
+                 'coluna': 'Você já assistiu alguma aula comigo?'},
+                {'key': 'idade',       'label': 'Faixa etária',              'tipo': 'single',
+                 'coluna': 'Qual sua faixa etária?'},
+                {'key': 'sexo',        'label': 'Sexo',                      'tipo': 'single',
+                 'coluna': 'Qual seu sexo?'},
+                {'key': 'estado',      'label': 'Estado',                    'tipo': 'single',
+                 'norm': 'estado',
+                 'coluna': 'Qual é o seu estado?'},
+            ],
+            'textos': [],          # este formulário não tem texto livre
+        },
     },
     'lp11': {
         'nome': 'Aulão de Balanceamento',
@@ -394,6 +437,7 @@ PESQUISA_CAMPOS = [
     {'key': 'situacao',     'label': 'Situação atual',        'tipo': 'single',
      'coluna': 'Qual a sua situação atual?'},
     {'key': 'faturamento',  'label': 'Faturamento mensal',    'tipo': 'single',
+     'norm': 'faturamento',
      'coluna': 'Quanto a sua empresa vende por mês'},
     {'key': 'dificuldade',  'label': 'Maior dificuldade',     'tipo': 'multi',
      'coluna': 'Qual a sua maior dificuldade hoje?'},
@@ -408,6 +452,7 @@ PESQUISA_CAMPOS = [
     {'key': 'escolaridade', 'label': 'Escolaridade',          'tipo': 'single',
      'coluna': 'Qual o seu nível de escolaridade?'},
     {'key': 'estado',       'label': 'Estado',                'tipo': 'single',
+     'norm': 'estado',
      'coluna': 'Qual é o seu estado?'},
     {'key': 'origem',       'label': 'Como conheceu',         'tipo': 'single',
      'coluna': 'Como você conheceu meu trabalho?'},
@@ -475,6 +520,40 @@ def _split_multi(valor):
     return out
 
 
+def _resolver_multi(brutos):
+    """Decide, por coluna, o que é combinação de opções e o que é opção única.
+
+    Uma opção do formulário pode ter vírgula dentro ("Ainda não tenho, quero
+    começar"), e quebrar a célula na vírgula inventa duas respostas que não
+    existem. Uma opção de verdade se delata por aparecer em respostas
+    diferentes: ou sozinha numa célula, ou combinada em pelo menos duas
+    respostas distintas. Pedaço que só existe dentro de uma única frase é
+    parte da frase, não opção.
+    """
+    sozinhas, vistas = set(), {}
+    for b in set(brutos):
+        partes = _split_multi(b)
+        if len(partes) <= 1:
+            sozinhas.update(partes)
+            continue
+        for p in partes:
+            vistas[p] = vistas.get(p, 0) + 1     # em quantas células distintas
+
+    def _conhecida(p):
+        return p in sozinhas or vistas.get(p, 0) >= 2
+
+    saida = {}
+    for b in set(brutos):
+        partes = _split_multi(b)
+        if len(partes) > 1 and all(_conhecida(p) for p in partes):
+            saida[b] = partes
+        else:
+            saida[b] = partes if len(partes) == 1 else [b]
+        if not saida[b]:
+            saida[b] = ['Não informado']
+    return saida
+
+
 def _norm_estado(valor):
     v = (valor or '').strip()
     if not v:
@@ -511,6 +590,15 @@ def _bucket_faturamento(valor):
     return 'Não informado'
 
 
+def _pesquisa_campos(cfg):
+    """Campos da pesquisa deste lançamento (cai no formulário do LP11)."""
+    pcfg = cfg.get('pesquisa') or {}
+    campos = pcfg.get('campos')
+    textos = pcfg.get('textos')
+    return (campos if campos is not None else PESQUISA_CAMPOS,
+            textos if textos is not None else PESQUISA_TEXTOS)
+
+
 def _fetch_pesquisa(cfg):
     """Lê o formulário de perfil e devolve as respostas SEM dado pessoal."""
     pcfg = cfg.get('pesquisa') or {}
@@ -535,8 +623,9 @@ def _fetch_pesquisa(cfg):
         return None
 
     header = list(rows[0].keys()) if rows else []
-    mapa_campos = {c['key']: _achar(header, c['coluna']) for c in PESQUISA_CAMPOS}
-    mapa_textos = {t['key']: _achar(header, t['coluna']) for t in PESQUISA_TEXTOS}
+    campos, textos = _pesquisa_campos(cfg)
+    mapa_campos = {c['key']: _achar(header, c['coluna']) for c in campos}
+    mapa_textos = {t['key']: _achar(header, t['coluna']) for t in textos}
 
     out = []
     for r in rows:
@@ -545,23 +634,34 @@ def _fetch_pesquisa(cfg):
             continue
 
         reg = {}
-        for campo in PESQUISA_CAMPOS:
+        for campo in campos:
             col = mapa_campos.get(campo['key'])
             bruto = (r.get(col) or '').strip() if col else ''
-            if campo['key'] == 'estado':
+            # Normalização é opt-in pelo campo: o formulário de um lançamento já
+            # entrega faixa de faturamento pronta, o de outro aceita número livre.
+            if campo.get('norm') == 'estado':
                 reg[campo['key']] = _norm_estado(bruto)
-            elif campo['key'] == 'faturamento':
+            elif campo.get('norm') == 'faturamento':
                 reg[campo['key']] = _bucket_faturamento(bruto)
             elif campo['tipo'] == 'multi':
-                reg[campo['key']] = _split_multi(bruto) or ['Não informado']
+                # Guarda cru: a quebra em opções precisa da coluna inteira
+                # para saber qual vírgula separa e qual faz parte da frase.
+                reg[campo['key']] = bruto
             else:
                 reg[campo['key']] = bruto or 'Não informado'
 
-        for texto in PESQUISA_TEXTOS:
+        for texto in textos:
             col = mapa_textos.get(texto['key'])
             reg[texto['key']] = (r.get(col) or '').strip() if col else ''
 
         out.append(reg)
+
+    for campo in campos:
+        if campo['tipo'] != 'multi':
+            continue
+        mapa = _resolver_multi([reg[campo['key']] for reg in out])
+        for reg in out:
+            reg[campo['key']] = mapa[reg[campo['key']]]
 
     logger.info(f'[lancamento] pesquisa: {len(out)} respostas lidas (sem PII)')
     return out
@@ -1319,7 +1419,19 @@ def lancamento_pesquisa(slug):
         return jsonify({'success': False, 'error': f'Planilha da pesquisa: {e}'}), 502
 
     # Ingressos vendidos: base do percentual de resposta. Mesma janela da aba
-    # principal, para o número bater com o card de Ingressos.
+    # principal, para o número bater com o card de Ingressos. Lançamento em
+    # duas fases ainda não vende ingresso — a base lá é o volume de leads, que a
+    # própria tela cruza com a aba de captura.
+    campos, textos = _pesquisa_campos(cfg)
+    if cfg.get('duas_fases'):
+        return jsonify({
+            'success': True, 'respostas': respostas, 'total': len(respostas),
+            'ingressos': None,
+            'campos': [{'key': c['key'], 'label': c['label'], 'tipo': c['tipo']}
+                       for c in campos],
+            'textos': [{'key': t['key'], 'label': t['label']} for t in textos],
+        })
+
     dts = cfg['datas']
     since = dts.get('inicio_venda_ingresso')
     until = dts.get('fechamento_carrinho') or date.today().isoformat()
@@ -1342,8 +1454,8 @@ def lancamento_pesquisa(slug):
         'total':     len(respostas),
         'ingressos': ingressos,
         'campos':    [{'key': c['key'], 'label': c['label'], 'tipo': c['tipo']}
-                      for c in PESQUISA_CAMPOS],
-        'textos':    [{'key': t['key'], 'label': t['label']} for t in PESQUISA_TEXTOS],
+                      for c in campos],
+        'textos':    [{'key': t['key'], 'label': t['label']} for t in textos],
     })
 
 
