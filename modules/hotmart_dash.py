@@ -12,7 +12,8 @@ Rotas:
 
 Regras de negócio (ver docstring de _aggregate):
   - 7 produtos TOPO FUNIL definem os funis (EMA em 6 idiomas + SSM)
-  - SFD só define funil quando é a venda de entrada (ver FUNIS_SO_ENTRADA)
+  - SFD e SFD Radar só definem funil quando são a venda de entrada, e a chave
+    inclui o nome do produto porque IDs foram reaproveitados (FUNIS_SO_ENTRADA)
   - Bumps/upsells herdam o funil da transação mãe (coluna E, cadeia recursiva)
   - Sem mãe/DE-PARA → bucket "Sem atribuição" (exibido para auditoria)
   - Valores SEMPRE da coluna 'Comissão BRL'
@@ -49,15 +50,31 @@ FUNIS = {
     '8126548': 'SSM',      # Segundo Salário com Milhas
 }
 # Produtos que só definem funil quando são a ENTRADA (venda sem transação mãe).
-# O SFD é vendido como upsell dentro dos funis de EMA desde julho e, desde
-# 27/09/2026, também como produto de front. Ancorar pelo ID, como os demais,
-# levaria ~R$ 170 mil de upsells antigos para fora dos funis de EMA.
+# Ancorar pelo ID, como os produtos de topo, levaria os upsells antigos destes
+# mesmos produtos para fora dos funis de EMA (~R$ 170 mil no caso do SFD).
+#
+# A chave inclui o NOME do produto porque a Hotmart reaproveitou dois IDs na
+# troca de 08-09/10/2026, e o nome é o que separa as duas eras na planilha:
+#   7763423  'Secret Flight Deals' (até 08/10 21:26) → 'SFD Radar' (de 08/10 22:17)
+#   4956764  'Alerta da Milhas Lucrativas' (até 08/10 15:50) → 'Secret Flight
+#            Deals' (de 09/10 00:28), o novo front do funil português, que
+#            substituiu o Emissões Avançadas (última entrada em volume 08/10 21:15)
+# Datar por nome e não por calendário mantém o histórico intacto: as entradas
+# que o 4956764 teve como Alerta da Milhas (jul-set) seguem fora do SFD.
 FUNIS_SO_ENTRADA = {
-    '7763423': 'SFD',      # Secret Flight Deals
+    ('7763423', 'Secret Flight Deals'): 'SFD',        # front antigo do SFD
+    ('4956764', 'Secret Flight Deals'): 'SFD',        # front novo (ex-Alerta da Milhas)
+    ('7763423', 'SFD Radar'):           'SFD-RADAR',  # upsell dos EMAs internacionais
 }
-FUNIL_ORDER = ['EMA-PT', 'EMA-ES', 'EMA-EN', 'EMA-FR', 'EMA-IT', 'EMA-DE', 'SSM', 'SFD']
+FUNIL_ORDER = ['EMA-PT', 'EMA-ES', 'EMA-EN', 'EMA-FR', 'EMA-IT', 'EMA-DE', 'SSM',
+               'SFD', 'SFD-RADAR']
 EMA_KEYS = ['EMA-PT', 'EMA-ES', 'EMA-EN', 'EMA-FR', 'EMA-IT', 'EMA-DE']
 TIPOS = ['TOPO FUNIL', 'ORDER BUMP', 'UPSELL']
+
+def _funil_so_entrada(row):
+    """Funil que este produto ancora SE for a venda de entrada (ou None)."""
+    return FUNIS_SO_ENTRADA.get(((row.get('Product ID') or '').strip(),
+                                 (row.get('Produto') or '').strip()))
 
 
 # ── Leitura da planilha ───────────────────────────────────────────────────────
@@ -239,10 +256,11 @@ def _resolver(rows):
         # Transação que aponta para si mesma como mãe é ruído do webhook
         if par and par != tx:
             parents[tx] = par
+        so_entrada = _funil_so_entrada(r)
         if pid in FUNIS:
             anchors[tx] = FUNIS[pid]
-        elif pid in FUNIS_SO_ENTRADA:
-            candidatas_entrada[tx] = FUNIS_SO_ENTRADA[pid]
+        elif so_entrada:
+            candidatas_entrada[tx] = so_entrada
         if (r.get('Status') or '').strip().upper() == 'APPROVED':
             aprovadas.add(tx)
             d = _parse_date(r.get('Recebido em'))

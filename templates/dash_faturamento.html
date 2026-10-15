@@ -43,7 +43,9 @@
     .kpi-sub { font-size: .75rem; color: var(--muted); margin-top: 4px; }
 
     .funis-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
-    .funil-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    .funil-nota{font-size:.74rem;line-height:1.5;color:var(--muted);
+    border-top:1px solid var(--border);margin-top:10px;padding-top:10px}
+  .funil-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
                   padding: 18px 20px; }
     .funil-card.global { border-color: var(--accent); }
     .funil-card.sem { border-color: var(--amber); }
@@ -150,7 +152,11 @@ function clearPresetHighlight() {
 }
 
 const FUNIL_FLAGS = { 'EMA-PT': '🇧🇷', 'EMA-ES': '🇪🇸', 'EMA-EN': '🇺🇸', 'EMA-FR': '🇫🇷',
-                      'EMA-IT': '🇮🇹', 'EMA-DE': '🇩🇪', 'SFD': '✈️' };
+                      'EMA-IT': '🇮🇹', 'EMA-DE': '🇩🇪', 'SFD': '✈️',
+                      'SFD-RADAR': '📡' };
+// Nome legivel do funil. SFD assumiu o front do portugues em 09/10/2026 e o
+// SFD antigo passou a se chamar SFD Radar, virando o upsell dos EMAs gringos.
+const FUNIL_NOMES = { 'SFD': 'Secret Flight Deals', 'SFD-RADAR': 'SFD Radar' };
 const fmtPct = v => Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
 
 function tipoTable(por_tipo, brutoTotal) {
@@ -166,10 +172,19 @@ function tipoTable(por_tipo, brutoTotal) {
 
 function funilCard(f, extraClass = '', title = null) {
   const flag = FUNIL_FLAGS[f.key] ? FUNIL_FLAGS[f.key] + ' ' : '';
+  const nome = FUNIL_NOMES[f.key] || f.key;
   const pctReemb = f.bruto > 0 ? (f.reembolsos / f.bruto * 100) : 0;
+  // O SFD Radar e o upsell dos EMAs internacionais: a receita dele ja esta
+  // dentro do funil de cada idioma. Este card so enche se ele for vendido
+  // como porta de entrada, o que ainda nao aconteceu.
+  const vazio = f.key === 'SFD-RADAR' && !f.qtd_vendas && !f.qtd_reembolsos
+    ? `<div class="funil-nota">Sem venda de entrada no periodo. O SFD Radar e
+         vendido como upsell dentro dos EMAs internacionais, e a receita dele
+         aparece na linha <b>Upsell</b> de cada funil de idioma.</div>`
+    : '';
   return `<div class="funil-card ${extraClass}">
     <div class="funil-head">
-      <span class="funil-name">${title || (flag + f.key)}</span>
+      <span class="funil-name">${title || (flag + nome)}</span>
       <span class="funil-qtd">${fmtInt(f.qtd_vendas)} vendas · ${fmtInt(f.qtd_reembolsos)} reemb.</span>
     </div>
     <div class="funil-values">
@@ -179,6 +194,7 @@ function funilCard(f, extraClass = '', title = null) {
       <div class="fv"><div class="fv-label">Líquido</div><div class="fv-value txt-green">${fmtBRL(f.liquido)}</div></div>
     </div>
     ${tipoTable(f.por_tipo, f.bruto)}
+    ${vazio}
   </div>`;
 }
 
