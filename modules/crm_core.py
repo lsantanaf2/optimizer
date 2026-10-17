@@ -230,7 +230,8 @@ _SUB_CAMPOS = [
 
 
 def registrar_captura(*, whatsapp_e164, pais, nome, email, empresa_segmento,
-                      form_key, atribuicao, first_seen_at=None, payload=None):
+                      form_key, atribuicao, first_seen_at=None, payload=None,
+                      faturamento_anual=None):
     """Grava um cadastro. Tudo numa transação.
 
     Retorna dict com lead_id, submission_id, is_novo e submissions_count.
@@ -258,8 +259,8 @@ def registrar_captura(*, whatsapp_e164, pais, nome, email, empresa_segmento,
             """
             INSERT INTO crm_leads (
                 whatsapp_e164, whatsapp_pais, nome, email, empresa_segmento,
-                submissions_count, last_submission_at
-            ) VALUES (%s, %s, %s, %s, %s, 1, NOW())
+                faturamento_anual, submissions_count, last_submission_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, 1, NOW())
             ON CONFLICT (whatsapp_e164) DO UPDATE SET
                 nome               = COALESCE(crm_leads.nome, EXCLUDED.nome),
                 email              = COALESCE(crm_leads.email, EXCLUDED.email),
@@ -267,11 +268,16 @@ def registrar_captura(*, whatsapp_e164, pais, nome, email, empresa_segmento,
                                               EXCLUDED.empresa_segmento),
                 whatsapp_pais      = COALESCE(crm_leads.whatsapp_pais,
                                               EXCLUDED.whatsapp_pais),
+                -- faturamento declarado no formulário não sobrescreve o que o
+                -- operador apurou na call
+                faturamento_anual  = COALESCE(crm_leads.faturamento_anual,
+                                              EXCLUDED.faturamento_anual),
                 submissions_count  = crm_leads.submissions_count + 1,
                 last_submission_at = NOW()
             RETURNING id, submissions_count
             """,
-            (whatsapp_e164, pais or None, nome, email, empresa_segmento),
+            (whatsapp_e164, pais or None, nome, email, empresa_segmento,
+             faturamento_anual),
         )
         row = cur.fetchone()
         lead_id = row['id']

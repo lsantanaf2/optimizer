@@ -3,74 +3,272 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{{ form.name }}</title>
-  <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <title>{{ form.name }} — SK Marketing</title>
+  <meta name="description" content="Gestão de tráfego pago com relatório de resultado real, não só de clique.">
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="{{ url_for('static', filename='sk-logo.png') }}">
+  <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
+    /* ===========================================================
+       Identidade SK — cores amostradas do próprio logo:
+       indigo #3C3084 · roxo #544890 · azul #6090C0 · ciano #4FC0DC
+       =========================================================== */
     :root {
-      --bg: #0a0a0c; --surface: #16161a; --border: #2d2d30;
-      --accent: #00f2ff; --text: #f0f0f5; --muted: #5a5a6e;
-      --danger: #ef4444; --success: #22c55e;
+      --sk-indigo:  #3b2f84;
+      --sk-roxo:    #544890;
+      --sk-azul:    #6090c0;
+      --sk-ciano:   #4fc0dc;
+      --sk-ciano-claro: #7ad4ea;
+      --sk-gradiente: linear-gradient(110deg, var(--sk-indigo) 0%, var(--sk-roxo) 38%, var(--sk-azul) 68%, var(--sk-ciano) 100%);
+
+      --tinta:      #1d1a3d;
+      --tinta-suave:#5a5780;
+      --linha:      #e4e3ef;
+      --campo-bg:   #f7f7fb;
+      --branco:     #ffffff;
+      --erro:       #d93838;
+
+      --raio:   14px;
+      --raio-g: 26px;
+      --sombra: 0 18px 50px rgba(59, 47, 132, .10);
     }
+
     * { box-sizing: border-box; margin: 0; padding: 0; }
+
     body {
       font-family: 'Lexend', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      background: var(--bg); color: var(--text);
-      min-height: 100vh; display: flex; align-items: center; justify-content: center;
-      padding: 24px;
+      /* Moldura colorida como na referência, só que no gradiente da SK */
+      background: var(--sk-gradiente);
+      color: var(--tinta);
+      -webkit-font-smoothing: antialiased;
+      padding: 14px;
     }
-    .wrap { width: 100%; max-width: 440px; }
+
+    .folha {
+      background: var(--branco);
+      border-radius: var(--raio-g);
+      max-width: 1180px;
+      margin: 0 auto;
+      overflow: hidden;
+    }
+
+    .secao { padding: 44px 32px; }
+    @media (max-width: 720px) { .secao { padding: 32px 18px; } }
+
+    /* ---------- Cabeçalho ---------- */
+    .topo { display: flex; align-items: center; justify-content: space-between; gap: 16px;
+            padding: 22px 32px 0; }
+    .topo img { height: 46px; width: auto; display: block; }
+    .topo .selo { font-size: 12px; color: var(--tinta-suave); font-weight: 500; }
+    @media (max-width: 720px) { .topo { padding: 18px 18px 0; } .topo .selo { display: none; } }
+
+    /* ---------- Hero: texto + formulário lado a lado ---------- */
+    .hero { display: grid; grid-template-columns: 1fr 440px; gap: 44px; align-items: start; }
+    @media (max-width: 980px) { .hero { grid-template-columns: 1fr; gap: 28px; } }
+
+    .hero h1 {
+      font-size: clamp(30px, 4.2vw, 50px);
+      line-height: 1.12;
+      font-weight: 800;
+      letter-spacing: -.02em;
+      margin-bottom: 20px;
+    }
+    /* Palavras destacadas recebem o gradiente da marca */
+    .destaque {
+      background: var(--sk-gradiente);
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .hero .apoio { font-size: 17px; color: var(--tinta-suave); line-height: 1.6; max-width: 540px; }
+
+    .provas { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 26px; }
+    .prova {
+      display: inline-flex; align-items: center; gap: 8px;
+      border: 1px solid var(--linha); border-radius: 999px;
+      padding: 8px 15px; font-size: 13px; font-weight: 500; color: var(--tinta);
+    }
+    .prova b { color: var(--sk-indigo); }
+
+    /* ---------- Card do formulário ---------- */
     .card {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: 16px; padding: 28px 24px;
+      background: var(--campo-bg);
+      border: 1px solid var(--linha);
+      border-radius: 20px;
+      padding: 26px 24px;
+      box-shadow: var(--sombra);
+      position: sticky; top: 16px;
     }
-    h1 { font-size: 22px; font-weight: 600; margin-bottom: 6px; }
-    .sub { font-size: 13px; color: var(--muted); margin-bottom: 22px; }
-    .field { margin-bottom: 15px; }
+    @media (max-width: 980px) { .card { position: static; } }
+
+    .card h2 { font-size: 21px; font-weight: 700; margin-bottom: 5px; }
+    .card .sub { font-size: 13px; color: var(--tinta-suave); margin-bottom: 20px; }
+
+    .campo { margin-bottom: 14px; }
     label {
-      display: block; font-size: 11px; font-weight: 600; text-transform: uppercase;
-      letter-spacing: .05em; color: var(--muted); margin-bottom: 6px;
+      display: block; font-size: 11px; font-weight: 600; letter-spacing: .06em;
+      text-transform: uppercase; color: var(--tinta-suave); margin-bottom: 6px;
     }
     input, select {
-      width: 100%; padding: 11px 13px; font-size: 14px; font-family: inherit;
-      background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
-      color: var(--text);
+      width: 100%; padding: 12px 13px; font-family: inherit; font-size: 14.5px;
+      color: var(--tinta); background: var(--branco);
+      border: 1.5px solid var(--linha); border-radius: var(--raio);
+      transition: border-color .15s, box-shadow .15s;
+      appearance: none;
     }
-    input:focus, select:focus { outline: none; border-color: var(--accent); }
-    input[aria-invalid="true"] { border-color: var(--danger); }
-    .tel-row { display: grid; grid-template-columns: 96px 1fr; gap: 8px; }
-    .erro { font-size: 12px; color: var(--danger); margin-top: 5px; display: none; }
+    select {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%235a5780' stroke-width='2' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: right 14px center;
+      padding-right: 34px; cursor: pointer;
+    }
+    input:focus, select:focus {
+      outline: none; border-color: var(--sk-azul);
+      box-shadow: 0 0 0 3px rgba(96, 144, 192, .18);
+    }
+    input[aria-invalid="true"] { border-color: var(--erro); }
+    input::placeholder { color: #a9a7c0; }
+
+    .tel-linha { display: grid; grid-template-columns: 104px 1fr; gap: 8px; }
+
+    .erro { font-size: 12.5px; color: var(--erro); margin-top: 6px; display: none; }
     .erro.show { display: block; }
-    button[type=submit] {
-      width: 100%; margin-top: 8px; padding: 13px;
-      background: var(--accent); color: #05161a; border: none; border-radius: 8px;
-      font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;
+
+    .btn {
+      width: 100%; margin-top: 8px; padding: 15px;
+      font-family: inherit; font-size: 16px; font-weight: 700; color: var(--branco);
+      background: var(--sk-gradiente); background-size: 160% 100%;
+      border: none; border-radius: var(--raio); cursor: pointer;
+      transition: background-position .3s, transform .1s, opacity .2s;
     }
-    button[type=submit]:disabled { opacity: .55; cursor: not-allowed; }
-    .aviso { font-size: 11px; color: var(--muted); margin-top: 14px; text-align: center; }
-    /* Honeypot: fora da tela e fora do fluxo de tab. Humano nunca preenche. */
-    .hp {
-      position: absolute !important; left: -9999px !important;
-      width: 1px; height: 1px; overflow: hidden; opacity: 0;
+    .btn:hover { background-position: 100% 0; }
+    .btn:active { transform: translateY(1px); }
+    .btn:disabled { opacity: .6; cursor: not-allowed; }
+
+    .aviso { font-size: 11.5px; color: var(--tinta-suave); margin-top: 13px; text-align: center; line-height: 1.5; }
+
+    /* Honeypot: fora da tela e fora da navegação por tab. Humano nunca vê. */
+    .hp { position: absolute !important; left: -9999px !important;
+          width: 1px; height: 1px; overflow: hidden; opacity: 0; }
+
+    /* ---------- Seções de conteúdo ---------- */
+    .faixa { background: #fafaff; border-top: 1px solid var(--linha); border-bottom: 1px solid var(--linha); }
+    .rotulo {
+      font-size: 11.5px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+      color: var(--sk-azul); margin-bottom: 10px;
     }
+    .titulo-secao { font-size: clamp(22px, 2.8vw, 31px); font-weight: 700; letter-spacing: -.015em; line-height: 1.22; }
+    .texto-secao { font-size: 15.5px; color: var(--tinta-suave); margin-top: 10px; max-width: 640px; line-height: 1.6; }
+
+    .grade-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 28px; }
+    .grade-4 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; margin-top: 28px; }
+    @media (max-width: 860px) { .grade-3, .grade-4 { grid-template-columns: 1fr; } }
+
+    .bloco {
+      background: var(--branco); border: 1px solid var(--linha);
+      border-radius: 18px; padding: 22px;
+    }
+    .bloco h3 { font-size: 17px; font-weight: 700; margin-bottom: 8px; }
+    .bloco p { font-size: 14.5px; color: var(--tinta-suave); line-height: 1.6; }
+    .bloco .icone {
+      width: 42px; height: 42px; border-radius: 12px; margin-bottom: 14px;
+      background: var(--sk-gradiente);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px;
+    }
+
+    /* Depoimento */
+    .depo { background: var(--branco); border: 1px solid var(--linha); border-radius: 18px; overflow: hidden; }
+    .depo .midia {
+      aspect-ratio: 4 / 3; background: var(--campo-bg);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 6px; color: var(--tinta-suave); font-size: 13px; text-align: center; padding: 16px;
+      border-bottom: 1px solid var(--linha);
+    }
+    .depo .corpo { padding: 18px 20px; }
+    .depo .quem { font-size: 14px; font-weight: 600; }
+    .depo .papel { font-size: 12.5px; color: var(--tinta-suave); margin-top: 2px; }
+    .depo .selo-res {
+      display: inline-block; margin-bottom: 10px; padding: 4px 10px; border-radius: 999px;
+      font-size: 11.5px; font-weight: 700; color: var(--branco); background: var(--sk-gradiente);
+    }
+    .vago { border-style: dashed; }
+
+    /* FAQ */
+    .faq { margin-top: 24px; max-width: 820px; }
+    details {
+      border-bottom: 1px solid var(--linha); padding: 16px 0;
+    }
+    details summary {
+      font-size: 16px; font-weight: 600; cursor: pointer; list-style: none;
+      display: flex; justify-content: space-between; align-items: center; gap: 16px;
+    }
+    details summary::-webkit-details-marker { display: none; }
+    details summary::after {
+      content: '+'; font-size: 22px; font-weight: 400; color: var(--sk-azul); line-height: 1;
+      transition: transform .2s;
+    }
+    details[open] summary::after { content: '–'; }
+    details p { font-size: 14.5px; color: var(--tinta-suave); line-height: 1.65; margin-top: 11px; }
+
+    /* CTA final */
+    .cta-final { text-align: center; }
+    .cta-final .btn { max-width: 330px; margin: 22px auto 0; display: block; }
+
+    .rodape {
+      text-align: center; padding: 26px 20px; font-size: 12.5px; color: var(--tinta-suave);
+      border-top: 1px solid var(--linha);
+    }
+    .rodape a { color: var(--sk-azul); text-decoration: none; }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="card">
-      <h1>Fale com a gente</h1>
-      <p class="sub">Preencha abaixo e entramos em contato pelo WhatsApp.</p>
+<div class="folha">
+
+  <header class="topo">
+    <img src="{{ url_for('static', filename='sk-logo.png') }}" alt="SK Marketing">
+    <span class="selo">Gestão de tráfego pago</span>
+  </header>
+
+  <!-- ===================== HERO + FORMULÁRIO ===================== -->
+  <section class="secao hero">
+    <div>
+      <h1>
+        Seu anúncio não precisa de mais clique.
+        Precisa de <span class="destaque">venda que aparece no relatório</span>.
+      </h1>
+      <p class="apoio">
+        A SK cuida da estratégia, dos criativos e da operação das suas campanhas
+        de Meta e Google Ads — e te entrega um painel onde você vê quanto entrou
+        de lead, quanto virou cliente e quanto cada real investido voltou.
+      </p>
+
+      <div class="provas">
+        <span class="prova"><b>Painel próprio</b> de resultado em tempo real</span>
+        <span class="prova"><b>Meta</b> e <b>Google Ads</b></span>
+        <span class="prova">Relatório por <b>venda</b>, não por clique</span>
+      </div>
+    </div>
+
+    <!-- Card de captura -->
+    <div class="card" id="formulario">
+      <h2>Falar com um especialista</h2>
+      <p class="sub">Preencha abaixo e a equipe da SK entra em contato pelo WhatsApp.</p>
 
       <form id="lead-form" novalidate>
-        <div class="field">
-          <label for="nome">Seu nome *</label>
-          <input id="nome" name="nome" required autocomplete="name" maxlength="120">
+        <div class="campo">
+          <label for="nome">Nome *</label>
+          <input id="nome" name="nome" autocomplete="name" maxlength="120" placeholder="Seu nome">
           <div class="erro" id="erro-nome"></div>
         </div>
 
-        <div class="field">
+        <div class="campo">
+          <label for="email">E-mail</label>
+          <input id="email" name="email" type="email" autocomplete="email" maxlength="160" placeholder="seu@email.com">
+          <div class="erro" id="erro-email"></div>
+        </div>
+
+        <div class="campo">
           <label for="tel">WhatsApp (DDI + DDD + número) *</label>
-          <div class="tel-row">
-            <!-- DDI explícito: o campo aceita qualquer país, não só o Brasil. -->
+          <div class="tel-linha">
             <select id="ddi" aria-label="Código do país">
               <option value="55" selected>🇧🇷 +55</option>
               <option value="351">🇵🇹 +351</option>
@@ -81,50 +279,196 @@
               <option value="52">🇲🇽 +52</option>
               <option value="">Outro</option>
             </select>
-            <input id="tel" name="tel" type="tel" inputmode="tel" required
-                   autocomplete="tel" placeholder="11 98765-4321" maxlength="24">
+            <input id="tel" name="tel" type="tel" inputmode="tel" autocomplete="tel"
+                   placeholder="11 98765-4321" maxlength="24">
           </div>
           <div class="erro" id="erro-tel"></div>
         </div>
 
-        <div class="field">
-          <label for="email">E-mail</label>
-          <input id="email" name="email" type="email" autocomplete="email" maxlength="160">
-          <div class="erro" id="erro-email"></div>
+        <div class="campo">
+          <label for="empresa">Empresa</label>
+          <input id="empresa" name="empresa" maxlength="160" placeholder="Nome da empresa">
         </div>
 
-        <div class="field">
-          <label for="empresa_segmento">Empresa / Segmento</label>
-          <input id="empresa_segmento" name="empresa_segmento" maxlength="160"
-                 placeholder="ex.: clínica odontológica">
+        <div class="campo">
+          <label for="segmento">Segmento</label>
+          <select id="segmento" name="segmento">
+            <option value="">Selecionar segmento</option>
+            <!-- TODO SK: trocar pela lista real de nichos atendidos -->
+            <option>Infoproduto / lançamento</option>
+            <option>E-commerce</option>
+            <option>Serviço local</option>
+            <option>Clínica / saúde</option>
+            <option>Educação / curso</option>
+            <option>Imobiliário</option>
+            <option>Alimentação</option>
+            <option>Outros</option>
+          </select>
         </div>
 
-        <!-- Armadilha anti-bot. Invisível e sem tab: só robô preenche. -->
+        <div class="campo">
+          <!-- O value é o PISO da faixa, em número: vai para crm_leads.faturamento_anual
+               (o usuário pediu número, não faixa). O rótulo exato fica no payload. -->
+          <label for="faturamento">Faturamento mensal atual</label>
+          <select id="faturamento" name="faturamento">
+            <option value="">Selecionar faturamento</option>
+            <option value="0">Até 30 mil</option>
+            <option value="30000">30 mil até 50 mil</option>
+            <option value="50000">50 mil até 80 mil</option>
+            <option value="80000">80 mil até 100 mil</option>
+            <option value="100000">100 mil até 150 mil</option>
+            <option value="150000">150 mil até 250 mil</option>
+            <option value="250000">250 mil até 400 mil</option>
+            <option value="400000">400 mil até 600 mil</option>
+            <option value="600000">600 mil até 1 milhão</option>
+            <option value="1000000">Mais de 1 milhão</option>
+          </select>
+        </div>
+
+        <!-- Armadilha anti-bot -->
         <div class="hp" aria-hidden="true">
           <label for="{{ honeypot_field }}">Website</label>
           <input id="{{ honeypot_field }}" name="{{ honeypot_field }}" tabindex="-1" autocomplete="off">
         </div>
 
-        <button type="submit" id="btn-enviar">Quero falar com a equipe</button>
+        <button type="submit" class="btn" id="btn-enviar">Quero falar com a SK</button>
         <div class="erro" id="erro-geral" style="text-align:center;margin-top:12px;"></div>
       </form>
 
       <p class="aviso">Seus dados são usados apenas para este contato comercial.</p>
     </div>
-  </div>
+  </section>
+
+  <!-- ===================== DEPOIMENTOS ===================== -->
+  <section class="secao faixa">
+    <div class="rotulo">Depoimentos</div>
+    <h2 class="titulo-secao">Quem já investiu com a SK</h2>
+    <p class="texto-secao">
+      <!-- TODO SK: substituir pelos depoimentos reais (print, vídeo ou foto do cliente)
+           antes de rodar tráfego. Nada aqui deve ser inventado. -->
+      Espaço reservado para os cases reais da SK.
+    </p>
+
+    <div class="grade-3">
+      {% for i in range(3) %}
+      <div class="depo vago">
+        <div class="midia">
+          <span style="font-size:26px">🎬</span>
+          <span>Depoimento {{ i + 1 }}<br>(vídeo ou print do cliente)</span>
+        </div>
+        <div class="corpo">
+          <span class="selo-res">resultado real</span>
+          <div class="quem">Nome do cliente</div>
+          <div class="papel">Empresa · segmento</div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <!-- ===================== O QUE VOCÊ RECEBE ===================== -->
+  <section class="secao">
+    <div class="rotulo">O que você recebe</div>
+    <h2 class="titulo-secao">Não é só "gestão de tráfego".<br>É a operação inteira da sua mídia.</h2>
+    <p class="texto-secao">
+      Do criativo ao relatório, cada real investido passa pela equipe da SK.
+    </p>
+
+    <div class="grade-4">
+      <div class="bloco">
+        <div class="icone">🎯</div>
+        <h3>Estratégia e gestão</h3>
+        <p>Estrutura de campanha, público e oferta definidos a partir do seu funil
+           — não um modelo genérico aplicado em todo mundo.</p>
+      </div>
+      <div class="bloco">
+        <div class="icone">📣</div>
+        <h3>Mídia paga</h3>
+        <p>Campanhas de Meta e Google Ads criadas, acompanhadas e otimizadas pela
+           equipe, com rotina de teste de criativo.</p>
+      </div>
+      <div class="bloco">
+        <div class="icone">📊</div>
+        <h3>Painel de resultado</h3>
+        <p>Dashboard próprio da SK com investimento, leads, vendas e retorno real
+           do período — atualizado, sem esperar relatório mensal.</p>
+      </div>
+      <div class="bloco">
+        <div class="icone">🤝</div>
+        <h3>Acompanhamento</h3>
+        <p>Canal direto com quem mexe na conta e leitura dos números junto com
+           você, para a decisão sair do dado e não do achismo.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== FAQ ===================== -->
+  <section class="secao faixa">
+    <div class="rotulo">Perguntas frequentes</div>
+    <h2 class="titulo-secao">Antes de falar com a gente</h2>
+
+    <div class="faq">
+      <details open>
+        <summary>Como funciona a gestão de tráfego da SK?</summary>
+        <p>A equipe cuida de estratégia, criativos, configuração das campanhas em
+           Meta e Google Ads e otimização contínua, usando os dados de venda que
+           chegam no painel — e não só métricas de clique da plataforma.</p>
+      </details>
+      <details>
+        <summary>Em quanto tempo eu vejo resultado?</summary>
+        <!-- TODO SK: responder com o prazo que você realmente pratica. -->
+        <p>Depende do seu ciclo de venda, do histórico da conta e do investimento.
+           Na conversa inicial a gente avalia o seu caso e fala um prazo realista,
+           sem promessa de número.</p>
+      </details>
+      <details>
+        <summary>Preciso ter equipe de marketing própria?</summary>
+        <p>Não. A SK opera a mídia de ponta a ponta. Se você já tiver time interno,
+           a gente trabalha junto, dividindo o que é criação e o que é mídia.</p>
+      </details>
+      <details>
+        <summary>Qual o investimento mínimo em anúncio?</summary>
+        <!-- TODO SK: preencher com o seu piso real de verba. -->
+        <p>Varia conforme o segmento e o objetivo. Essa é uma das primeiras coisas
+           que a gente alinha na conversa.</p>
+      </details>
+      <details>
+        <summary>Como sei se meu negócio está pronto para investir?</summary>
+        <p>Se você já vende e quer previsibilidade, normalmente sim. Se ainda está
+           validando a oferta, a gente fala isso abertamente em vez de vender uma
+           gestão que não vai se pagar.</p>
+      </details>
+    </div>
+  </section>
+
+  <!-- ===================== CTA FINAL ===================== -->
+  <section class="secao cta-final">
+    <h2 class="titulo-secao">Vamos olhar os seus números juntos?</h2>
+    <p class="texto-secao" style="margin-left:auto;margin-right:auto">
+      Preencha o formulário e a equipe da SK entra em contato pelo WhatsApp.
+    </p>
+    <button class="btn" onclick="document.getElementById('nome').focus();document.getElementById('formulario').scrollIntoView({behavior:'smooth',block:'center'})">
+      Quero falar com a SK
+    </button>
+  </section>
+
+  <footer class="rodape">
+    SK Marketing · <a href="https://optimizer.xn--trfego-qta.com">optimizer.tráfego.com</a>
+  </footer>
+</div>
 
 <script>
 /* ============================================================
-   Captura de atribuição.
-   First-touch fica no localStorage (sobrevive à navegação e a voltar depois);
-   last-touch sai da URL atual. Guardar os dois responde quem DESCOBRIU a marca
-   e quem CONVERTEU o lead. fbclid/gclid/_fbp/_fbc amarram o lead ao anúncio e
-   permitem devolver a conversão para a Meta/Google depois.
+   Captura de atribuição + validação.
+   First-touch no localStorage (sobrevive a voltar depois), last-touch da URL
+   atual, e os click ids persistidos — é o que amarra o lead ao anúncio e o que
+   permite devolver a conversão para a Meta via CAPI depois.
    ============================================================ */
 (function () {
   const FORM_KEY = {{ form.form_key | tojson }};
   const UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'];
   const STORE = 'sk_attr_v1';
+  const CLICK_STORE = 'sk_clickids_v1';
 
   const params = new URLSearchParams(location.search);
   const get = (k) => (params.get(k) || '').slice(0, 300) || null;
@@ -134,16 +478,11 @@
     return m ? decodeURIComponent(m.pop()) : null;
   }
 
-  // Last-touch: o que está na URL agora
   const last = {};
   UTM_KEYS.forEach(k => { last[k] = get(k); });
 
-  // First-touch: grava na 1ª visita e nunca sobrescreve
   let first = null;
-  try {
-    first = JSON.parse(localStorage.getItem(STORE) || 'null');
-  } catch (e) { first = null; }
-
+  try { first = JSON.parse(localStorage.getItem(STORE) || 'null'); } catch (e) { first = null; }
   if (!first) {
     first = { first_seen_at: new Date().toISOString() };
     UTM_KEYS.forEach(k => { first['first_' + k] = last[k]; });
@@ -151,24 +490,15 @@
     try { localStorage.setItem(STORE, JSON.stringify(first)); } catch (e) {}
   }
 
-  // fbclid/gclid persistem: o lead pode clicar no anúncio hoje e preencher
-  // amanhã, já sem o parâmetro na URL.
-  const CLICK_STORE = 'sk_clickids_v1';
   let clickIds = {};
   try { clickIds = JSON.parse(localStorage.getItem(CLICK_STORE) || '{}'); } catch (e) {}
-  ['fbclid', 'gclid', 'ttclid'].forEach(k => {
-    const v = get(k);
-    if (v) clickIds[k] = v;
-  });
+  ['fbclid', 'gclid', 'ttclid'].forEach(k => { const v = get(k); if (v) clickIds[k] = v; });
   try { localStorage.setItem(CLICK_STORE, JSON.stringify(clickIds)); } catch (e) {}
 
   function atribuicao() {
     return Object.assign({}, last, first, clickIds, {
-      // Cookies do Pixel — só chegam se o Pixel estiver nesta página
       fbp: cookie('_fbp'),
       fbc: cookie('_fbc'),
-      // IDs de entidade via macro na URL do anúncio
-      // (ex.: ?ad_id={{ '{{ad.id}}' }}&adset_id={{ '{{adset.id}}' }}&campaign_id={{ '{{campaign.id}}' }})
       ad_id: get('ad_id'),
       adset_id: get('adset_id'),
       campaign_id: get('campaign_id'),
@@ -177,25 +507,20 @@
     });
   }
 
-  /* ---------- Validação de telefone no cadastro ---------- */
-  // DDDs brasileiros existentes. Erro de DDD é o mais comum e barato de pegar aqui.
+  /* ---------- Telefone ---------- */
   const DDD_BR = new Set([11,12,13,14,15,16,17,18,19,21,22,24,27,28,31,32,33,34,35,37,38,
     41,42,43,44,45,46,47,48,49,51,53,54,55,61,62,63,64,65,66,67,68,69,71,73,74,75,77,79,
     81,82,83,84,85,86,87,88,89,91,92,93,94,95,96,97,98,99]);
 
   function montarTelefone() {
     const ddiSel = document.getElementById('ddi').value;
-    const bruto = document.getElementById('tel').value;
-    let digitos = bruto.replace(/\D/g, '');
+    let digitos = document.getElementById('tel').value.replace(/\D/g, '');
 
-    // "Outro": o próprio campo precisa trazer o DDI.
     if (!ddiSel) {
       if (digitos.length < 8) return { erro: 'Informe DDI + DDD + número.' };
       return { e164: '+' + digitos };
     }
-
     if (ddiSel === '55') {
-      // Tolera o usuário repetir o 55 no campo
       if (digitos.length > 11 && digitos.startsWith('55')) digitos = digitos.slice(2);
       if (digitos.length !== 10 && digitos.length !== 11) {
         return { erro: 'Digite DDD + número. Ex.: 11 98765-4321' };
@@ -210,12 +535,10 @@
       }
       return { e164: '+55' + digitos };
     }
-
     if (digitos.length < 6) return { erro: 'Número muito curto.' };
     return { e164: '+' + ddiSel + digitos };
   }
 
-  // Máscara leve só para o Brasil (não atrapalha número estrangeiro)
   const telEl = document.getElementById('tel');
   telEl.addEventListener('input', () => {
     if (document.getElementById('ddi').value !== '55') return;
@@ -225,18 +548,15 @@
       telEl.value = `(${d.slice(0, 2)}) ${d.slice(2, 2 + meio)}-${d.slice(2 + meio)}`;
     } else if (d.length > 2) {
       telEl.value = `(${d.slice(0, 2)}) ${d.slice(2)}`;
-    } else {
-      telEl.value = d;
-    }
+    } else { telEl.value = d; }
   });
-
   document.getElementById('ddi').addEventListener('change', () => { telEl.value = ''; });
 
   function erro(campo, msg) {
     const el = document.getElementById('erro-' + campo);
     el.textContent = msg || '';
     el.classList.toggle('show', !!msg);
-    const input = document.getElementById(campo === 'geral' ? 'btn-enviar' : campo);
+    const input = document.getElementById(campo);
     if (input && campo !== 'geral') input.setAttribute('aria-invalid', msg ? 'true' : 'false');
     return !msg;
   }
@@ -247,26 +567,33 @@
     ['nome', 'tel', 'email', 'geral'].forEach(c => erro(c, ''));
 
     const nome = document.getElementById('nome').value.trim();
-    if (nome.length < 2) return erro('nome', 'Informe seu nome.');
+    if (nome.length < 2) { erro('nome', 'Informe seu nome.'); document.getElementById('nome').focus(); return; }
 
     const tel = montarTelefone();
-    if (tel.erro) return erro('tel', tel.erro);
+    if (tel.erro) { erro('tel', tel.erro); telEl.focus(); return; }
 
     const email = document.getElementById('email').value.trim();
     if (email && !/^[^@\s]+@[^@\s.]+\.[^@\s]{2,}$/.test(email)) {
-      return erro('email', 'E-mail inválido.');
+      erro('email', 'E-mail inválido.'); return;
     }
 
     const btn = document.getElementById('btn-enviar');
     btn.disabled = true;
     btn.textContent = 'Enviando...';
 
+    const faixa = document.getElementById('faturamento');
     const payload = Object.assign({
       form_key: FORM_KEY,
       nome: nome,
       whatsapp: tel.e164,
       email: email || null,
-      empresa_segmento: document.getElementById('empresa_segmento').value.trim() || null,
+      empresa_segmento: [document.getElementById('empresa').value.trim(),
+                         document.getElementById('segmento').value]
+                         .filter(Boolean).join(' · ') || null,
+      segmento: document.getElementById('segmento').value || null,
+      // piso da faixa em número; o rótulo marcado vai junto, para histórico
+      faturamento_anual: faixa.value || null,
+      faturamento_faixa: faixa.value ? faixa.options[faixa.selectedIndex].text : null,
       {{ honeypot_field }}: document.getElementById({{ honeypot_field | tojson }}).value,
     }, atribuicao());
 
@@ -279,14 +606,16 @@
       const data = await resp.json();
       if (!resp.ok || !data.ok) {
         btn.disabled = false;
-        btn.textContent = 'Quero falar com a equipe';
-        return erro(resp.status === 422 && /whatsapp|ddd|celular|número/i.test(data.error || '')
-          ? 'tel' : 'geral', data.error || 'Não foi possível enviar. Tente novamente.');
+        btn.textContent = 'Quero falar com a SK';
+        const campo = (resp.status === 422 && /whatsapp|ddd|celular|número/i.test(data.error || ''))
+          ? 'tel' : 'geral';
+        erro(campo, data.error || 'Não foi possível enviar. Tente novamente.');
+        return;
       }
       window.location.href = data.redirect || '/obrigado';
     } catch (e) {
       btn.disabled = false;
-      btn.textContent = 'Quero falar com a equipe';
+      btn.textContent = 'Quero falar com a SK';
       erro('geral', 'Sem conexão. Tente novamente.');
     }
   });

@@ -3,31 +3,62 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Recebemos seu contato</title>
-  <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;600&display=swap" rel="stylesheet">
+  <title>Recebemos seu contato — SK Marketing</title>
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="{{ url_for('static', filename='sk-logo.png') }}">
+  <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;600;700&display=swap" rel="stylesheet">
   <style>
+    :root {
+      --sk-indigo: #3b2f84; --sk-roxo: #544890; --sk-azul: #6090c0; --sk-ciano: #4fc0dc;
+      --sk-gradiente: linear-gradient(110deg, var(--sk-indigo) 0%, var(--sk-roxo) 38%, var(--sk-azul) 68%, var(--sk-ciano) 100%);
+      --tinta: #1d1a3d; --tinta-suave: #5a5780; --linha: #e4e3ef;
+    }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: 'Lexend', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      background: #0a0a0c; color: #f0f0f5;
+      background: var(--sk-gradiente);
       min-height: 100vh; display: flex; align-items: center; justify-content: center;
-      padding: 24px; text-align: center;
+      padding: 18px;
     }
     .card {
-      background: #16161a; border: 1px solid #2d2d30; border-radius: 16px;
-      padding: 40px 32px; max-width: 420px;
+      background: #fff; border-radius: 26px; padding: 44px 34px;
+      max-width: 460px; width: 100%; text-align: center;
+      box-shadow: 0 22px 60px rgba(29, 26, 61, .22);
     }
-    .icone { font-size: 46px; margin-bottom: 14px; }
-    h1 { font-size: 22px; font-weight: 600; margin-bottom: 10px; }
-    p { font-size: 14px; color: #a0a0b0; line-height: 1.6; }
+    .logo { height: 48px; width: auto; margin-bottom: 26px; }
+    .check {
+      width: 62px; height: 62px; border-radius: 50%; margin: 0 auto 18px;
+      background: var(--sk-gradiente); color: #fff;
+      display: flex; align-items: center; justify-content: center; font-size: 30px;
+    }
+    h1 { font-size: 23px; font-weight: 700; color: var(--tinta); margin-bottom: 10px; letter-spacing: -.01em; }
+    p { font-size: 15px; color: var(--tinta-suave); line-height: 1.65; }
+    .passos {
+      margin-top: 26px; padding-top: 22px; border-top: 1px solid var(--linha);
+      text-align: left; display: flex; flex-direction: column; gap: 13px;
+    }
+    .passo { display: flex; gap: 12px; align-items: flex-start; }
+    .passo .n {
+      flex: 0 0 24px; height: 24px; border-radius: 50%;
+      background: var(--sk-gradiente); color: #fff;
+      font-size: 12px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .passo span { font-size: 14px; color: var(--tinta-suave); line-height: 1.5; }
   </style>
 </head>
 <body>
   <div class="card">
-    <div class="icone">✅</div>
+    <img class="logo" src="{{ url_for('static', filename='sk-logo.png') }}" alt="SK Marketing">
+    <div class="check">✓</div>
     <h1>Recebemos seu contato!</h1>
-    <p>Em instantes nossa equipe vai te chamar no WhatsApp.<br>
-       Fique de olho no celular.</p>
+    <p>Em instantes um especialista da SK vai te chamar no WhatsApp.</p>
+
+    <div class="passos">
+      <div class="passo"><span class="n">1</span><span>Deixe o WhatsApp à mão — o contato vem pelo número que você cadastrou.</span></div>
+      <div class="passo"><span class="n">2</span><span>A conversa começa pelos seus números atuais: investimento, lead e venda.</span></div>
+      <div class="passo"><span class="n">3</span><span>Se fizer sentido para os dois lados, a gente marca uma call.</span></div>
+    </div>
   </div>
 </body>
 </html>
