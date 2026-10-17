@@ -181,10 +181,17 @@
       border-radius: 20px; padding: 28px;
     }
     .secao.off .bloco { background: var(--branco); }
+    /* Ícones em SVG de traço, não emoji: emoji muda de desenho entre Windows,
+       iPhone e Android, então a página nunca fica igual para duas pessoas. */
     .bloco .icone {
-      width: 44px; height: 44px; border-radius: 13px; margin-bottom: 18px;
+      width: 46px; height: 46px; border-radius: 14px; margin-bottom: 18px;
       background: var(--sk-gradiente);
-      display: flex; align-items: center; justify-content: center; font-size: 21px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .bloco .icone svg {
+      width: 23px; height: 23px;
+      fill: none; stroke: #fff; stroke-width: 1.7;
+      stroke-linecap: round; stroke-linejoin: round;
     }
     .bloco h3 { font-size: 19px; line-height: 26px; font-weight: 600; margin-bottom: 9px; }
     .bloco p { font-size: 15.5px; line-height: 1.6; color: var(--tinta-suave); }
@@ -347,25 +354,37 @@
 
     <div class="grade">
       <div class="bloco">
-        <div class="icone">🎯</div>
+        <div class="icone" aria-hidden="true">
+          <!-- alvo: estratégia -->
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.4"/></svg>
+        </div>
         <h3>Estratégia e gestão</h3>
         <p>Campanha montada a partir do seu raio de entrega, do seu público e do
            que a loja precisa vender — não um modelo genérico aplicado em todo mundo.</p>
       </div>
       <div class="bloco">
-        <div class="icone">📣</div>
+        <div class="icone" aria-hidden="true">
+          <!-- megafone: ecoa o próprio logo da SK -->
+          <svg viewBox="0 0 24 24"><path d="M3 11v2a1 1 0 0 0 1 1h2.5L13 18.5v-13L6.5 10H4a1 1 0 0 0-1 1Z"/><path d="M7 14.5V19a1.5 1.5 0 0 0 3 0v-3"/><path d="M17 9.5a3.5 3.5 0 0 1 0 5"/><path d="M19.5 7a7 7 0 0 1 0 10"/></svg>
+        </div>
         <h3>Mídia paga</h3>
         <p>Meta e Google Ads criados, acompanhados e otimizados pela equipe, com
            rotina de teste de criativo e ajuste de verba.</p>
       </div>
       <div class="bloco">
-        <div class="icone">📊</div>
+        <div class="icone" aria-hidden="true">
+          <!-- barras subindo: painel -->
+          <svg viewBox="0 0 24 24"><path d="M4 20h16"/><path d="M6.5 20v-6"/><path d="M12 20V7"/><path d="M17.5 20v-9"/></svg>
+        </div>
         <h3>Painel de resultado</h3>
         <p>Dashboard próprio da SK com investimento, contatos e retorno do período,
            atualizado — sem esperar relatório no fim do mês.</p>
       </div>
       <div class="bloco">
-        <div class="icone">🤝</div>
+        <div class="icone" aria-hidden="true">
+          <!-- balões de conversa: canal direto -->
+          <svg viewBox="0 0 24 24"><path d="M15 11.5a5.5 5.5 0 0 1-5.5 5.5H7l-3 2.5V11.5A5.5 5.5 0 0 1 9.5 6h0A5.5 5.5 0 0 1 15 11.5Z"/><path d="M17.5 14.5h.5l2.5 2V9.5A4 4 0 0 0 16.5 5.5H13"/></svg>
+        </div>
         <h3>Acompanhamento</h3>
         <p>Canal direto com quem mexe na conta e leitura dos números junto com
            você, para a decisão sair do dado e não do achismo.</p>
