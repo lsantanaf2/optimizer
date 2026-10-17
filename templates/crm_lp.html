@@ -226,6 +226,26 @@
     .bloco h3 { font-size: 19px; line-height: 26px; font-weight: 600; margin-bottom: 9px; }
     .bloco p { font-size: 15.5px; line-height: 1.6; color: var(--tinta-suave); }
 
+    /* Clipe da loja — vídeo mudo em loop, que se comporta como um GIF mas
+       pesa 12x menos (108KB contra 1,3MB do mesmo clipe em GIF). */
+    .clipe {
+      margin-top: 28px;
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid var(--linha);
+      background: #000;
+      line-height: 0;
+    }
+    .clipe video { width: 100%; height: auto; display: block; }
+    .clipe-legenda {
+      font-size: 13px; color: var(--tinta-suave); margin-top: 10px; line-height: 1.5;
+    }
+    /* Quem pede menos animação no sistema recebe o quadro parado. */
+    @media (prefers-reduced-motion: reduce) {
+      .clipe video { display: none; }
+      .clipe { background: center / cover no-repeat var(--poster, transparent); aspect-ratio: 632 / 262; }
+    }
+
     /* FAQ */
     .faq { margin-top: 44px; max-width: 860px; }
     details { border-bottom: 1px solid var(--linha); }
@@ -266,7 +286,9 @@
     @media (max-width: 620px) {
       .hero-faixa { padding: 22px 12px 40px; }
       .hero-card { border-radius: 24px; padding: 22px 18px; }
-      .hero-topo { margin-bottom: 20px; }
+      /* No celular o selo some, então o logo fica sozinho — centralizado,
+         e não encostado na esquerda. */
+      .hero-topo { margin-bottom: 20px; justify-content: center; }
       .hero-topo .selo { display: none; }
       h1 { font-size: 29px; line-height: 35px; }
       h2.secao-titulo { font-size: 26px; line-height: 32px; }
@@ -287,12 +309,28 @@
 
   <div class="hero-card">
     <div class="hero-grid">
-      <!-- Coluna esquerda: só a headline, como na referência. -->
+      <!-- Coluna esquerda: headline + o clipe da loja logo abaixo. -->
       <div>
         <h1>
           Aplique o método que já faz sorveterias
           <span class="destaque">venderem mais todos os dias</span>
         </h1>
+
+        <!-- Vídeo e não GIF: o mesmo clipe em GIF daria 1,3MB contra 108KB
+             aqui, e ainda em 480px/12fps. Mudo, em loop e sem controles, ele
+             se comporta exatamente como um GIF para quem olha. -->
+        <div class="clipe" style="--poster:url('{{ url_for('static', filename='loja-cliente-poster.jpg') }}')">
+          <video
+            src="{{ url_for('static', filename='loja-cliente.mp4', v=version) }}"
+            poster="{{ url_for('static', filename='loja-cliente-poster.jpg', v=version) }}"
+            autoplay muted loop playsinline preload="metadata"
+            aria-label="Câmera de uma sorveteria cheia: fila no caixa, clientes se servindo nos freezers e área de mesas ocupada."></video>
+        </div>
+        <!-- TODO SK: se o cliente autorizar, nomear a loja aqui — nome real
+             vale mais que "um cliente". -->
+        <p class="clipe-legenda">
+          Movimento real na loja de um cliente, pela câmera da própria loja.
+        </p>
       </div>
 
       <!-- Formulário -->
