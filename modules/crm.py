@@ -35,6 +35,7 @@ import logging
 import re
 from datetime import datetime, timedelta
 from functools import wraps
+from urllib.parse import urlparse
 
 from flask import (
     Blueprint, abort, jsonify, make_response, redirect, render_template,
@@ -96,11 +97,37 @@ def _get_form(form_key):
     )
 
 
+def _mesma_origem(origin):
+    """A requisição veio da própria página servida por este app?
+
+    Compara só o HOST, nunca a URL inteira. Atrás do nginx o TLS termina no
+    proxy e o Flask enxerga `http://`, enquanto o browser manda
+    `Origin: https://...`. Comparar com request.host_url (que inclui o scheme)
+    fazia o app recusar o próprio formulário com CRM-403 em produção — não
+    aparecia em teste local porque ali não existe proxy no meio.
+    """
+    if not origin:
+        return False
+    try:
+        netloc = urlparse(origin).netloc.lower()
+    except ValueError:
+        return False
+    return bool(netloc) and netloc == (request.host or '').lower()
+
+
+def _origem_permitida(origin, form):
+    """Origem própria, ou uma das cadastradas em crm_forms.allowed_origins."""
+    if _mesma_origem(origin):
+        return True
+    permitidas = [str(o).rstrip('/').lower() for o in ((form or {}).get('allowed_origins') or [])]
+    return origin.rstrip('/').lower() in permitidas
+
+
 def _cors_headers(resp, form):
     """Libera CORS só para as origens cadastradas no formulário."""
     origin = request.headers.get('Origin')
-    permitidas = (form or {}).get('allowed_origins') or []
-    if origin and origin in permitidas:
+    permitidas = [str(o).rstrip('/').lower() for o in ((form or {}).get('allowed_origins') or [])]
+    if origin and origin.rstrip('/').lower() in permitidas:
         resp.headers['Access-Control-Allow-Origin'] = origin
         resp.headers['Vary'] = 'Origin'
         resp.headers['Access-Control-Allow-Headers'] = 'Content-Type'
@@ -128,12 +155,12 @@ def captura_lead():
     if not form:
         return responder({'ok': False, 'error': 'Formulário inválido. [CRM-404]'}, 404)
 
-    # CORS: se vier de outra origem, ela precisa estar cadastrada.
+    # CORS: a própria página passa; outra origem precisa estar cadastrada.
     origin = request.headers.get('Origin')
-    if origin and origin not in (form.get('allowed_origins') or []):
-        if origin.rstrip('/') != request.host_url.rstrip('/'):
-            logger.warning("CRM captura: origem não autorizada %s (form %s)", origin, form_key)
-            return responder({'ok': False, 'error': 'Origem não autorizada. [CRM-403]'}, 403)
+    if origin and not _origem_permitida(origin, form):
+        logger.warning("CRM captura: origem não autorizada %s (host=%s form=%s)",
+                       origin, request.host, form_key)
+        return responder({'ok': False, 'error': 'Origem não autorizada. [CRM-403]'}, 403)
 
     # Honeypot: responde 200 para o bot não aprender que foi detectado.
     if (dados.get(HONEYPOT_FIELD) or '').strip():
