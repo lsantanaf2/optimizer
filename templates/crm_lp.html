@@ -347,7 +347,7 @@
             <input id="{{ honeypot_field }}" name="{{ honeypot_field }}" tabindex="-1" autocomplete="off">
           </div>
 
-          <button type="submit" class="btn" id="btn-enviar">Quero falar com a SK</button>
+          <button type="submit" class="btn" id="btn-enviar">Quero vender mais</button>
           <div class="erro" id="erro-geral" style="text-align:center"></div>
           <p class="aviso">Seus dados são usados apenas para este contato comercial.</p>
         </form>
@@ -457,12 +457,15 @@
 <!-- ===================== CTA FINAL ===================== -->
 <section class="secao branca cta">
   <div class="container">
-    <h2 class="secao-titulo">Vamos olhar os números da sua loja juntos?</h2>
+    <h2 class="secao-titulo">Vamos fazer sua loja vender mais?</h2>
+    <!-- Mesma frase do card do formulário, de propósito: as duas chamadas da
+         página usam as mesmas palavras. -->
     <p class="secao-texto">
-      Preencha o formulário e a equipe da SK entra em contato pelo WhatsApp.
+      Preencha e um especialista da SK entrará em contato.
     </p>
+    <!-- O botão repete o título do card para onde ele leva. -->
     <button class="btn" onclick="document.getElementById('formulario').scrollIntoView({behavior:'smooth',block:'center'});setTimeout(()=>document.getElementById('nome').focus(),420)">
-      Quero falar com a SK
+      Quero vender mais
     </button>
   </div>
 </section>
@@ -619,7 +622,7 @@
       const data = await resp.json();
       if (!resp.ok || !data.ok) {
         btn.disabled = false;
-        btn.textContent = 'Quero falar com a SK';
+        btn.textContent = 'Quero vender mais';
         const campo = (resp.status === 422 && /whatsapp|ddd|celular|número/i.test(data.error || ''))
           ? 'tel' : 'geral';
         erro(campo, data.error || 'Não foi possível enviar. Tente novamente.');
@@ -628,7 +631,7 @@
       window.location.href = data.redirect || '/obrigado';
     } catch (e) {
       btn.disabled = false;
-      btn.textContent = 'Quero falar com a SK';
+      btn.textContent = 'Quero vender mais';
       erro('geral', 'Sem conexão. Tente novamente.');
     }
   });
