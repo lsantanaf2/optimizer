@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+
+{% block title %}CRM — Métricas{% endblock %}
+{% block breadcrumb %}<span>CRM</span> / <strong>Métricas</strong>{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='crm.css', v=version) }}">
+
+<div class="crm-toolbar">
+    <h1 style="font-size:19px;font-weight:600;">📈 CRM — Métricas e SLA</h1>
+
+    <select class="crm-select" id="periodo">
+        <option value="7d">Últimos 7 dias</option>
+        <option value="30d" selected>Últimos 30 dias</option>
+        <option value="90d">Últimos 90 dias</option>
+        <option value="tudo">Tudo</option>
+    </select>
+
+    <span class="crm-spacer"></span>
+    <a class="crm-btn" href="{{ url_for('crm.crm_page') }}">← Kanban</a>
+</div>
+
+<div id="conteudo">
+    <div class="kanban-empty">Carregando...</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+/* Métricas derivadas de crm_lead_events. A coorte é por data de CRIAÇÃO do
+   lead: um lead de ontem que fechou hoje conta no dia em que entrou, senão as
+   taxas de conversão mentem. */
+(function () {
+    const SLA_META = {{ sla_meta_min }};
+    const $ = (s) => document.querySelector(s);
+
+    const pct = (v) => (v == null ? '—' : v.toFixed(1).replace('.', ',') + '%');
+    const moeda = (v) => (v == null ? '—'
+        : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
+
+    function dur(min) {
+        if (min == null) return '—';
+        if (min < 60) return Math.round(min) + ' min';
+        if (min < 1440) return (min / 60).toFixed(1).replace('.', ',') + ' h';
+        return (min / 1440).toFixed(1).replace('.', ',') + ' d';
+    }
+
+    function kpi(label, valor, sub, classe) {
+        return `<div class="crm-kpi ${classe || ''}">
+            <div class="label">${label}</div>
+            <div class="valor">${valor}</div>
+            ${sub ? `<div class="sub">${sub}</div>` : ''}
+        </div>`;
+    }
+
+    function funilRow(label, valor, max, taxaLabel) {
+        const w = max > 0 ? Math.max(2, (valor / max) * 100) : 0;
+        return `<div class="crm-funil-row">
+            <div class="crm-funil-label">${label}</div>
+            <div class="crm-funil-bar-wrap">
+                <div class="crm-funil-bar" style="width:${w}%">${valor}</div>
+            </div>
+            <div class="crm-funil-taxa">${taxaLabel || ''}</div>
+        </div>`;
+    }
+
+    function render(m) {
+        const f = m.funil, s = m.sla, v = m.volume;
+
+        // Cor do KPI de SLA: >=80% dentro da meta é saudável, <50% é problema.
+        const slaClasse = s.pct_dentro_sla >= 80 ? 'ok'
+            : (s.pct_dentro_sla >= 50 ? 'alerta' : 'ruim');
+
+        const kpis = [
+            kpi('Leads no período', v.leads,
+                v.recorrentes ? `${v.recorrentes} recadastro(s)` : 'nenhum recadastro'),
+            kpi(`Dentro do SLA (${SLA_META}min)`, pct(s.pct_dentro_sla),
+                `${s.dentro_sla} de ${s.leads_com_contato} contatados`, slaClasse),
+            kpi('Tempo até 1º contato (mediana)', dur(s.mediana_min),
+                `p90: ${dur(s.p90_min)}`, s.mediana_min != null && s.mediana_min <= SLA_META ? 'ok' : 'alerta'),
+            kpi('Sem contato nenhum', s.sem_contato,
+                s.sem_contato > 0 ? 'leads esperando resposta' : 'todos contatados',
+                s.sem_contato > 0 ? 'ruim' : 'ok'),
+            kpi('Taxa de conexão', pct(f.taxa_conexao), `${f.contatados} responderam`),
+            kpi('Show-rate', pct(f.show_rate), `${f.no_shows} no-show(s)`,
+                f.show_rate >= 70 ? 'ok' : 'alerta'),
+            kpi('Conversão geral', pct(f.conversao_geral), `${f.fechados} fechado(s)`),
+            kpi('Receita', moeda(m.receita.total), `ticket médio ${moeda(m.receita.ticket_medio)}`),
+            kpi('Tempo de ciclo (mediana)', m.ciclo.mediana_dias != null
+                ? m.ciclo.mediana_dias.toFixed(1).replace('.', ',') + ' d' : '—',
+                'da entrada ao fechamento'),
+        ].join('');
+
+        const max = f.leads || 1;
+        const funil = [
+            funilRow('Leads', f.leads, max, ''),
+            funilRow('Contatados', f.contatados, max, pct(f.taxa_conexao) + ' dos leads'),
+            funilRow('Calls agendadas', f.calls_agendadas, max, pct(f.taxa_agendamento) + ' dos contatados'),
+            funilRow('Calls realizadas', f.calls_realizadas, max, pct(f.show_rate) + ' show-rate'),
+            funilRow('Propostas', f.propostas, max, pct(f.taxa_proposta) + ' das calls'),
+            funilRow('Fechados', f.fechados, max, pct(f.taxa_fechamento) + ' das propostas'),
+        ].join('');
+
+        const campanhas = (m.por_campanha || []).map(c => `
+            <tr>
+                <td>${c.utm_source}</td>
+                <td>${c.utm_campaign}</td>
+                <td class="num">${c.leads}</td>
+                <td class="num">${c.qualificados}</td>
+                <td class="num">${c.fechados}</td>
+                <td class="num">${c.leads ? ((c.fechados / c.leads) * 100).toFixed(1).replace('.', ',') + '%' : '—'}</td>
+                <td class="num">${moeda(c.receita)}</td>
+            </tr>`).join('') || '<tr><td colspan="7" style="color:var(--text-muted)">Sem dados.</td></tr>';
+
+        const perdas = (m.motivos_perda || []).map(p => `
+            <tr><td>${p.motivo}</td><td class="num">${p.total}</td></tr>`).join('')
+            || '<tr><td colspan="2" style="color:var(--text-muted)">Nenhuma perda registrada.</td></tr>';
+
+        const diasMax = Math.max(1, ...(m.diario || []).map(d => d.leads));
+        const diario = (m.diario || []).map(d => `
+            <div class="crm-funil-row">
+                <div class="crm-funil-label">${d.dia.split('-').reverse().slice(0, 2).join('/')}</div>
+                <div class="crm-funil-bar-wrap">
+                    <div class="crm-funil-bar" style="width:${(d.leads / diasMax) * 100}%">${d.leads}</div>
+                </div>
+                <div class="crm-funil-taxa">${d.fechados ? d.fechados + ' fechado(s)' : ''}</div>
+            </div>`).join('') || '<div class="kanban-empty">Sem dados.</div>';
+
+        $('#conteudo').innerHTML = `
+            <div class="crm-kpis">${kpis}</div>
+
+            <div class="crm-section-title">Funil</div>
+            <div class="crm-funil">${funil}</div>
+
+            <div class="crm-section-title">Qualificação</div>
+            <div class="crm-kpis">
+                ${kpi('Qualificados', v.qualificados, '')}
+                ${kpi('Não qualificados', v.desqualificados, 'fora do ICP')}
+                ${kpi('Perdidos', v.perdidos, '')}
+                ${kpi('Timing errado', v.timing_errado, 'aguardando recontato')}
+            </div>
+
+            <div class="crm-section-title">Por origem / campanha</div>
+            <table class="crm-table">
+                <thead><tr>
+                    <th>Source</th><th>Campanha</th>
+                    <th class="num">Leads</th><th class="num">Qualif.</th>
+                    <th class="num">Fechados</th><th class="num">Conv.</th><th class="num">Receita</th>
+                </tr></thead>
+                <tbody>${campanhas}</tbody>
+            </table>
+
+            <div class="crm-section-title">Leads por dia</div>
+            <div class="crm-funil">${diario}</div>
+
+            <div class="crm-section-title">Motivos de perda</div>
+            <table class="crm-table">
+                <thead><tr><th>Motivo</th><th class="num">Leads</th></tr></thead>
+                <tbody>${perdas}</tbody>
+            </table>
+
+            <p style="margin-top:22px;font-size:11px;color:var(--text-muted)">
+                CAC e CPL exigem cruzar com o investimento da Meta — próxima etapa.
+                Aqui a receita vem do campo "valor fechado" da ficha do lead.
+            </p>`;
+    }
+
+    async function carregar() {
+        $('#conteudo').innerHTML = '<div class="kanban-empty">Carregando...</div>';
+        try {
+            const resp = await fetch('/api/crm/metricas?periodo=' + $('#periodo').value);
+            const data = await resp.json();
+            if (!resp.ok) throw new Error(data.error || 'erro');
+            render(data);
+        } catch (e) {
+            $('#conteudo').innerHTML =
+                `<div class="kanban-empty">Erro ao carregar: ${e.message}</div>`;
+        }
+    }
+
+    $('#periodo').addEventListener('change', carregar);
+    document.addEventListener('DOMContentLoaded', carregar);
+    carregar();
+})();
+</script>
+{% endblock %}

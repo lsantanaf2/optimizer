@@ -67,6 +67,14 @@
                     <span class="nav-label">Instagram</span>
                 </a>
 
+                <!-- CRM de Leads -->
+                <a href="{{ url_for('crm.crm_page') }}"
+                    class="nav-item {% if 'crm' in (request.endpoint or '') %}active{% endif %}"
+                    title="CRM de Leads">
+                    <span class="nav-icon">🎯</span>
+                    <span class="nav-label">CRM</span>
+                </a>
+
                 <!-- Google Ads (teste) -->
                 <a href="{{ url_for('google_ads_test_page') }}"
                     class="nav-item {% if request.endpoint == 'google_ads_test_page' %}active{% endif %}"

@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ form.name }}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0a0a0c; --surface: #16161a; --border: #2d2d30;
+      --accent: #00f2ff; --text: #f0f0f5; --muted: #5a5a6e;
+      --danger: #ef4444; --success: #22c55e;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Lexend', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg); color: var(--text);
+      min-height: 100vh; display: flex; align-items: center; justify-content: center;
+      padding: 24px;
+    }
+    .wrap { width: 100%; max-width: 440px; }
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 16px; padding: 28px 24px;
+    }
+    h1 { font-size: 22px; font-weight: 600; margin-bottom: 6px; }
+    .sub { font-size: 13px; color: var(--muted); margin-bottom: 22px; }
+    .field { margin-bottom: 15px; }
+    label {
+      display: block; font-size: 11px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: .05em; color: var(--muted); margin-bottom: 6px;
+    }
+    input, select {
+      width: 100%; padding: 11px 13px; font-size: 14px; font-family: inherit;
+      background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+      color: var(--text);
+    }
+    input:focus, select:focus { outline: none; border-color: var(--accent); }
+    input[aria-invalid="true"] { border-color: var(--danger); }
+    .tel-row { display: grid; grid-template-columns: 96px 1fr; gap: 8px; }
+    .erro { font-size: 12px; color: var(--danger); margin-top: 5px; display: none; }
+    .erro.show { display: block; }
+    button[type=submit] {
+      width: 100%; margin-top: 8px; padding: 13px;
+      background: var(--accent); color: #05161a; border: none; border-radius: 8px;
+      font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;
+    }
+    button[type=submit]:disabled { opacity: .55; cursor: not-allowed; }
+    .aviso { font-size: 11px; color: var(--muted); margin-top: 14px; text-align: center; }
+    /* Honeypot: fora da tela e fora do fluxo de tab. Humano nunca preenche. */
+    .hp {
+      position: absolute !important; left: -9999px !important;
+      width: 1px; height: 1px; overflow: hidden; opacity: 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Fale com a gente</h1>
+      <p class="sub">Preencha abaixo e entramos em contato pelo WhatsApp.</p>
+
+      <form id="lead-form" novalidate>
+        <div class="field">
+          <label for="nome">Seu nome *</label>
+          <input id="nome" name="nome" required autocomplete="name" maxlength="120">
+          <div class="erro" id="erro-nome"></div>
+        </div>
+
+        <div class="field">
+          <label for="tel">WhatsApp (DDI + DDD + número) *</label>
+          <div class="tel-row">
+            <!-- DDI explícito: o campo aceita qualquer país, não só o Brasil. -->
+            <select id="ddi" aria-label="Código do país">
+              <option value="55" selected>🇧🇷 +55</option>
+              <option value="351">🇵🇹 +351</option>
+              <option value="1">🇺🇸 +1</option>
+              <option value="34">🇪🇸 +34</option>
+              <option value="44">🇬🇧 +44</option>
+              <option value="54">🇦🇷 +54</option>
+              <option value="52">🇲🇽 +52</option>
+              <option value="">Outro</option>
+            </select>
+            <input id="tel" name="tel" type="tel" inputmode="tel" required
+                   autocomplete="tel" placeholder="11 98765-4321" maxlength="24">
+          </div>
+          <div class="erro" id="erro-tel"></div>
+        </div>
+
+        <div class="field">
+          <label for="email">E-mail</label>
+          <input id="email" name="email" type="email" autocomplete="email" maxlength="160">
+          <div class="erro" id="erro-email"></div>
+        </div>
+
+        <div class="field">
+          <label for="empresa_segmento">Empresa / Segmento</label>
+          <input id="empresa_segmento" name="empresa_segmento" maxlength="160"
+                 placeholder="ex.: clínica odontológica">
+        </div>
+
+        <!-- Armadilha anti-bot. Invisível e sem tab: só robô preenche. -->
+        <div class="hp" aria-hidden="true">
+          <label for="{{ honeypot_field }}">Website</label>
+          <input id="{{ honeypot_field }}" name="{{ honeypot_field }}" tabindex="-1" autocomplete="off">
+        </div>
+
+        <button type="submit" id="btn-enviar">Quero falar com a equipe</button>
+        <div class="erro" id="erro-geral" style="text-align:center;margin-top:12px;"></div>
+      </form>
+
+      <p class="aviso">Seus dados são usados apenas para este contato comercial.</p>
+    </div>
+  </div>
+
+<script>
+/* ============================================================
+   Captura de atribuição.
+   First-touch fica no localStorage (sobrevive à navegação e a voltar depois);
+   last-touch sai da URL atual. Guardar os dois responde quem DESCOBRIU a marca
+   e quem CONVERTEU o lead. fbclid/gclid/_fbp/_fbc amarram o lead ao anúncio e
+   permitem devolver a conversão para a Meta/Google depois.
+   ============================================================ */
+(function () {
+  const FORM_KEY = {{ form.form_key | tojson }};
+  const UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'];
+  const STORE = 'sk_attr_v1';
+
+  const params = new URLSearchParams(location.search);
+  const get = (k) => (params.get(k) || '').slice(0, 300) || null;
+
+  function cookie(nome) {
+    const m = document.cookie.match('(^|;)\\s*' + nome + '\\s*=\\s*([^;]+)');
+    return m ? decodeURIComponent(m.pop()) : null;
+  }
+
+  // Last-touch: o que está na URL agora
+  const last = {};
+  UTM_KEYS.forEach(k => { last[k] = get(k); });
+
+  // First-touch: grava na 1ª visita e nunca sobrescreve
+  let first = null;
+  try {
+    first = JSON.parse(localStorage.getItem(STORE) || 'null');
+  } catch (e) { first = null; }
+
+  if (!first) {
+    first = { first_seen_at: new Date().toISOString() };
+    UTM_KEYS.forEach(k => { first['first_' + k] = last[k]; });
+    first.first_referrer = document.referrer || null;
+    try { localStorage.setItem(STORE, JSON.stringify(first)); } catch (e) {}
+  }
+
+  // fbclid/gclid persistem: o lead pode clicar no anúncio hoje e preencher
+  // amanhã, já sem o parâmetro na URL.
+  const CLICK_STORE = 'sk_clickids_v1';
+  let clickIds = {};
+  try { clickIds = JSON.parse(localStorage.getItem(CLICK_STORE) || '{}'); } catch (e) {}
+  ['fbclid', 'gclid', 'ttclid'].forEach(k => {
+    const v = get(k);
+    if (v) clickIds[k] = v;
+  });
+  try { localStorage.setItem(CLICK_STORE, JSON.stringify(clickIds)); } catch (e) {}
+
+  function atribuicao() {
+    return Object.assign({}, last, first, clickIds, {
+      // Cookies do Pixel — só chegam se o Pixel estiver nesta página
+      fbp: cookie('_fbp'),
+      fbc: cookie('_fbc'),
+      // IDs de entidade via macro na URL do anúncio
+      // (ex.: ?ad_id={{ '{{ad.id}}' }}&adset_id={{ '{{adset.id}}' }}&campaign_id={{ '{{campaign.id}}' }})
+      ad_id: get('ad_id'),
+      adset_id: get('adset_id'),
+      campaign_id: get('campaign_id'),
+      referrer: document.referrer || null,
+      landing_url: location.href.slice(0, 600),
+    });
+  }
+
+  /* ---------- Validação de telefone no cadastro ---------- */
+  // DDDs brasileiros existentes. Erro de DDD é o mais comum e barato de pegar aqui.
+  const DDD_BR = new Set([11,12,13,14,15,16,17,18,19,21,22,24,27,28,31,32,33,34,35,37,38,
+    41,42,43,44,45,46,47,48,49,51,53,54,55,61,62,63,64,65,66,67,68,69,71,73,74,75,77,79,
+    81,82,83,84,85,86,87,88,89,91,92,93,94,95,96,97,98,99]);
+
+  function montarTelefone() {
+    const ddiSel = document.getElementById('ddi').value;
+    const bruto = document.getElementById('tel').value;
+    let digitos = bruto.replace(/\D/g, '');
+
+    // "Outro": o próprio campo precisa trazer o DDI.
+    if (!ddiSel) {
+      if (digitos.length < 8) return { erro: 'Informe DDI + DDD + número.' };
+      return { e164: '+' + digitos };
+    }
+
+    if (ddiSel === '55') {
+      // Tolera o usuário repetir o 55 no campo
+      if (digitos.length > 11 && digitos.startsWith('55')) digitos = digitos.slice(2);
+      if (digitos.length !== 10 && digitos.length !== 11) {
+        return { erro: 'Digite DDD + número. Ex.: 11 98765-4321' };
+      }
+      const ddd = parseInt(digitos.slice(0, 2), 10);
+      if (!DDD_BR.has(ddd)) return { erro: `DDD ${digitos.slice(0, 2)} não existe.` };
+      if (digitos.length === 11 && digitos[2] !== '9') {
+        return { erro: 'Celular com 11 dígitos começa com 9 depois do DDD.' };
+      }
+      if (digitos.length === 10 && !'2345'.includes(digitos[2])) {
+        return { erro: 'Número inválido. Se for celular, inclua o 9.' };
+      }
+      return { e164: '+55' + digitos };
+    }
+
+    if (digitos.length < 6) return { erro: 'Número muito curto.' };
+    return { e164: '+' + ddiSel + digitos };
+  }
+
+  // Máscara leve só para o Brasil (não atrapalha número estrangeiro)
+  const telEl = document.getElementById('tel');
+  telEl.addEventListener('input', () => {
+    if (document.getElementById('ddi').value !== '55') return;
+    let d = telEl.value.replace(/\D/g, '').slice(0, 11);
+    if (d.length > 6) {
+      const meio = d.length === 11 ? 5 : 4;
+      telEl.value = `(${d.slice(0, 2)}) ${d.slice(2, 2 + meio)}-${d.slice(2 + meio)}`;
+    } else if (d.length > 2) {
+      telEl.value = `(${d.slice(0, 2)}) ${d.slice(2)}`;
+    } else {
+      telEl.value = d;
+    }
+  });
+
+  document.getElementById('ddi').addEventListener('change', () => { telEl.value = ''; });
+
+  function erro(campo, msg) {
+    const el = document.getElementById('erro-' + campo);
+    el.textContent = msg || '';
+    el.classList.toggle('show', !!msg);
+    const input = document.getElementById(campo === 'geral' ? 'btn-enviar' : campo);
+    if (input && campo !== 'geral') input.setAttribute('aria-invalid', msg ? 'true' : 'false');
+    return !msg;
+  }
+
+  /* ---------- Envio ---------- */
+  document.getElementById('lead-form').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    ['nome', 'tel', 'email', 'geral'].forEach(c => erro(c, ''));
+
+    const nome = document.getElementById('nome').value.trim();
+    if (nome.length < 2) return erro('nome', 'Informe seu nome.');
+
+    const tel = montarTelefone();
+    if (tel.erro) return erro('tel', tel.erro);
+
+    const email = document.getElementById('email').value.trim();
+    if (email && !/^[^@\s]+@[^@\s.]+\.[^@\s]{2,}$/.test(email)) {
+      return erro('email', 'E-mail inválido.');
+    }
+
+    const btn = document.getElementById('btn-enviar');
+    btn.disabled = true;
+    btn.textContent = 'Enviando...';
+
+    const payload = Object.assign({
+      form_key: FORM_KEY,
+      nome: nome,
+      whatsapp: tel.e164,
+      email: email || null,
+      empresa_segmento: document.getElementById('empresa_segmento').value.trim() || null,
+      {{ honeypot_field }}: document.getElementById({{ honeypot_field | tojson }}).value,
+    }, atribuicao());
+
+    try {
+      const resp = await fetch('/api/crm/lead', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await resp.json();
+      if (!resp.ok || !data.ok) {
+        btn.disabled = false;
+        btn.textContent = 'Quero falar com a equipe';
+        return erro(resp.status === 422 && /whatsapp|ddd|celular|número/i.test(data.error || '')
+          ? 'tel' : 'geral', data.error || 'Não foi possível enviar. Tente novamente.');
+      }
+      window.location.href = data.redirect || '/obrigado';
+    } catch (e) {
+      btn.disabled = false;
+      btn.textContent = 'Quero falar com a equipe';
+      erro('geral', 'Sem conexão. Tente novamente.');
+    }
+  });
+})();
+</script>
+</body>
+</html>

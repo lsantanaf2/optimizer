@@ -1,0 +1,260 @@
+{% extends "base.html" %}
+
+{% block title %}CRM — Leads{% endblock %}
+{% block breadcrumb %}<span>CRM</span> / <strong>Leads</strong>{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='crm.css', v=version) }}">
+
+<div class="crm-toolbar">
+    <h1 style="font-size:19px;font-weight:600;">🎯 CRM — Leads</h1>
+
+    <select class="crm-select" id="filtro-periodo" title="Período de criação do lead">
+        <option value="7d">Últimos 7 dias</option>
+        <option value="30d" selected>Últimos 30 dias</option>
+        <option value="90d">Últimos 90 dias</option>
+        <option value="tudo">Tudo</option>
+    </select>
+
+    <select class="crm-select" id="filtro-status" title="Status">
+        <option value="">Todos os status</option>
+        <option value="ativo">Só ativos</option>
+        <option value="perdido">Perdidos</option>
+        <option value="timing_errado">Timing errado</option>
+    </select>
+
+    <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);">
+        <input type="checkbox" id="filtro-arquivados"> arquivados
+    </label>
+
+    <span class="crm-spacer"></span>
+
+    <span id="crm-status-poll" style="font-size:11px;color:var(--text-muted);"></span>
+
+    <!-- Um clique só: pede permissão de notificação E destrava o áudio.
+         Browser bloqueia AudioContext sem gesto do usuário. -->
+    <button class="crm-btn" id="btn-alertas" onclick="CRM.ativarAlertas()">
+        🔔 Ativar alertas
+    </button>
+
+    <a class="crm-btn" href="{{ url_for('crm.crm_metricas_page') }}">📈 Métricas</a>
+    <button class="crm-btn" onclick="CRM.carregar()">↻</button>
+</div>
+
+<div class="kanban" id="kanban">
+    {% for etapa in etapas %}
+    <div class="kanban-col" data-etapa="{{ etapa }}">
+        <div class="kanban-col-head">
+            <span class="kanban-col-title">{{ etapa_labels[etapa] }}</span>
+            <span class="kanban-col-count" data-count="{{ etapa }}">0</span>
+        </div>
+        <div class="kanban-col-body" data-body="{{ etapa }}">
+            <div class="kanban-empty">—</div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Banner de alerta de lead novo -->
+<div class="crm-alert-banner" id="crm-alertas"></div>
+
+<!-- ============ Modal: ficha do lead ============ -->
+<div class="crm-modal-overlay" id="modal-lead" onclick="if(event.target===this)CRM.fecharLead()">
+    <div class="crm-modal">
+        <div class="crm-modal-head">
+            <div>
+                <h2 id="ml-nome">—</h2>
+                <div class="sub" id="ml-sub">—</div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;">
+                <a class="crm-btn primary" id="ml-whats" target="_blank" rel="noopener">💬 WhatsApp</a>
+                <button class="crm-modal-close" onclick="CRM.fecharLead()">&times;</button>
+            </div>
+        </div>
+
+        <div class="crm-tabs">
+            <button class="crm-tab active" data-tab="ficha">Ficha</button>
+            <button class="crm-tab" data-tab="origem">Origem e cadastros <span id="ml-subs-count"></span></button>
+            <button class="crm-tab" data-tab="historico">Histórico</button>
+            <button class="crm-tab" data-tab="notas">Notas e tarefas</button>
+        </div>
+
+        <div class="crm-modal-body">
+            <!-- ---- Ficha / qualificação SDR ---- -->
+            <div class="crm-tabpanel active" data-panel="ficha">
+                <div class="crm-fields">
+                    <div class="crm-field">
+                        <label>Nome</label>
+                        <input class="crm-input" id="f-nome">
+                    </div>
+                    <div class="crm-field">
+                        <label>E-mail</label>
+                        <input class="crm-input" id="f-email" type="email">
+                    </div>
+                    <div class="crm-field">
+                        <label>Empresa / Segmento</label>
+                        <input class="crm-input" id="f-empresa_segmento">
+                    </div>
+                    <div class="crm-field">
+                        <label>Faturamento anual (R$)</label>
+                        <input class="crm-input" id="f-faturamento_anual" inputmode="decimal" placeholder="ex.: 700000">
+                        <div class="hint">Valor que o lead informou, sem faixas.</div>
+                    </div>
+                    <div class="crm-field">
+                        <label>Investimento mensal em mídia (R$)</label>
+                        <input class="crm-input" id="f-investimento_midia" inputmode="decimal" placeholder="ex.: 4500">
+                    </div>
+                    <div class="crm-field">
+                        <label>Já fez tráfego antes?</label>
+                        <select class="crm-select" id="f-ja_fez_trafego" style="width:100%">
+                            <option value="">Não sei ainda</option>
+                            <option value="true">Sim</option>
+                            <option value="false">Não</option>
+                        </select>
+                    </div>
+                    <div class="crm-field">
+                        <label>Urgência para iniciar</label>
+                        <select class="crm-select" id="f-urgencia" style="width:100%">
+                            <option value="">—</option>
+                            <option value="imediata">Imediata</option>
+                            <option value="30_dias">30 dias</option>
+                            <option value="sem_pressa">Sem pressa</option>
+                        </select>
+                    </div>
+                    <div class="crm-field">
+                        <label>Qualificação</label>
+                        <select class="crm-select" id="f-qualificado" style="width:100%">
+                            <option value="">Não avaliado</option>
+                            <option value="true">Qualificado</option>
+                            <option value="false">Não qualificado</option>
+                        </select>
+                    </div>
+                    <div class="crm-field">
+                        <label>Valor da proposta (R$)</label>
+                        <input class="crm-input" id="f-valor_proposta" inputmode="decimal">
+                    </div>
+                    <div class="crm-field">
+                        <label>Valor fechado (R$)</label>
+                        <input class="crm-input" id="f-valor_fechado" inputmode="decimal">
+                        <div class="hint">Preencher aqui é o que gera receita e CAC nas métricas.</div>
+                    </div>
+                </div>
+
+                <div class="crm-section-title">Registrar contato</div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+                    <select class="crm-select" id="c-canal">
+                        <option value="whatsapp">WhatsApp</option>
+                        <option value="ligacao">Ligação</option>
+                        <option value="email">E-mail</option>
+                        <option value="outro">Outro</option>
+                    </select>
+                    <select class="crm-select" id="c-resultado">
+                        <option value="respondeu">Respondeu</option>
+                        <option value="atendeu">Atendeu</option>
+                        <option value="nao_atendeu">Não atendeu</option>
+                        <option value="sem_resposta">Sem resposta</option>
+                        <option value="numero_errado">Número errado</option>
+                    </select>
+                    <button class="crm-btn" onclick="CRM.registrarContato()">Registrar</button>
+                    <span class="crm-spacer"></span>
+                    <button class="crm-btn" onclick="CRM.marcarCallRealizada()">✅ Call realizada</button>
+                    <button class="crm-btn danger" onclick="CRM.marcarNoShow()">🚫 No-show</button>
+                </div>
+
+                <div class="crm-section-title">Mover</div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+                    <select class="crm-select" id="m-etapa">
+                        {% for etapa in etapas %}
+                        <option value="{{ etapa }}">{{ etapa_labels[etapa] }}</option>
+                        {% endfor %}
+                    </select>
+                    <button class="crm-btn" onclick="CRM.moverPeloModal()">Mover etapa</button>
+                    <span class="crm-spacer"></span>
+                    <button class="crm-btn" onclick="CRM.abrirSaida('timing_errado')">⏳ Timing errado</button>
+                    <button class="crm-btn danger" onclick="CRM.abrirSaida('perdido')">✖ Perdido</button>
+                    <button class="crm-btn" onclick="CRM.reativar()">↩ Reativar</button>
+                    <button class="crm-btn" id="btn-arquivar" onclick="CRM.arquivar()">📦 Arquivar</button>
+                </div>
+            </div>
+
+            <!-- ---- Origem: todos os cadastros ---- -->
+            <div class="crm-tabpanel" data-panel="origem">
+                <div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;" id="ml-origem-resumo"></div>
+                <div class="crm-sub-list" id="ml-subs"></div>
+            </div>
+
+            <!-- ---- Histórico de eventos ---- -->
+            <div class="crm-tabpanel" data-panel="historico">
+                <ul class="crm-timeline" id="ml-eventos"></ul>
+            </div>
+
+            <!-- ---- Notas e tarefas ---- -->
+            <div class="crm-tabpanel" data-panel="notas">
+                <textarea class="crm-textarea" id="n-texto" placeholder="O que aconteceu no atendimento..."></textarea>
+                <div style="margin-top:8px;display:flex;justify-content:flex-end;">
+                    <button class="crm-btn primary" onclick="CRM.salvarNota()">Adicionar nota</button>
+                </div>
+                <ul class="crm-timeline" id="ml-notas" style="margin-top:18px;"></ul>
+
+                <div class="crm-section-title">Tarefas</div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+                    <select class="crm-select" id="t-tipo">
+                        <option value="recontato">Recontato</option>
+                        <option value="follow_up">Follow-up</option>
+                        <option value="call">Call</option>
+                        <option value="outro">Outro</option>
+                    </select>
+                    <input class="crm-input" id="t-due" type="datetime-local" style="width:auto">
+                    <input class="crm-input" id="t-motivo" placeholder="Motivo" style="flex:1;min-width:160px">
+                    <button class="crm-btn" onclick="CRM.criarTarefa()">Criar</button>
+                </div>
+                <ul class="crm-timeline" id="ml-tarefas" style="margin-top:14px;"></ul>
+            </div>
+        </div>
+
+        <div class="crm-modal-foot">
+            <span id="ml-save-status" style="font-size:12px;color:var(--text-muted);margin-right:auto;"></span>
+            <button class="crm-btn" onclick="CRM.fecharLead()">Fechar</button>
+            <button class="crm-btn primary" onclick="CRM.salvarFicha()">Salvar ficha</button>
+        </div>
+    </div>
+</div>
+
+<!-- ============ Modal: saída do fluxo (perdido / timing errado) ============ -->
+<!-- Motivo é obrigatório: sem ele a métrica de perda não diz nada. -->
+<div class="crm-modal-overlay" id="modal-saida" onclick="if(event.target===this)CRM.fecharSaida()">
+    <div class="crm-modal narrow">
+        <div class="crm-modal-head">
+            <div><h2 id="ms-titulo">—</h2><div class="sub" id="ms-sub">—</div></div>
+            <button class="crm-modal-close" onclick="CRM.fecharSaida()">&times;</button>
+        </div>
+        <div class="crm-modal-body">
+            <div class="crm-field" id="ms-data-wrap" style="margin-bottom:14px;">
+                <label>Data de recontato *</label>
+                <input class="crm-input" id="ms-data" type="datetime-local">
+            </div>
+            <div class="crm-field">
+                <label>Motivo / anotação *</label>
+                <textarea class="crm-textarea" id="ms-motivo"
+                          placeholder="Por que saiu do fluxo? Isso vira métrica."></textarea>
+            </div>
+        </div>
+        <div class="crm-modal-foot">
+            <button class="crm-btn" onclick="CRM.fecharSaida()">Cancelar</button>
+            <button class="crm-btn primary" onclick="CRM.confirmarSaida()">Confirmar</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    window.CRM_CONFIG = {
+        etapas: {{ etapas | tojson }},
+        etapaLabels: {{ etapa_labels | tojson }},
+        statusLabels: {{ status_labels | tojson }},
+        slaMetaMin: {{ sla_meta_min }}
+    };
+</script>
+<script src="{{ url_for('static', filename='crm.js', v=version) }}"></script>
+{% endblock %}
