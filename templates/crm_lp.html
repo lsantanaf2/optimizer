@@ -79,21 +79,34 @@
     .hero-card {
       background: var(--branco);
       border-radius: 32px;
-      padding: 36px;
+      /* 44px em vez dos 36 da referência: a headline aqui é mais curta que a
+         de lá, então o card fica mais baixo e precisa de mais ar interno. */
+      padding: 44px;
       max-width: var(--container);
       margin: 0 auto;
     }
 
     .hero-grid {
       display: grid;
-      grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+      /* Coluna da headline mais larga que a da referência (1.45 contra ~1.1).
+         Medido: com 1.1 o título quebrava em 5 linhas curtas e empilhadas,
+         porque "sorveterias" e "venderem" são palavras longas. Com 1.45 cabem
+         4 linhas cheias e ainda sobram 425px para o formulário. */
+      grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
       gap: 32px;
-      align-items: start;
+      /* center, como na referência: a headline acompanha o meio do formulário
+         em vez de ficar presa no topo. */
+      align-items: center;
     }
 
     h1 {
-      font-size: 50px; line-height: 56px; font-weight: 700;
-      letter-spacing: -.022em;
+      /* 58px contra os 50 da referência: a headline daqui é bem mais curta
+         que a de lá, então a fonte sobe para ocupar a coluna. */
+      font-size: 58px; line-height: 64px; font-weight: 700;
+      letter-spacing: -.024em;
+      /* Equilibra o comprimento das linhas — sem isto a última linha fica só
+         com "os dias" pendurada. */
+      text-wrap: balance;
     }
     .destaque {
       background: var(--sk-gradiente);
@@ -369,7 +382,7 @@
         </div>
         <h3>Mídia paga</h3>
         <p>Meta e Google Ads criados, acompanhados e otimizados pela equipe, com
-           rotina de teste de criativo e ajuste de verba.</p>
+           rotina de teste de criativo em imagem e ajuste de verba.</p>
       </div>
       <div class="bloco">
         <div class="icone" aria-hidden="true">
@@ -402,7 +415,7 @@
     <div class="faq">
       <details open>
         <summary>Como funciona a gestão de tráfego da SK?</summary>
-        <p>A equipe cuida de estratégia, criativos, configuração das campanhas em
+        <p>A equipe cuida de estratégia, criativos em imagem, configuração das campanhas em
            Meta e Google Ads e otimização contínua, usando os dados que chegam no
            painel — e não só as métricas de clique da plataforma.</p>
       </details>
@@ -421,9 +434,16 @@
       </details>
       <details>
         <summary>Qual o investimento mínimo em anúncio?</summary>
-        <!-- TODO SK: preencher com o seu piso real de verba. -->
-        <p>Varia conforme a região e o objetivo da loja. Essa é uma das primeiras
-           coisas que a gente alinha na conversa.</p>
+        <p>R$ 1.000 por mês em verba de anúncio. É o piso para a campanha ter
+           volume suficiente de dados para ser otimizada — abaixo disso o ajuste
+           vira chute.</p>
+      </details>
+
+      <details>
+        <summary>Vocês fazem os criativos?</summary>
+        <p>Sim, criativos em imagem — arte, oferta e texto do anúncio. Vídeo não
+           entra no escopo: se a sua campanha depender de vídeo, a produção fica
+           com você ou com alguém da sua confiança, e a gente cuida da mídia.</p>
       </details>
       <details>
         <summary>Preciso ter alguém de marketing na loja?</summary>
