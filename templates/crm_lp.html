@@ -236,9 +236,11 @@
       background: #000;
       line-height: 0;
     }
-    .clipe video { width: 100%; height: auto; display: block; }
-    .clipe-legenda {
-      font-size: 13px; color: var(--tinta-suave); margin-top: 10px; line-height: 1.5;
+    .clipe video {
+      width: 100%; height: auto; display: block;
+      /* Sem interação: nada de menu de 'salvar vídeo' no botão direito e nada
+         de pausar no clique. É para se comportar como imagem animada. */
+      pointer-events: none;
     }
     /* Quem pede menos animação no sistema recebe o quadro parado. */
     @media (prefers-reduced-motion: reduce) {
@@ -324,13 +326,9 @@
             src="{{ url_for('static', filename='loja-cliente.mp4', v=version) }}"
             poster="{{ url_for('static', filename='loja-cliente-poster.jpg', v=version) }}"
             autoplay muted loop playsinline preload="metadata"
+            disablepictureinpicture controlslist="nodownload noplaybackrate"
             aria-label="Câmera de uma sorveteria cheia: fila no caixa, clientes se servindo nos freezers e área de mesas ocupada."></video>
         </div>
-        <!-- TODO SK: se o cliente autorizar, nomear a loja aqui — nome real
-             vale mais que "um cliente". -->
-        <p class="clipe-legenda">
-          Movimento real na loja de um cliente, pela câmera da própria loja.
-        </p>
       </div>
 
       <!-- Formulário -->
