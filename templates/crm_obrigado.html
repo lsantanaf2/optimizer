@@ -7,6 +7,22 @@
   <meta name="robots" content="noindex">
   <link rel="icon" href="{{ url_for('static', filename='sk-logo.png') }}">
   <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;600;700&display=swap" rel="stylesheet">
+
+  {% if pixel_id %}
+  <!-- Só PageView. O Lead já foi disparado na landing, com o event_id que a
+       CAPI usa — repetir aqui contaria a mesma conversão duas vezes. -->
+  <script>
+    !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+    n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
+    n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
+    t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,
+    document,'script','https://connect.facebook.net/en_US/fbevents.js');
+    fbq('init', {{ pixel_id | tojson }});
+    fbq('track', 'PageView');
+  </script>
+  <noscript><img height="1" width="1" style="display:none"
+    src="https://www.facebook.com/tr?id={{ pixel_id }}&ev=PageView&noscript=1" alt=""></noscript>
+  {% endif %}
   <style>
     :root {
       --sk-indigo: #3b2f84; --sk-roxo: #544890; --sk-azul: #6090c0; --sk-ciano: #4fc0dc;

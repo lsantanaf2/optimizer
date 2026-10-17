@@ -44,6 +44,7 @@ from flask import (
 )
 
 from modules import crm_core as core
+from modules import meta_capi
 from modules.crm_core import BR_TZ, ETAPA_LABELS, ETAPAS, STATUS_LABELS, TelefoneInvalido
 from modules.database import fetch_one
 from modules.rate_limiter import _client_ip, check_rate_limit, is_allowed
@@ -268,9 +269,40 @@ def captura_lead():
                 'novo' if res['is_novo'] else 'recadastro',
                 res['lead_id'], res['submissions_count'], atribuicao.get('utm_source') or 'direto')
 
+    # Conversions API: mesmo event_id que o Pixel do browser usa, para a Meta
+    # deduplicar. O id da submissão serve bem — é um UUID por cadastro, então
+    # um recadastro vira uma conversão nova, e um reenvio da mesma submissão
+    # não duplica. Roda em thread: o lead já está salvo e a resposta não espera
+    # a Meta.
+    event_id = res['submission_id']
+    try:
+        meta_capi.enviar_lead(
+            event_id=event_id,
+            email=email,
+            telefone_e164=e164,
+            nome=nome,
+            fbp=atribuicao.get('fbp'),
+            fbc=atribuicao.get('fbc'),
+            ip=atribuicao.get('ip'),
+            user_agent=atribuicao.get('user_agent'),
+            event_source_url=atribuicao.get('landing_url'),
+            custom={
+                'lead_event_source': 'optimizer-crm',
+                'utm_source': atribuicao.get('utm_source'),
+                'utm_campaign': atribuicao.get('utm_campaign'),
+            },
+        )
+    except Exception:
+        # Falha de CAPI nunca pode derrubar a captura do lead.
+        logger.exception("CRM captura: erro ao disparar CAPI do lead %s", res['lead_id'])
+
     return responder({
         'ok': True,
         'is_novo': res['is_novo'],
+        # O browser dispara fbq('track','Lead') com ESTE id; sem ele os dois
+        # caminhos virariam duas conversões e o CPL no gerenciador cairia pela
+        # metade.
+        'event_id': event_id,
         'redirect': form.get('redirect_url') or url_for('crm.obrigado'),
     })
 
@@ -291,7 +323,10 @@ def _get_form_por_slug(slug):
 
 
 def _render_lp(form):
-    return render_template('crm_lp.html', form=form, honeypot_field=HONEYPOT_FIELD)
+    # O pixel vem do mesmo lugar que a CAPI usa, para os dois caminhos nunca
+    # apontarem para pixels diferentes.
+    return render_template('crm_lp.html', form=form, honeypot_field=HONEYPOT_FIELD,
+                           pixel_id=meta_capi.PIXEL_ID)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -348,7 +383,7 @@ def _lp_por_host():
 
 @crm_bp.route('/obrigado')
 def obrigado():
-    return render_template('crm_obrigado.html')
+    return render_template('crm_obrigado.html', pixel_id=meta_capi.PIXEL_ID)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -8,6 +8,23 @@
   <meta name="robots" content="noindex">
   <link rel="icon" href="{{ url_for('static', filename='sk-logo.png') }}">
   <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+  {% if pixel_id %}
+  <!-- Meta Pixel. O PageView dispara aqui; o Lead só depois que o servidor
+       confirmar que o lead foi gravado (ver o submit do formulário). -->
+  <script>
+    !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+    n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
+    n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
+    t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,
+    document,'script','https://connect.facebook.net/en_US/fbevents.js');
+    fbq('init', {{ pixel_id | tojson }});
+    fbq('track', 'PageView');
+  </script>
+  <noscript><img height="1" width="1" style="display:none"
+    src="https://www.facebook.com/tr?id={{ pixel_id }}&ev=PageView&noscript=1" alt=""></noscript>
+  {% endif %}
+
   <style>
     /* ===========================================================
        Identidade SK — cores amostradas do logo:
@@ -628,7 +645,23 @@
         erro(campo, data.error || 'Não foi possível enviar. Tente novamente.');
         return;
       }
-      window.location.href = data.redirect || '/obrigado';
+
+      // Lead só aqui: o servidor já confirmou que gravou. Disparar antes do
+      // ok significaria contar conversão de telefone inválido e de bot.
+      // O eventID vem do servidor e é o MESMO que a CAPI envia — sem ele a
+      // Meta contaria dois leads e o CPL cairia pela metade.
+      try {
+        if (window.fbq && data.event_id) {
+          fbq('track', 'Lead', {
+            content_name: FORM_KEY,
+            content_category: document.getElementById('segmento').value || undefined,
+          }, { eventID: data.event_id });
+        }
+      } catch (e) { /* pixel nunca pode travar o redirect do lead */ }
+
+      // Respiro para a requisição do pixel sair antes da navegação. Se mesmo
+      // assim se perder, a CAPI já mandou o evento pelo servidor.
+      setTimeout(() => { window.location.href = data.redirect || '/obrigado'; }, 350);
     } catch (e) {
       btn.disabled = false;
       btn.textContent = 'Quero vender mais';
