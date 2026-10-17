@@ -32,6 +32,7 @@ Rotas:
 """
 
 import logging
+import os
 import re
 from datetime import datetime, timedelta
 from functools import wraps
@@ -265,13 +266,73 @@ def captura_lead():
 
 @crm_bp.route('/lp/<slug>')
 def landing_page(slug):
-    form = fetch_one(
+    form = _get_form_por_slug(slug)
+    if not form:
+        abort(404)
+    return _render_lp(form)
+
+
+def _get_form_por_slug(slug):
+    return fetch_one(
         "SELECT * FROM crm_forms WHERE slug = %s AND enabled IS TRUE",
         (slug,),
     )
-    if not form:
-        abort(404)
+
+
+def _render_lp(form):
     return render_template('crm_lp.html', form=form, honeypot_field=HONEYPOT_FIELD)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Subdomínio de captura (cadastro.tráfego.com)
+# ─────────────────────────────────────────────────────────────────────────────
+# Nesse host a raiz é a LP padrão e /<slug> serve as demais LPs cadastradas em
+# crm_forms — criar uma oferta nova não exige mexer em DNS nem em nginx.
+#
+# O host vem em punycode: 'tráfego.com' é 'xn--trfego-qta.com'. O default já
+# inclui o subdomínio para o deploy não depender de editar o deploy.sh da VPS
+# (que é gitignored); CRM_LP_HOSTS sobrescreve se precisar.
+LP_HOSTS = {
+    h.strip().lower()
+    for h in os.environ.get('CRM_LP_HOSTS', 'cadastro.xn--trfego-qta.com').split(',')
+    if h.strip()
+}
+LP_SLUG_PADRAO = os.environ.get('CRM_LP_DEFAULT_SLUG', 'sk')
+
+# Nesse host o app serve SÓ a captura. O resto (incluindo /crm e o login)
+# responde 404: o subdomínio vai em anúncio, não tem por que expor o painel.
+# '/lp/' entra aqui para o link canônico antigo continuar valendo nos dois
+# hosts — um /lp/sk que dá 404 só no subdomínio é armadilha na hora de
+# compartilhar o link.
+LP_HOST_PREFIXOS_LIVRES = ('/api/crm/lead', '/static/', '/obrigado', '/lp/', '/favicon.ico')
+
+
+@crm_bp.before_app_request
+def _lp_por_host():
+    host = (request.host or '').lower().split(':')[0]
+    if host not in LP_HOSTS:
+        return None
+
+    caminho = request.path
+    if caminho.startswith(LP_HOST_PREFIXOS_LIVRES):
+        return None
+
+    enxuto = caminho.rstrip('/')
+    if enxuto in ('', '/'):
+        form = _get_form_por_slug(LP_SLUG_PADRAO)
+        if not form:
+            logger.error("CRM LP: slug padrão '%s' não existe em crm_forms", LP_SLUG_PADRAO)
+            abort(404)
+        return _render_lp(form)
+
+    # /<slug> — um nível só; nada de /a/b nem de slug fora do formato
+    slug = enxuto[1:]
+    if '/' not in slug and re.fullmatch(r'[a-z0-9-]{1,64}', slug):
+        form = _get_form_por_slug(slug)
+        if form:
+            return _render_lp(form)
+
+    abort(404)
 
 
 @crm_bp.route('/obrigado')
