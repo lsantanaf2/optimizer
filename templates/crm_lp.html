@@ -242,11 +242,6 @@
          de pausar no clique. É para se comportar como imagem animada. */
       pointer-events: none;
     }
-    /* Quem pede menos animação no sistema recebe o quadro parado. */
-    @media (prefers-reduced-motion: reduce) {
-      .clipe video { display: none; }
-      .clipe { background: center / cover no-repeat var(--poster, transparent); aspect-ratio: 632 / 262; }
-    }
 
     /* FAQ */
     .faq { margin-top: 44px; max-width: 860px; }
@@ -321,7 +316,7 @@
         <!-- Vídeo e não GIF: o mesmo clipe em GIF daria 1,3MB contra 108KB
              aqui, e ainda em 480px/12fps. Mudo, em loop e sem controles, ele
              se comporta exatamente como um GIF para quem olha. -->
-        <div class="clipe" style="--poster:url('{{ url_for('static', filename='loja-cliente-poster.jpg') }}')">
+        <div class="clipe">
           <video
             src="{{ url_for('static', filename='loja-cliente.mp4', v=version) }}"
             poster="{{ url_for('static', filename='loja-cliente-poster.jpg', v=version) }}"
