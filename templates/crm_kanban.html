@@ -174,6 +174,7 @@
                     <button class="crm-btn danger" onclick="CRM.abrirSaida('perdido')">✖ Perdido</button>
                     <button class="crm-btn" onclick="CRM.reativar()">↩ Reativar</button>
                     <button class="crm-btn" id="btn-arquivar" onclick="CRM.arquivar()">📦 Arquivar</button>
+                    <button class="crm-btn danger" onclick="CRM.abrirExclusao()">🗑 Excluir</button>
                 </div>
             </div>
 
@@ -216,6 +217,44 @@
             <span id="ml-save-status" style="font-size:12px;color:var(--text-muted);margin-right:auto;"></span>
             <button class="crm-btn" onclick="CRM.fecharLead()">Fechar</button>
             <button class="crm-btn primary" onclick="CRM.salvarFicha()">Salvar ficha</button>
+        </div>
+    </div>
+</div>
+
+<!-- ============ Modal: exclusão definitiva ============ -->
+<!-- Mostra exatamente o que será apagado e exige digitar EXCLUIR: um clique a
+     mais não desfaz nada, e aqui não existe desfazer. -->
+<div class="crm-modal-overlay" id="modal-excluir" onclick="if(event.target===this)CRM.fecharExclusao()">
+    <div class="crm-modal narrow">
+        <div class="crm-modal-head">
+            <div>
+                <h2 style="color:var(--danger)">🗑 Excluir definitivamente</h2>
+                <div class="sub">Não há como desfazer.</div>
+            </div>
+            <button class="crm-modal-close" onclick="CRM.fecharExclusao()">&times;</button>
+        </div>
+        <div class="crm-modal-body">
+            <div id="me-resumo" style="font-size:13.5px;line-height:1.6;margin-bottom:16px;"></div>
+
+            <div style="background:var(--warning-bg);border:1px solid var(--warning);
+                        border-radius:var(--radius-sm);padding:11px 13px;font-size:12.5px;
+                        color:var(--text-secondary);margin-bottom:16px;line-height:1.55;">
+                Este lead deixa de contar nas métricas do período — inclusive nas
+                taxas de conversão já calculadas. É o certo para teste e spam.
+                Se for uma pessoa real pedindo remoção, me avise: o caminho é
+                outro.
+            </div>
+
+            <div class="crm-field">
+                <label>Digite <b>EXCLUIR</b> para confirmar</label>
+                <input class="crm-input" id="me-confirma" autocomplete="off" placeholder="EXCLUIR"
+                       oninput="CRM.validarExclusao()">
+            </div>
+        </div>
+        <div class="crm-modal-foot">
+            <button class="crm-btn" onclick="CRM.fecharExclusao()">Cancelar</button>
+            <button class="crm-btn danger" id="me-confirmar" disabled
+                    onclick="CRM.confirmarExclusao()">Excluir para sempre</button>
         </div>
     </div>
 </div>

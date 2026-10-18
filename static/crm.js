@@ -439,6 +439,70 @@ const CRM = (() => {
     }
 
     // ───────────────────────────────────────────────────────────
+    // Exclusão definitiva
+    // ───────────────────────────────────────────────────────────
+    function abrirExclusao() {
+        if (!leadAberto) return;
+        const l = leadAberto.lead;
+        // Os totais já estão carregados no modal do lead; não precisa ir ao
+        // servidor só para contar.
+        const n = {
+            subs: (leadAberto.submissions || []).length,
+            ev: (leadAberto.eventos || []).length,
+            notas: (leadAberto.notas || []).length,
+            tarefas: (leadAberto.tarefas || []).length,
+        };
+        const linha = (qtd, singular, plural) =>
+            qtd > 0 ? `<li>${qtd} ${qtd === 1 ? singular : plural}</li>` : '';
+
+        $('#me-resumo').innerHTML = `
+            <div style="margin-bottom:10px">Vai apagar
+              <b>${esc(l.nome || 'Sem nome')}</b> — ${esc(l.whatsapp_display || '')}
+              ${l.email ? '· ' + esc(l.email) : ''}</div>
+            <div style="color:var(--text-muted);margin-bottom:6px">e junto com ele:</div>
+            <ul style="margin-left:18px;color:var(--text-secondary)">
+              ${linha(n.subs, 'cadastro com a origem', 'cadastros com a origem')}
+              ${linha(n.ev, 'evento do histórico', 'eventos do histórico')}
+              ${linha(n.notas, 'nota', 'notas')}
+              ${linha(n.tarefas, 'tarefa', 'tarefas')}
+            </ul>`;
+
+        $('#me-confirma').value = '';
+        $('#me-confirmar').disabled = true;
+        $('#modal-excluir').classList.add('open');
+        setTimeout(() => $('#me-confirma').focus(), 80);
+    }
+
+    function fecharExclusao() {
+        $('#modal-excluir').classList.remove('open');
+    }
+
+    function validarExclusao() {
+        $('#me-confirmar').disabled = $('#me-confirma').value.trim().toUpperCase() !== 'EXCLUIR';
+    }
+
+    async function confirmarExclusao() {
+        if (!leadAberto) return;
+        if ($('#me-confirma').value.trim().toUpperCase() !== 'EXCLUIR') return;
+        const id = leadAberto.lead.id;
+        const btn = $('#me-confirmar');
+        btn.disabled = true;
+        btn.textContent = 'Excluindo...';
+        try {
+            await api(`/api/crm/leads/${id}?confirmar=1`, { method: 'DELETE' });
+            leads = leads.filter(l => l.id !== id);
+            fecharExclusao();
+            fecharLead();
+            render();
+            mostrarToast('🗑 Lead excluído definitivamente');
+        } catch (e) {
+            btn.disabled = false;
+            btn.textContent = 'Excluir para sempre';
+            mostrarToast('❌ ' + e.message);
+        }
+    }
+
+    // ───────────────────────────────────────────────────────────
     // Saída do fluxo — motivo obrigatório
     // ───────────────────────────────────────────────────────────
     function abrirSaida(status) {
@@ -636,7 +700,7 @@ const CRM = (() => {
         });
 
         document.addEventListener('keydown', e => {
-            if (e.key === 'Escape') { fecharSaida(); fecharLead(); }
+            if (e.key === 'Escape') { fecharExclusao(); fecharSaida(); fecharLead(); }
         });
 
         // Voltar para a aba limpa o pisca do título
@@ -664,6 +728,7 @@ const CRM = (() => {
         marcarNoShow, marcarCallRealizada, moverPeloModal, reativar, arquivar,
         salvarNota, criarTarefa, concluirTarefa,
         abrirSaida, fecharSaida, confirmarSaida,
+        abrirExclusao, fecharExclusao, validarExclusao, confirmarExclusao,
         ativarAlertas,
     };
 })();

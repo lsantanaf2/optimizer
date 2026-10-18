@@ -25,6 +25,7 @@ Rotas:
   POST   /api/crm/leads/<id>/no-show        — marca no-show
   POST   /api/crm/leads/<id>/call-realizada — marca call realizada
   POST   /api/crm/leads/<id>/arquivar       — arquiva/desarquiva
+  DELETE /api/crm/leads/<id>?confirmar=1    — exclusão definitiva (irreversível)
   POST   /api/crm/tarefas/<id>/concluir     — conclui tarefa
   GET    /api/crm/tarefas                   — tarefas pendentes
   GET    /api/crm/novos?since=<iso>         — polling do alerta de lead novo
@@ -565,6 +566,33 @@ def api_arquivar(lead_id):
     lead = core.arquivar_lead(lead_id, arquivar=dados.get('arquivar', True),
                               autor_id=_autor())
     return jsonify({'lead': _lead_json(lead)})
+
+
+@crm_bp.route('/api/crm/leads/<lead_id>', methods=['DELETE'])
+@_login_required
+def api_excluir_lead(lead_id):
+    """Exclusão definitiva. Não tem desfazer.
+
+    Exige ?confirmar=1: um DELETE disparado por engano (link, prefetch, script
+    de teste) não apaga nada sem a intenção explícita.
+    """
+    if request.args.get('confirmar') != '1':
+        return jsonify({'error': 'confirmação ausente'}), 400
+
+    apagado = core.excluir_lead(lead_id)
+    if not apagado:
+        return jsonify({'error': 'lead não encontrado'}), 404
+
+    # Fica no log porque a linha some do banco: é o único rastro de que esse
+    # lead existiu, quem apagou e quanto foi junto.
+    logger.warning(
+        "CRM: EXCLUSAO DEFINITIVA do lead %s por user=%s — '%s' (%s), etapa=%s, "
+        "%s linha(s): %s submissao(oes), %s evento(s), %s nota(s), %s tarefa(s)",
+        lead_id, _autor(), apagado.get('nome'), apagado.get('whatsapp_e164'),
+        apagado.get('etapa'), apagado['linhas_removidas'], apagado['submissoes'],
+        apagado['eventos'], apagado['notas'], apagado['tarefas'],
+    )
+    return jsonify({'ok': True, 'apagado': core._row(apagado)})
 
 
 @crm_bp.route('/api/crm/tarefas')

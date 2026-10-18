@@ -713,6 +713,43 @@ def arquivar_lead(lead_id, arquivar=True, autor_id=None):
     return obter_lead(lead_id)
 
 
+def excluir_lead(lead_id):
+    """Apaga o lead e TUDO que depende dele. Irreversível.
+
+    Submissões, eventos, notas e tarefas somem pela cascata do banco
+    (ON DELETE CASCADE nas quatro tabelas filhas) — não há linha órfã depois.
+
+    É para lixo: teste, spam, bot, trote. Lembrar que isso muda as métricas do
+    período retroativamente, porque o lead deixa de ser contado no funil — o
+    que é o comportamento correto para algo que nunca foi um lead de verdade.
+
+    Retorna o que foi apagado (para o log), ou None se o lead não existia.
+    """
+    with get_cursor() as cur:
+        # Conta antes: depois do DELETE não há como saber o tamanho do estrago.
+        cur.execute(
+            """
+            SELECT l.nome, l.whatsapp_e164, l.etapa, l.status,
+                   (SELECT count(*) FROM crm_lead_submissions s WHERE s.lead_id = l.id) AS submissoes,
+                   (SELECT count(*) FROM crm_lead_events e WHERE e.lead_id = l.id)      AS eventos,
+                   (SELECT count(*) FROM crm_notes n WHERE n.lead_id = l.id)            AS notas,
+                   (SELECT count(*) FROM crm_tasks t WHERE t.lead_id = l.id)            AS tarefas
+            FROM crm_leads l WHERE l.id = %s
+            """,
+            (lead_id,),
+        )
+        antes = cur.fetchone()
+        if not antes:
+            return None
+
+        cur.execute("DELETE FROM crm_leads WHERE id = %s", (lead_id,))
+        apagado = dict(antes)
+        apagado['linhas_removidas'] = (
+            1 + antes['submissoes'] + antes['eventos'] + antes['notas'] + antes['tarefas']
+        )
+    return apagado
+
+
 def registrar_no_show(lead_id, autor_id=None, observacao=None):
     with get_cursor() as cur:
         registrar_evento(cur, lead_id, 'no_show', autor_id=autor_id,
