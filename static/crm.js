@@ -134,6 +134,16 @@ const CRM = (() => {
 
         const origem = [lead.utm_source, lead.utm_campaign].filter(Boolean).join(' · ') || 'direto';
 
+        // Marcar a 1ª mensagem precisa ser 1 clique, no próprio card: se
+        // depender de abrir a ficha e preencher canal/resultado, esquece-se
+        // justamente nos dias cheios — foi assim que o SLA ficou errado antes.
+        const botaoMsg = lead.contato_estado === 'nao_abordado'
+            ? `<button class="card-acao" title="Marca que você mandou a primeira mensagem (fecha o SLA)"
+                       onclick="event.stopPropagation();CRM.marcarMensagemEnviada('${lead.id}', this)">
+                 📨 marquei a 1ª mensagem
+               </button>`
+            : '';
+
         return `
         <div class="lead-card" draggable="true" data-id="${lead.id}"
              data-sla="${sla}" data-status="${lead.status}" data-parcial="${lead.captura_parcial ? 1 : 0}"
@@ -147,6 +157,7 @@ const CRM = (() => {
                 <span>· ${fmtData(lead.created_at)}</span>
             </div>
             <div class="lead-card-tags">${tags.join('')}</div>
+            ${botaoMsg}
         </div>`;
     }
 
@@ -192,6 +203,29 @@ const CRM = (() => {
                 await mover(id, { etapa });
             });
         });
+    }
+
+    async function marcarMensagemEnviada(id, btn) {
+        if (btn) { btn.disabled = true; btn.textContent = 'marcando...'; }
+        try {
+            // Reaproveita o registro de contato: canal whatsapp, sem resposta.
+            // É o que preenche primeira_tentativa_em e tira o lead de Novo.
+            await api(`/api/crm/leads/${id}/contato`, {
+                method: 'POST',
+                body: JSON.stringify({ canal: 'whatsapp', resultado: 'sem_resposta' }),
+            });
+            await carregar();
+            mostrarToast('📨 1ª mensagem marcada — SLA registrado');
+        } catch (e) {
+            if (btn) { btn.disabled = false; btn.textContent = '📨 marquei a 1ª mensagem'; }
+            mostrarToast('❌ ' + e.message);
+        }
+    }
+
+    async function marcarMensagemEnviadaFicha(btn) {
+        if (!leadAberto) return;
+        await marcarMensagemEnviada(leadAberto.lead.id, btn);
+        await abrirLead(leadAberto.lead.id);   // recarrega a ficha já atualizada
     }
 
     async function mover(id, payload) {
@@ -242,6 +276,15 @@ const CRM = (() => {
             `${l.whatsapp_display || ''} · ${l.email || 'sem e-mail'} · ${l.etapa_label}` +
             (l.status !== 'ativo' ? ` · ${l.status_label}` : '');
         $('#ml-whats').href = l.whatsapp_link || '#';
+        // O botão só aparece enquanto ninguém abordou: depois disso ele não
+        // tem o que marcar e viraria ruído.
+        const btnMsg = $('#ml-marcar-msg');
+        if (btnMsg) {
+            const pendente = l.contato_estado === 'nao_abordado';
+            btnMsg.style.display = pendente ? 'inline-flex' : 'none';
+            btnMsg.disabled = false;
+            btnMsg.textContent = '📨 Marquei a 1ª mensagem';
+        }
         $('#btn-arquivar').textContent = l.arquivado_em ? '📦 Desarquivar' : '📦 Arquivar';
 
         // Ficha
@@ -754,6 +797,7 @@ const CRM = (() => {
 
     return {
         carregar, abrirLead, fecharLead, salvarFicha, registrarContato,
+        marcarMensagemEnviada, marcarMensagemEnviadaFicha,
         marcarNoShow, marcarCallRealizada, moverPeloModal, reativar, arquivar,
         salvarNota, criarTarefa, concluirTarefa,
         abrirSaida, fecharSaida, confirmarSaida,

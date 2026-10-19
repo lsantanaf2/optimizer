@@ -75,6 +75,13 @@
             </div>
             <div style="display:flex;gap:8px;align-items:center;">
                 <a class="crm-btn primary" id="ml-whats" target="_blank" rel="noopener">💬 WhatsApp</a>
+                <!-- Um clique, sem formulário: só marca que a 1ª mensagem saiu,
+                     que é o que fecha o SLA. Some depois de marcado. -->
+                <button class="crm-btn" id="ml-marcar-msg" style="display:none"
+                        onclick="CRM.marcarMensagemEnviadaFicha(this)"
+                        title="Marca que você mandou a primeira mensagem">
+                    📨 Marquei a 1ª mensagem
+                </button>
                 <button class="crm-modal-close" onclick="CRM.fecharLead()">&times;</button>
             </div>
         </div>

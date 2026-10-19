@@ -145,6 +145,19 @@
 .lead-card-meta { font-size: 11px; color: var(--text-muted); display: flex; flex-wrap: wrap; gap: 6px; }
 .lead-card-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 7px; }
 
+/* Ação de 1 clique no card. Discreta até o mouse passar: não compete com
+   o conteúdo, mas está sempre ao alcance. */
+.card-acao {
+    width: 100%; margin-top: 8px; padding: 6px 8px;
+    background: transparent; color: var(--text-muted);
+    border: 1px dashed var(--border); border-radius: var(--radius-sm);
+    font-family: inherit; font-size: 11px; font-weight: 500;
+    cursor: pointer; transition: all .15s;
+}
+.lead-card:hover .card-acao { color: var(--accent); border-color: var(--accent); }
+.card-acao:hover { background: var(--accent); color: #05161a; border-style: solid; }
+.card-acao:disabled { opacity: .6; cursor: wait; }
+
 .crm-tag {
     font-size: 10px;
     font-weight: 600;
