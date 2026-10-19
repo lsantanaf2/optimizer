@@ -235,15 +235,15 @@ const CRM = (() => {
             'investimento_midia', 'valor_proposta', 'valor_fechado'].forEach(c => {
                 $('#f-' + c).value = l[c] == null ? '' : l[c];
             });
-        // O campo numérico continua livre para o operador corrigir com o que
-        // apurar na call; a dica mostra o que a PESSOA declarou no formulário.
+        // O que a PESSOA marcou no formulário, literal. O campo numérico ao
+        // lado é do operador, para o valor apurado na conversa.
         const declarado = (data.submissions || [])
             .map(s => s.payload && s.payload.faturamento_faixa)
             .find(Boolean);
         const dica = $('#f-faturamento-declarado');
         if (dica) {
-            dica.textContent = declarado ? `Declarou no formulário: ${declarado}` : '';
-            dica.style.display = declarado ? 'block' : 'none';
+            dica.textContent = declarado || 'não informou';
+            dica.classList.toggle('vazio', !declarado);
         }
         $('#f-ja_fez_trafego').value = l.ja_fez_trafego == null ? '' : String(l.ja_fez_trafego);
         $('#f-qualificado').value = l.qualificado == null ? '' : String(l.qualificado);

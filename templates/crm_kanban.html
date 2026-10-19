@@ -96,10 +96,15 @@
                         <input class="crm-input" id="f-empresa_segmento">
                     </div>
                     <div class="crm-field">
-                        <label>Faturamento anual (R$)</label>
-                        <input class="crm-input" id="f-faturamento_anual" inputmode="decimal" placeholder="ex.: 700000">
-                        <div class="hint" id="f-faturamento-declarado" style="display:none;color:var(--accent)"></div>
-                        <div class="hint">Número estimado a partir da faixa. Corrija com o que apurar na call.</div>
+                        <label>Faturamento declarado no formulário</label>
+                        <!-- Exatamente o que a pessoa marcou. Não é editável:
+                             é registro do que ela respondeu. -->
+                        <div class="valor-declarado" id="f-faturamento-declarado">—</div>
+                    </div>
+                    <div class="crm-field">
+                        <label>Faturamento apurado (R$)</label>
+                        <input class="crm-input" id="f-faturamento_anual" inputmode="decimal" placeholder="ex.: 18000">
+                        <div class="hint">O que você confirmar na conversa.</div>
                     </div>
                     <div class="crm-field">
                         <label>Investimento mensal em mídia (R$)</label>

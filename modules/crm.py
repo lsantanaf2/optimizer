@@ -232,19 +232,14 @@ def captura_lead():
 
     # Campos extras do form vão para payload jsonb — adicionar pergunta na LP
     # não exige migration.
-    # Faturamento declarado pelo lead. O select da LP manda o piso da faixa em
-    # `faturamento_anual` (número, como o usuário pediu — sem faixas na ficha) e
-    # o rótulo exato em `faturamento_faixa`, que cai no payload. Assim o CRM tem
-    # um número comparável e o histórico guarda o que a pessoa de fato marcou.
-    try:
-        faturamento = core._para_numero(dados.get('faturamento_anual'))
-    except ValueError:
-        faturamento = None
-
+    # O faturamento declarado no formulário é texto ("Até 20 mil") e fica no
+    # payload da submissão, exatamente como a pessoa marcou. Não é convertido
+    # em número: a coluna crm_leads.faturamento_anual é do operador, para o
+    # valor que ele apurar na call.
     conhecidos = set(atribuicao) | {
         'nome', 'email', 'whatsapp', 'telefone', 'empresa_segmento', 'form_key',
         'first_seen_at', 'ad_id', 'adset_id', 'campaign_id',
-        'faturamento_anual', HONEYPOT_FIELD,
+        HONEYPOT_FIELD,
     }
     extras = {k: core.limpar_texto(v, 500) for k, v in dados.items()
               if k not in conhecidos and v not in (None, '')}
@@ -260,7 +255,6 @@ def captura_lead():
             atribuicao=atribuicao,
             first_seen_at=first_seen_at,
             payload=extras,
-            faturamento_anual=faturamento,
         )
     except Exception:
         logger.exception("CRM captura: falha ao gravar lead (form=%s)", form_key)

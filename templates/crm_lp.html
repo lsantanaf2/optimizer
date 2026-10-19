@@ -375,19 +375,19 @@
           </div>
 
           <div>
-            <!-- O value é o PONTO MÉDIO da faixa, não o piso: com o piso,
-                 "Até 20 mil" virava 0.00 na ficha e o operador lia como
-                 "não informou" ou "fatura zero". O rótulo exato continua indo
-                 para o payload da submissão. -->
+            <!-- O value É o rótulo. Nada de converter faixa em número: o
+                 lead escolheu "Até 20 mil", é isso que fica guardado e é isso
+                 que a ficha mostra. O campo numérico do CRM existe para o que
+                 o operador apurar na call, não para um chute derivado daqui. -->
             <label for="faturamento">Faturamento mensal da loja *</label>
             <select id="faturamento" name="faturamento">
               <option value="">Selecionar faturamento</option>
-              <option value="10000">Até 20 mil</option>
-              <option value="30000">20 mil até 40 mil</option>
-              <option value="55000">40 mil até 70 mil</option>
-              <option value="85000">70 mil até 100 mil</option>
-              <option value="150000">100 mil até 200 mil</option>
-              <option value="250000">Mais de 200 mil</option>
+              <option>Até 20 mil</option>
+              <option>20 mil até 40 mil</option>
+              <option>40 mil até 70 mil</option>
+              <option>70 mil até 100 mil</option>
+              <option>100 mil até 200 mil</option>
+              <option>Mais de 200 mil</option>
             </select>
             <div class="erro" id="erro-faturamento"></div>
           </div>
@@ -667,8 +667,7 @@
                          document.getElementById('segmento').value]
                          .filter(Boolean).join(' · ') || null,
       segmento: document.getElementById('segmento').value || null,
-      faturamento_anual: faixa.value || null,
-      faturamento_faixa: faixa.value ? faixa.options[faixa.selectedIndex].text : null,
+      faturamento_faixa: faixa.value || null,
       {{ honeypot_field }}: document.getElementById({{ honeypot_field | tojson }}).value,
     }, atribuicao());
 

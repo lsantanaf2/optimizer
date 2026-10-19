@@ -225,6 +225,14 @@
     letter-spacing: .04em; color: var(--text-muted); margin-bottom: 5px;
 }
 .crm-field .hint { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+.valor-declarado {
+    padding: 9px 11px;
+    background: var(--bg-deep);
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 14px; font-weight: 600; color: var(--accent);
+}
+.valor-declarado.vazio { color: var(--text-muted); font-weight: 400; font-style: italic; }
 
 /* ---------- Timeline / histórico ---------- */
 .crm-timeline { list-style: none; }
