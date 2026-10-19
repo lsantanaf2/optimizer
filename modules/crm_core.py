@@ -419,6 +419,12 @@ def listar_leads(*, dias=None, incluir_arquivados=False, status=None, owner_id=N
             l.*,
             s.utm_source, s.utm_medium, s.utm_campaign, s.utm_content,
             s.faturamento_faixa,
+            -- Tempos calculados com o NOW() do BANCO, nunca no Python: o
+            -- relógio da aplicação estava atrasado e o card chegou a mostrar
+            -- "não abordado há -1,7min" num lead recém-criado.
+            GREATEST(0, EXTRACT(EPOCH FROM (NOW() - l.created_at)) / 60)           AS aguardando_min_db,
+            EXTRACT(EPOCH FROM (l.primeira_tentativa_em - l.created_at)) / 60      AS sla_min_db,
+            GREATEST(0, EXTRACT(EPOCH FROM (NOW() - l.primeira_tentativa_em)) / 60) AS sem_resposta_min_db,
             u.email AS owner_email,
             (SELECT COUNT(*) FROM crm_tasks t
               WHERE t.lead_id = l.id AND t.status = 'pendente') AS tarefas_pendentes,
@@ -564,14 +570,19 @@ def mover_lead(lead_id, *, etapa=None, status=None, motivo=None, autor_id=None):
                 etapa               = %s,
                 status              = %s,
                 motivo_saida        = CASE WHEN %s <> 'ativo' THEN COALESCE(%s, motivo_saida) ELSE motivo_saida END,
-                primeiro_contato_em = CASE WHEN %s THEN NOW() ELSE primeiro_contato_em END,
-                ultimo_contato_em   = CASE WHEN %s THEN NOW() ELSE ultimo_contato_em END,
+                primeiro_contato_em   = CASE WHEN %s THEN NOW() ELSE primeiro_contato_em END,
+                ultimo_contato_em     = CASE WHEN %s THEN NOW() ELSE ultimo_contato_em END,
+                -- Arrastar o card para Contatado ou adiante é, na prática,
+                -- dizer que abordou: fecha o SLA do mesmo jeito.
+                primeira_tentativa_em = CASE WHEN %s THEN COALESCE(primeira_tentativa_em, NOW())
+                                             ELSE primeira_tentativa_em END,
                 data_fechamento     = CASE WHEN %s = 'fechado' AND data_fechamento IS NULL
                                            THEN NOW() ELSE data_fechamento END
             WHERE id = %s
             """,
             (nova_etapa, novo_status, novo_status, motivo, marca_contato,
-             marca_contato, nova_etapa, lead_id),
+             marca_contato, nova_etapa in _ETAPAS_QUE_IMPLICAM_CONTATO,
+             nova_etapa, lead_id),
         )
 
         if nova_etapa != atual['etapa']:
@@ -704,19 +715,40 @@ def _para_numero(bruto):
 
 
 def registrar_contato(lead_id, *, canal, resultado, autor_id=None, observacao=None):
-    """Tentativa de contato. `resultado` 'atendeu'/'respondeu' fecha o SLA."""
+    """Registra uma tentativa de contato.
+
+    QUALQUER tentativa fecha o SLA, inclusive "não atendeu": o SLA mede o
+    tempo que o operador levou para abordar, e isso ele controla. Se o lead
+    responde ou não, já é outra métrica (`primeiro_contato_em`).
+
+    A tentativa também tira o lead de "Novo": aquela coluna é a fila de quem
+    ainda não foi tocado, e deixar lá quem já recebeu mensagem fazia o painel
+    mentir sobre o trabalho feito.
+    """
     efetivo = resultado in ('atendeu', 'respondeu')
     with get_cursor() as cur:
+        cur.execute("SELECT etapa FROM crm_leads WHERE id = %s", (lead_id,))
+        atual = cur.fetchone()
+        if not atual:
+            return None
+        sai_de_novo = atual['etapa'] == 'novo'
+
         cur.execute(
             """
             UPDATE crm_leads SET
-                ultimo_contato_em   = NOW(),
-                primeiro_contato_em = CASE WHEN %s AND primeiro_contato_em IS NULL
-                                           THEN NOW() ELSE primeiro_contato_em END
+                ultimo_contato_em     = NOW(),
+                primeira_tentativa_em = COALESCE(primeira_tentativa_em, NOW()),
+                primeiro_contato_em   = CASE WHEN %s AND primeiro_contato_em IS NULL
+                                             THEN NOW() ELSE primeiro_contato_em END,
+                etapa                 = CASE WHEN %s THEN 'contatado' ELSE etapa END
             WHERE id = %s
             """,
-            (efetivo, lead_id),
+            (efetivo, sai_de_novo, lead_id),
         )
+        if sai_de_novo:
+            registrar_evento(cur, lead_id, 'etapa_mudou', autor_id=autor_id,
+                             de_etapa='novo', para_etapa='contatado',
+                             payload={'origem': 'tentativa_de_contato'})
         registrar_evento(cur, lead_id, 'contato_tentado', autor_id=autor_id,
                          payload={'canal': canal, 'resultado': resultado,
                                   'observacao': observacao})
@@ -916,6 +948,7 @@ def metricas(periodo, owner_id=None, incluir_parciais=False):
         f"""
         SELECT
             COUNT(*)                                                      AS leads,
+            COUNT(*) FILTER (WHERE l.primeira_tentativa_em IS NOT NULL)   AS abordados,
             COUNT(*) FILTER (WHERE l.primeiro_contato_em IS NOT NULL)     AS contatados,
             COUNT(*) FILTER (WHERE EXISTS (
                 SELECT 1 FROM crm_lead_events e
@@ -949,18 +982,18 @@ def metricas(periodo, owner_id=None, incluir_parciais=False):
         SELECT
             COUNT(*) AS com_contato,
             PERCENTILE_CONT(0.5) WITHIN GROUP (
-                ORDER BY EXTRACT(EPOCH FROM (l.primeiro_contato_em - l.created_at)) / 60
+                ORDER BY EXTRACT(EPOCH FROM (l.primeira_tentativa_em - l.created_at)) / 60
             ) AS mediana_min,
             PERCENTILE_CONT(0.9) WITHIN GROUP (
-                ORDER BY EXTRACT(EPOCH FROM (l.primeiro_contato_em - l.created_at)) / 60
+                ORDER BY EXTRACT(EPOCH FROM (l.primeira_tentativa_em - l.created_at)) / 60
             ) AS p90_min,
-            AVG(EXTRACT(EPOCH FROM (l.primeiro_contato_em - l.created_at)) / 60) AS media_min,
+            AVG(EXTRACT(EPOCH FROM (l.primeira_tentativa_em - l.created_at)) / 60) AS media_min,
             COUNT(*) FILTER (
-                WHERE l.primeiro_contato_em - l.created_at <= make_interval(mins => %s)
+                WHERE l.primeira_tentativa_em - l.created_at <= make_interval(mins => %s)
             ) AS dentro_sla
         FROM crm_leads l
         WHERE {sql_periodo}
-          AND l.primeiro_contato_em IS NOT NULL {filtro_owner}
+          AND l.primeira_tentativa_em IS NOT NULL {filtro_owner}
         """,
         (SLA_PRIMEIRO_CONTATO_MIN,) + p_periodo + p_owner,
     ) or {}
@@ -1031,6 +1064,7 @@ def metricas(periodo, owner_id=None, incluir_parciais=False):
     )
 
     leads = int(funil.get('leads') or 0)
+    abordados = int(funil.get('abordados') or 0)
     contatados = int(funil.get('contatados') or 0)
     calls_ag = int(funil.get('calls_agendadas') or 0)
     calls_rz = int(funil.get('calls_realizadas') or 0)
@@ -1054,23 +1088,27 @@ def metricas(periodo, owner_id=None, incluir_parciais=False):
         },
         'sla': {
             'meta_min': SLA_PRIMEIRO_CONTATO_MIN,
-            'leads_com_contato': com_contato,
-            'sem_contato': leads - com_contato,
+            'leads_abordados': com_contato,
+            'sem_abordar': leads - com_contato,
             'mediana_min': _num(sla.get('mediana_min')),
             'p90_min': _num(sla.get('p90_min')),
             'media_min': _num(sla.get('media_min')),
             'dentro_sla': int(sla.get('dentro_sla') or 0),
             'pct_dentro_sla': taxa(int(sla.get('dentro_sla') or 0), com_contato),
-            'pct_contatados': taxa(contatados, leads),
+            'pct_abordados': taxa(abordados, leads),
         },
         'funil': {
             'leads': leads,
+            'abordados': abordados,
             'contatados': contatados,
             'calls_agendadas': calls_ag,
             'calls_realizadas': calls_rz,
             'no_shows': int(funil.get('no_shows') or 0),
             'propostas': propostas,
             'fechados': fechados,
+            # Resposta: dos que você abordou, quantos responderam. Separado
+            # do SLA de propósito — um é seu trabalho, o outro é reação deles.
+            'taxa_resposta': taxa(contatados, abordados),
             'taxa_conexao': taxa(contatados, leads),
             'taxa_agendamento': taxa(calls_ag, contatados),
             'show_rate': taxa(calls_rz, calls_ag),

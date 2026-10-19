@@ -81,25 +81,34 @@ const CRM = (() => {
     }
 
     function slaClasse(lead) {
-        // Lead sem contato: urgência cresce com a espera.
-        if (lead.primeiro_contato_em) return lead.sla_ok ? 'ok' : 'atrasado';
-        const esperando = lead.aguardando_min;
-        if (esperando == null) return '';
-        if (esperando > SLA_META) return 'atrasado';
-        if (esperando > SLA_META / 2) return 'correndo';
-        return '';
+        // A borda do card reflete o SEU trabalho, não a reação do lead:
+        // quem já foi abordado não fica vermelho só porque não respondeu.
+        if (lead.contato_estado === 'nao_abordado') {
+            const esperando = lead.aguardando_min;
+            if (esperando == null) return '';
+            if (esperando > SLA_META) return 'atrasado';
+            if (esperando > SLA_META / 2) return 'correndo';
+            return '';
+        }
+        return lead.sla_ok ? 'ok' : 'atrasado';
     }
 
     function cardHtml(lead) {
         const sla = slaClasse(lead);
         const tags = [];
 
-        if (lead.primeiro_contato_em) {
+        if (lead.contato_estado === 'respondeu') {
             tags.push(`<span class="crm-tag sla-${lead.sla_ok ? 'ok' : 'atrasado'}">
-                1º contato ${fmtDuracao(lead.sla_min)}</span>`);
+                respondeu · abordado em ${fmtDuracao(lead.sla_min)}</span>`);
+        } else if (lead.contato_estado === 'sem_resposta') {
+            // O ponto da correção: mensagem enviada aparece como enviada.
+            tags.push(`<span class="crm-tag sem-resposta">
+                📨 sem resposta há ${fmtDuracao(lead.aguardando_resposta_min)}</span>`);
+            tags.push(`<span class="crm-tag sla-${lead.sla_ok ? 'ok' : 'atrasado'}">
+                abordado em ${fmtDuracao(lead.sla_min)}</span>`);
         } else if (lead.aguardando_min != null) {
             tags.push(`<span class="crm-tag sla-${sla || 'correndo'}">
-                aguardando ${fmtDuracao(lead.aguardando_min)}</span>`);
+                ⏳ não abordado há ${fmtDuracao(lead.aguardando_min)}</span>`);
         }
         if (lead.submissions_count > 1) {
             tags.push(`<span class="crm-tag recorrente">${lead.submissions_count}x cadastrou</span>`);

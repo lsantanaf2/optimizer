@@ -772,15 +772,35 @@ def _lead_json(lead):
     d['etapa_label'] = ETAPA_LABELS.get(lead.get('etapa'), lead.get('etapa'))
     d['status_label'] = STATUS_LABELS.get(lead.get('status'), lead.get('status'))
 
-    # Minutos até o 1º contato: é o SLA do card, calculado aqui para o kanban
-    # poder pintar o atraso sem fazer conta no front.
+    # O card tem TRÊS estados, não dois. O erro anterior era ter só
+    # "contatado" e "aguardando": quem mandava mensagem e não era respondido
+    # caía em "aguardando" e o painel mostrava como se nada tivesse sido feito.
+    #   nao_abordado → ninguém falou com ele ainda (o relógio do SLA corre)
+    #   sem_resposta → você abordou, ele não respondeu (SLA cumprido)
+    #   respondeu    → conversa iniciada
     criado = lead.get('created_at')
-    contato = lead.get('primeiro_contato_em')
-    if criado and contato:
-        d['sla_min'] = round((contato - criado).total_seconds() / 60, 1)
-        d['sla_ok'] = d['sla_min'] <= core.SLA_PRIMEIRO_CONTATO_MIN
+    tentativa = lead.get('primeira_tentativa_em')
+    resposta = lead.get('primeiro_contato_em')
+
+    def _min(chave):
+        # Os *_db vêm da query do kanban, já medidos pelo relógio do banco.
+        v = lead.get(chave)
+        return round(float(v), 1) if v is not None else None
+
+    if criado and tentativa:
+        d['sla_min'] = _min('sla_min_db') if 'sla_min_db' in lead else             round((tentativa - criado).total_seconds() / 60, 1)
+        d['sla_ok'] = d['sla_min'] is not None and d['sla_min'] <= core.SLA_PRIMEIRO_CONTATO_MIN
+        if resposta:
+            d['contato_estado'] = 'respondeu'
+            d['resposta_min'] = round((resposta - criado).total_seconds() / 60, 1)
+        else:
+            d['contato_estado'] = 'sem_resposta'
+            # Há quanto tempo a mensagem está sem resposta — é isso que diz
+            # quando vale insistir.
+            d['aguardando_resposta_min'] = _min('sem_resposta_min_db')
     elif criado:
+        d['contato_estado'] = 'nao_abordado'
         d['sla_min'] = None
-        d['aguardando_min'] = round((datetime.now(criado.tzinfo) - criado).total_seconds() / 60, 1)
         d['sla_ok'] = None
+        d['aguardando_min'] = _min('aguardando_min_db')
     return d

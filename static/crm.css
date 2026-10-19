@@ -162,6 +162,7 @@
 .crm-tag.tarefa       { color: var(--warning); border-color: var(--warning); }
 .crm-tag.faturamento  { color: var(--accent); border-color: var(--accent); }
 .crm-tag.abandono     { color: var(--warning); border-color: var(--warning); background: var(--warning-bg); }
+.crm-tag.sem-resposta { color: var(--accent-alt); border-color: var(--accent-alt); }
 
 /* ---------- Modal ---------- */
 .crm-modal-overlay {
