@@ -27,6 +27,13 @@
         <input type="checkbox" id="filtro-arquivados"> arquivados
     </label>
 
+    <!-- Abandono fica fora por padrão: quem não enviou o formulário não conta
+         junto de quem enviou. Ligue para avaliar se vale abordar esse público. -->
+    <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);"
+           title="Quem digitou o WhatsApp e saiu sem enviar o formulário">
+        <input type="checkbox" id="filtro-parciais"> abandonos
+    </label>
+
     <span class="crm-spacer"></span>
 
     <span id="crm-status-poll" style="font-size:11px;color:var(--text-muted);"></span>

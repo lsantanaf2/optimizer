@@ -69,8 +69,10 @@ const CRM = (() => {
         const periodo = $('#filtro-periodo').value;
         const status = $('#filtro-status').value;
         const arquivados = $('#filtro-arquivados').checked ? '1' : '0';
+        const parciais = $('#filtro-parciais').checked ? '1' : '0';
         try {
-            const data = await api(`/api/crm/leads?periodo=${periodo}&status=${status}&arquivados=${arquivados}`);
+            const data = await api(`/api/crm/leads?periodo=${periodo}&status=${status}` +
+                                   `&arquivados=${arquivados}&parciais=${parciais}`);
             leads = data.leads || [];
             render();
         } catch (e) {
@@ -102,6 +104,9 @@ const CRM = (() => {
         if (lead.submissions_count > 1) {
             tags.push(`<span class="crm-tag recorrente">${lead.submissions_count}x cadastrou</span>`);
         }
+        if (lead.captura_parcial) {
+            tags.push('<span class="crm-tag abandono">abandonou o formulário</span>');
+        }
         if (lead.faturamento_faixa) {
             // Rótulo declarado, não o número estimado: "Até 20 mil" diz mais
             // para qualificar do que "10000".
@@ -122,7 +127,7 @@ const CRM = (() => {
 
         return `
         <div class="lead-card" draggable="true" data-id="${lead.id}"
-             data-sla="${sla}" data-status="${lead.status}"
+             data-sla="${sla}" data-status="${lead.status}" data-parcial="${lead.captura_parcial ? 1 : 0}"
              onclick="CRM.abrirLead('${lead.id}')">
             <div class="lead-card-nome">${esc(lead.nome || 'Sem nome')}</div>
             <div class="lead-card-meta">
@@ -701,7 +706,7 @@ const CRM = (() => {
         tituloOriginal = document.title;
         lastSeen = new Date().toISOString();
 
-        ['filtro-periodo', 'filtro-status', 'filtro-arquivados'].forEach(id => {
+        ['filtro-periodo', 'filtro-status', 'filtro-arquivados', 'filtro-parciais'].forEach(id => {
             $('#' + id).addEventListener('change', carregar);
         });
 

@@ -16,6 +16,11 @@
         <option value="tudo">Tudo</option>
     </select>
 
+    <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);"
+           title="Inclui quem digitou o WhatsApp e saiu sem enviar. Infla o volume e derruba todas as taxas.">
+        <input type="checkbox" id="incluir-parciais"> incluir abandonos
+    </label>
+
     <span class="crm-spacer"></span>
     <a class="crm-btn" href="{{ url_for('crm.crm_page') }}">← Kanban</a>
 </div>
@@ -168,7 +173,8 @@
     async function carregar() {
         $('#conteudo').innerHTML = '<div class="kanban-empty">Carregando...</div>';
         try {
-            const resp = await fetch('/api/crm/metricas?periodo=' + $('#periodo').value);
+            const parciais = $('#incluir-parciais').checked ? '&parciais=1' : '';
+            const resp = await fetch('/api/crm/metricas?periodo=' + $('#periodo').value + parciais);
             const data = await resp.json();
             if (!resp.ok) throw new Error(data.error || 'erro');
             render(data);
@@ -179,6 +185,7 @@
     }
 
     $('#periodo').addEventListener('change', carregar);
+    $('#incluir-parciais').addEventListener('change', carregar);
     document.addEventListener('DOMContentLoaded', carregar);
     carregar();
 })();

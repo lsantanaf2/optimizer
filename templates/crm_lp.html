@@ -629,6 +629,53 @@
     return !msg;
   }
 
+  /* ---------- Lead de abandono ----------
+     Quem digita um WhatsApp válido e vai embora sem enviar é salvo mesmo
+     assim, marcado como parcial. Dois gatilhos: ao sair do campo de telefone
+     (pega quem desiste no meio do formulário) e ao fechar a página, via
+     sendBeacon (único jeito confiável de enviar durante o unload).
+
+     Nunca dispara Pixel nem CAPI: abandono não é conversão. */
+  let parcialEnviado = false;
+  let enviouDeVerdade = false;
+
+  function salvarParcial(motivo) {
+    if (parcialEnviado || enviouDeVerdade) return;
+    const tel = montarTelefone();
+    if (tel.erro) return;                       // sem telefone válido não há lead
+
+    parcialEnviado = true;                      // uma vez por visita, basta
+    const corpo = JSON.stringify(Object.assign({
+      form_key: FORM_KEY,
+      whatsapp: tel.e164,
+      nome: document.getElementById('nome').value.trim() || null,
+      email: document.getElementById('email').value.trim() || null,
+      motivo: motivo,
+      {{ honeypot_field }}: document.getElementById({{ honeypot_field | tojson }}).value,
+    }, atribuicao()));
+
+    try {
+      // keepalive/sendBeacon sobrevivem ao fechamento da aba; fetch comum não.
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon('/api/crm/lead/parcial',
+          new Blob([corpo], { type: 'application/json' }));
+      } else {
+        fetch('/api/crm/lead/parcial', {
+          method: 'POST', body: corpo, keepalive: true,
+          headers: { 'Content-Type': 'application/json' },
+        }).catch(() => {});
+      }
+    } catch (e) { /* melhor-esforço: nunca atrapalha o visitante */ }
+  }
+
+  telEl.addEventListener('blur', () => salvarParcial('saiu_do_campo'));
+  // pagehide cobre fechar aba, voltar e trocar de app no celular; o
+  // beforeunload não dispara de forma confiável em mobile.
+  window.addEventListener('pagehide', () => salvarParcial('fechou_a_pagina'));
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') salvarParcial('saiu_da_aba');
+  });
+
   /* ---------- Envio ---------- */
   document.getElementById('lead-form').addEventListener('submit', async (ev) => {
     ev.preventDefault();
@@ -656,6 +703,7 @@
     const btn = document.getElementById('btn-enviar');
     btn.disabled = true;
     btn.textContent = 'Enviando...';
+    enviouDeVerdade = true;   // a partir daqui nenhum parcial é disparado
 
     const faixa = faixaEl;
     const payload = Object.assign({

@@ -138,6 +138,8 @@
 .lead-card[data-sla="correndo"]{ border-left-color: var(--warning); }
 .lead-card[data-status="perdido"]       { opacity: .55; border-left-color: var(--danger); }
 .lead-card[data-status="timing_errado"] { opacity: .75; border-left-color: var(--accent-alt); }
+/* Abandono: tracejado, para nao ser confundido com lead que se cadastrou. */
+.lead-card[data-parcial="1"] { border-left-style: dashed; border-left-color: var(--warning); }
 
 .lead-card-nome { font-size: 13px; font-weight: 600; margin-bottom: 3px; }
 .lead-card-meta { font-size: 11px; color: var(--text-muted); display: flex; flex-wrap: wrap; gap: 6px; }
@@ -159,6 +161,7 @@
 .crm-tag.qualificado  { color: var(--success); border-color: var(--success); }
 .crm-tag.tarefa       { color: var(--warning); border-color: var(--warning); }
 .crm-tag.faturamento  { color: var(--accent); border-color: var(--accent); }
+.crm-tag.abandono     { color: var(--warning); border-color: var(--warning); background: var(--warning-bg); }
 
 /* ---------- Modal ---------- */
 .crm-modal-overlay {

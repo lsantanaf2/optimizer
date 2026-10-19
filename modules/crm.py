@@ -9,6 +9,7 @@ Duas superfícies:
 
 Rotas:
   POST   /api/crm/lead                      — captura (público, CORS por form)
+  POST   /api/crm/lead/parcial              — lead de abandono (público, sempre 204)
   OPTIONS/api/crm/lead                      — preflight CORS
   GET    /lp/<slug>                         — landing page servida pelo Flask
   GET    /obrigado                          — página de agradecimento
@@ -302,6 +303,87 @@ def captura_lead():
     })
 
 
+@crm_bp.route('/api/crm/lead/parcial', methods=['POST', 'OPTIONS'])
+def captura_parcial():
+    """Salva quem digitou o telefone e abandonou o formulário.
+
+    Chamado pelo próprio navegador do visitante, inclusive via sendBeacon no
+    fechamento da página — por isso responde sempre 204, sem corpo: beacon
+    ignora a resposta e um erro aqui não pode aparecer para o visitante.
+
+    NÃO dispara Pixel nem CAPI: abandono não é conversão, e reportá-lo à Meta
+    como Lead estragaria a otimização da campanha.
+    """
+    form_key = ''
+    try:
+        dados = request.get_json(silent=True) or request.form.to_dict() or {}
+        form_key = (dados.get('form_key') or '').strip()
+        form = _get_form(form_key)
+        if not form:
+            return '', 204
+
+        origin = request.headers.get('Origin')
+        if origin and not _origem_permitida(origin, form):
+            return '', 204
+
+        if (dados.get(HONEYPOT_FIELD) or '').strip():
+            return '', 204
+
+        # Teto generoso: o disparo acontece no blur e no fechamento, então um
+        # visitante sozinho pode gerar alguns. Só freia abuso real.
+        if not is_allowed(f'crm-parcial|{_client_ip()}', 20, 60):
+            return '', 204
+
+        # Sem telefone válido não há lead: whatsapp_e164 é a chave da tabela.
+        try:
+            e164, pais = core.normalizar_telefone(dados.get('whatsapp') or dados.get('telefone'))
+        except TelefoneInvalido:
+            return '', 204
+        try:
+            email = core.validar_email(dados.get('email'))
+        except TelefoneInvalido:
+            email = None
+
+        res = core.registrar_parcial(
+            whatsapp_e164=e164,
+            pais=pais,
+            nome=core.limpar_texto(dados.get('nome'), 200),
+            email=email,
+            form_key=form_key,
+            atribuicao={
+                'utm_source': dados.get('utm_source'),
+                'utm_medium': dados.get('utm_medium'),
+                'utm_campaign': dados.get('utm_campaign'),
+                'utm_content': dados.get('utm_content'),
+                'utm_term': dados.get('utm_term'),
+                'first_utm_source': dados.get('first_utm_source'),
+                'first_utm_medium': dados.get('first_utm_medium'),
+                'first_utm_campaign': dados.get('first_utm_campaign'),
+                'first_utm_content': dados.get('first_utm_content'),
+                'first_utm_term': dados.get('first_utm_term'),
+                'fbclid': dados.get('fbclid'), 'gclid': dados.get('gclid'),
+                'fbp': dados.get('fbp') or request.cookies.get('_fbp'),
+                'fbc': dados.get('fbc') or request.cookies.get('_fbc'),
+                'ttclid': dados.get('ttclid'),
+                'meta_ad_id': dados.get('ad_id'),
+                'meta_adset_id': dados.get('adset_id'),
+                'meta_campaign_id': dados.get('campaign_id'),
+                'referrer': dados.get('referrer') or request.referrer,
+                'landing_url': dados.get('landing_url'),
+                'ip': _client_ip(),
+                'user_agent': request.headers.get('User-Agent'),
+            },
+            payload={'motivo': core.limpar_texto(dados.get('motivo'), 40)},
+        )
+        if res:
+            logger.info("CRM: lead PARCIAL %s via %s", res['lead_id'],
+                        dados.get('utm_source') or 'direto')
+    except Exception:
+        # Abandono é melhor-esforço: nunca pode estourar erro no visitante.
+        logger.exception("CRM parcial: falha ao gravar (form=%s)", form_key)
+    return '', 204
+
+
 @crm_bp.route('/lp/<slug>')
 def landing_page(slug):
     form = _get_form_por_slug(slug)
@@ -420,6 +502,7 @@ def api_listar_leads():
         dias=PERIODOS.get(periodo, 30),
         incluir_arquivados=request.args.get('arquivados') == '1',
         status=request.args.get('status') or None,
+        incluir_parciais=request.args.get('parciais') == '1',
     )
     return jsonify({
         'periodo': periodo,
@@ -672,7 +755,8 @@ def api_metricas():
         # superior — lead criado há 1 segundo entra.
         janela = core.periodo_relativo(PERIODOS.get(periodo, 30) or 3650)
 
-    return jsonify(core.metricas(janela))
+    return jsonify(core.metricas(
+        janela, incluir_parciais=request.args.get('parciais') == '1'))
 
 
 # ─────────────────────────────────────────────────────────────────────────────

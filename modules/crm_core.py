@@ -229,6 +229,62 @@ _SUB_CAMPOS = [
 ]
 
 
+def registrar_parcial(*, whatsapp_e164, pais, nome, email, form_key,
+                      atribuicao, payload=None):
+    """Grava quem digitou o telefone e foi embora sem enviar.
+
+    Nasce com `captura_parcial = TRUE` e `submissions_count = 0`: ele ainda
+    não submeteu nada. Esse zero é o que faz a conta fechar depois — quando a
+    pessoa volta e envia de verdade, o upsert soma 1 e ela conta como primeiro
+    cadastro, não como recadastro.
+
+    Se o telefone já existe (parcial anterior ou lead completo), NÃO mexe em
+    nada: um abandono não pode sobrescrever quem já se cadastrou direito.
+    """
+    import json
+
+    atrib = {k: limpar_texto(atribuicao.get(k), 500) for k in _SUB_CAMPOS}
+
+    with get_cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO crm_leads (
+                whatsapp_e164, whatsapp_pais, nome, email,
+                captura_parcial, submissions_count
+            ) VALUES (%s, %s, %s, %s, TRUE, 0)
+            ON CONFLICT (whatsapp_e164) DO NOTHING
+            RETURNING id
+            """,
+            (whatsapp_e164, pais or None, nome, email),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None          # já existia — nada a fazer
+
+        lead_id = row['id']
+
+        # A submissão parcial guarda a atribuição: é dela que sai de qual
+        # anúncio veio o abandono, que é justamente o que o usuário quer medir.
+        cols = ['lead_id', 'form_key', 'payload'] + _SUB_CAMPOS
+        vals = [lead_id, form_key,
+                json.dumps(dict(payload or {}, parcial=True), ensure_ascii=False)] + \
+               [atrib[k] for k in _SUB_CAMPOS]
+        cur.execute(
+            f"INSERT INTO crm_lead_submissions ({', '.join(cols)}) "
+            f"VALUES ({', '.join(['%s'] * len(cols))}) RETURNING id",
+            vals,
+        )
+        submission_id = cur.fetchone()['id']
+
+        registrar_evento(cur, lead_id, 'lead_parcial',
+                         payload={'submission_id': str(submission_id),
+                                  'form_key': form_key,
+                                  'utm_source': atrib.get('utm_source'),
+                                  'utm_campaign': atrib.get('utm_campaign')})
+
+    return {'lead_id': str(lead_id), 'submission_id': str(submission_id)}
+
+
 def registrar_captura(*, whatsapp_e164, pais, nome, email, empresa_segmento,
                       form_key, atribuicao, first_seen_at=None, payload=None):
     """Grava um cadastro. Tudo numa transação.
@@ -254,6 +310,15 @@ def registrar_captura(*, whatsapp_e164, pais, nome, email, empresa_segmento,
         #
         # submissions_count diz se é novo: nasce 1 no insert e incrementa no
         # conflito, então count == 1 só acontece no primeiro cadastro.
+        # Precisa ser lido ANTES do upsert: o RETURNING devolve a linha nova,
+        # e EXCLUDED não pode ser referenciado dentro de subquery ali.
+        cur.execute(
+            "SELECT captura_parcial FROM crm_leads WHERE whatsapp_e164 = %s",
+            (whatsapp_e164,),
+        )
+        anterior = cur.fetchone()
+        veio_de_abandono = bool(anterior and anterior['captura_parcial'])
+
         cur.execute(
             """
             INSERT INTO crm_leads (
@@ -268,7 +333,10 @@ def registrar_captura(*, whatsapp_e164, pais, nome, email, empresa_segmento,
                 whatsapp_pais      = COALESCE(crm_leads.whatsapp_pais,
                                               EXCLUDED.whatsapp_pais),
                 submissions_count  = crm_leads.submissions_count + 1,
-                last_submission_at = NOW()
+                last_submission_at = NOW(),
+                -- Enviou o formulário: deixa de ser abandono. A marca cai
+                -- sozinha, senão o lead ficaria fora das métricas para sempre.
+                captura_parcial    = FALSE
             RETURNING id, submissions_count
             """,
             (whatsapp_e164, pais or None, nome, email, empresa_segmento),
@@ -294,7 +362,8 @@ def registrar_captura(*, whatsapp_e164, pais, nome, email, empresa_segmento,
             """,
             (
                 lead_id,
-                'lead_criado' if is_novo else 'recadastro',
+                'lead_completado' if veio_de_abandono else
+                ('lead_criado' if is_novo else 'recadastro'),
                 json.dumps({
                     'submission_id': str(submission_id),
                     'form_key': form_key,
@@ -310,6 +379,7 @@ def registrar_captura(*, whatsapp_e164, pais, nome, email, empresa_segmento,
         'submission_id': str(submission_id),
         'is_novo': is_novo,
         'submissions_count': count,
+        'veio_de_abandono': veio_de_abandono,
     }
 
 
@@ -317,7 +387,8 @@ def registrar_captura(*, whatsapp_e164, pais, nome, email, empresa_segmento,
 # Leitura — kanban e detalhe
 # ─────────────────────────────────────────────────────────────────────────────
 
-def listar_leads(*, dias=None, incluir_arquivados=False, status=None, owner_id=None):
+def listar_leads(*, dias=None, incluir_arquivados=False, status=None, owner_id=None,
+                 incluir_parciais=False):
     """Leads para o kanban, já com a origem do último cadastro.
 
     `dias` = janela 'últimos N dias' medida pelo relógio do banco (mesmo motivo
@@ -327,6 +398,10 @@ def listar_leads(*, dias=None, incluir_arquivados=False, status=None, owner_id=N
     params = []
     if not incluir_arquivados:
         where.append('l.arquivado_em IS NULL')
+    # Abandono fica fora por padrão: quem não enviou o formulário não deve
+    # aparecer junto de quem enviou, nem no kanban nem nas contas.
+    if not incluir_parciais:
+        where.append('l.captura_parcial IS FALSE')
     if dias:
         where.append('l.created_at >= NOW() - make_interval(days => %s)')
         params.append(int(dias))
@@ -822,7 +897,7 @@ def _clausula_periodo(periodo):
     return ('l.created_at >= %s AND l.created_at < %s', (periodo['desde'], periodo['ate']))
 
 
-def metricas(periodo, owner_id=None):
+def metricas(periodo, owner_id=None, incluir_parciais=False):
     """Painel de métricas do período. Tudo derivado dos eventos.
 
     `periodo` vem de periodo_relativo(dias) ou periodo_fixo(desde, ate).
@@ -830,6 +905,11 @@ def metricas(periodo, owner_id=None):
     filtro_owner = 'AND l.owner_id = %s' if owner_id else ''
     p_owner = (owner_id,) if owner_id else ()
     sql_periodo, p_periodo = _clausula_periodo(periodo)
+    # Incluir abandono infla o volume e derruba todas as taxas, porque ele
+    # entra no denominador sem nunca ter sido um lead de verdade. Fora por
+    # padrão; o painel liga quando o usuário quer avaliar esse público.
+    if not incluir_parciais:
+        filtro_owner += ' AND l.captura_parcial IS FALSE'
 
     # ── Volume e funil (por data de CRIAÇÃO do lead: coorte honesta) ──
     funil = fetch_one(
