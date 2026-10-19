@@ -349,6 +349,7 @@ def listar_leads(*, dias=None, incluir_arquivados=False, status=None, owner_id=N
         SELECT
             l.*,
             s.utm_source, s.utm_medium, s.utm_campaign, s.utm_content,
+            s.faturamento_faixa,
             u.email AS owner_email,
             (SELECT COUNT(*) FROM crm_tasks t
               WHERE t.lead_id = l.id AND t.status = 'pendente') AS tarefas_pendentes,
@@ -357,7 +358,10 @@ def listar_leads(*, dias=None, incluir_arquivados=False, status=None, owner_id=N
         FROM crm_leads l
         LEFT JOIN app_users u ON u.id = l.owner_id
         LEFT JOIN LATERAL (
-            SELECT utm_source, utm_medium, utm_campaign, utm_content
+            SELECT utm_source, utm_medium, utm_campaign, utm_content,
+                   -- rótulo que a pessoa marcou ("Até 20 mil"), não o número
+                   -- estimado: é o que serve para qualificar de bate-pronto
+                   payload->>'faturamento_faixa' AS faturamento_faixa
             FROM crm_lead_submissions
             WHERE lead_id = l.id
             ORDER BY created_at DESC LIMIT 1

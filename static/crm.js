@@ -102,6 +102,11 @@ const CRM = (() => {
         if (lead.submissions_count > 1) {
             tags.push(`<span class="crm-tag recorrente">${lead.submissions_count}x cadastrou</span>`);
         }
+        if (lead.faturamento_faixa) {
+            // Rótulo declarado, não o número estimado: "Até 20 mil" diz mais
+            // para qualificar do que "10000".
+            tags.push(`<span class="crm-tag faturamento">💰 ${esc(lead.faturamento_faixa)}</span>`);
+        }
         if (lead.qualificado === true) tags.push('<span class="crm-tag qualificado">qualificado</span>');
         if (lead.status !== 'ativo') {
             tags.push(`<span class="crm-tag">${esc(lead.status_label)}</span>`);
@@ -230,6 +235,16 @@ const CRM = (() => {
             'investimento_midia', 'valor_proposta', 'valor_fechado'].forEach(c => {
                 $('#f-' + c).value = l[c] == null ? '' : l[c];
             });
+        // O campo numérico continua livre para o operador corrigir com o que
+        // apurar na call; a dica mostra o que a PESSOA declarou no formulário.
+        const declarado = (data.submissions || [])
+            .map(s => s.payload && s.payload.faturamento_faixa)
+            .find(Boolean);
+        const dica = $('#f-faturamento-declarado');
+        if (dica) {
+            dica.textContent = declarado ? `Declarou no formulário: ${declarado}` : '';
+            dica.style.display = declarado ? 'block' : 'none';
+        }
         $('#f-ja_fez_trafego').value = l.ja_fez_trafego == null ? '' : String(l.ja_fez_trafego);
         $('#f-qualificado').value = l.qualificado == null ? '' : String(l.qualificado);
         $('#f-urgencia').value = l.urgencia || '';

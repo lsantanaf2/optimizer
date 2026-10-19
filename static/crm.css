@@ -158,6 +158,7 @@
 .crm-tag.recorrente   { color: var(--accent-alt); border-color: var(--accent-alt); }
 .crm-tag.qualificado  { color: var(--success); border-color: var(--success); }
 .crm-tag.tarefa       { color: var(--warning); border-color: var(--warning); }
+.crm-tag.faturamento  { color: var(--accent); border-color: var(--accent); }
 
 /* ---------- Modal ---------- */
 .crm-modal-overlay {

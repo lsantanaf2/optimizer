@@ -375,18 +375,21 @@
           </div>
 
           <div>
-            <!-- O value é o PISO da faixa, em número: vai para
-                 crm_leads.faturamento_anual. O rótulo exato vai no payload. -->
-            <label for="faturamento">Faturamento mensal da loja</label>
+            <!-- O value é o PONTO MÉDIO da faixa, não o piso: com o piso,
+                 "Até 20 mil" virava 0.00 na ficha e o operador lia como
+                 "não informou" ou "fatura zero". O rótulo exato continua indo
+                 para o payload da submissão. -->
+            <label for="faturamento">Faturamento mensal da loja *</label>
             <select id="faturamento" name="faturamento">
               <option value="">Selecionar faturamento</option>
-              <option value="0">Até 20 mil</option>
-              <option value="20000">20 mil até 40 mil</option>
-              <option value="40000">40 mil até 70 mil</option>
-              <option value="70000">70 mil até 100 mil</option>
-              <option value="100000">100 mil até 200 mil</option>
-              <option value="200000">Mais de 200 mil</option>
+              <option value="10000">Até 20 mil</option>
+              <option value="30000">20 mil até 40 mil</option>
+              <option value="55000">40 mil até 70 mil</option>
+              <option value="85000">70 mil até 100 mil</option>
+              <option value="150000">100 mil até 200 mil</option>
+              <option value="250000">Mais de 200 mil</option>
             </select>
+            <div class="erro" id="erro-faturamento"></div>
           </div>
 
           <!-- Armadilha anti-bot -->
@@ -629,7 +632,7 @@
   /* ---------- Envio ---------- */
   document.getElementById('lead-form').addEventListener('submit', async (ev) => {
     ev.preventDefault();
-    ['nome', 'tel', 'email', 'geral'].forEach(c => erro(c, ''));
+    ['nome', 'tel', 'email', 'faturamento', 'geral'].forEach(c => erro(c, ''));
 
     const nome = document.getElementById('nome').value.trim();
     if (nome.length < 2) { erro('nome', 'Informe seu nome.'); document.getElementById('nome').focus(); return; }
@@ -642,11 +645,19 @@
       erro('email', 'E-mail inválido.'); return;
     }
 
+    // Faturamento é obrigatório: sem ele não dá para priorizar quem atender.
+    const faixaEl = document.getElementById('faturamento');
+    if (!faixaEl.value) {
+      erro('faturamento', 'Selecione o faturamento da loja.');
+      faixaEl.focus();
+      return;
+    }
+
     const btn = document.getElementById('btn-enviar');
     btn.disabled = true;
     btn.textContent = 'Enviando...';
 
-    const faixa = document.getElementById('faturamento');
+    const faixa = faixaEl;
     const payload = Object.assign({
       form_key: FORM_KEY,
       nome: nome,
