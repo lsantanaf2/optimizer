@@ -139,6 +139,12 @@
     color:var(--text-muted);font:inherit;font-size:13px;font-weight:600;cursor:pointer}
   .tab.on{color:var(--text);border-bottom-color:var(--accent)}
   .tab-panel{display:none} .tab-panel.on{display:block}
+  .seg{display:inline-flex;gap:2px;background:#11131f;border:1px solid #242843;
+       border-radius:8px;padding:2px;margin-left:12px}
+  .seg-b{background:none;border:0;color:#8a90b8;font:inherit;font-size:11px;
+         padding:4px 11px;border-radius:6px;cursor:pointer;white-space:nowrap}
+  .seg-b:hover{color:#c9cdf0}
+  .seg-b.on{background:#262b4a;color:#fff}
 
   /* ── Aba Resumo ── */
   .res-hero-grid{display:grid;grid-template-columns:1.3fr repeat(3,1fr);gap:20px;align-items:end}
@@ -459,7 +465,16 @@
 
       <div class="card" style="padding:0;margin-top:14px">
         <div class="card-t" style="padding:20px 20px 0;margin-bottom:10px">
-          <span>Anúncios de captura</span><span class="dim" id="cap-info"></span>
+          <span>Anúncios de captura</span>
+          <!-- Temperatura sai da tag da campanha: [Q] quente, [F] frio.
+               Um mesmo criativo roda nas duas, então cada aba soma só a
+               parte dele naquele público. -->
+          <span class="seg" id="cap-temp">
+            <button class="seg-b on" data-t="geral"  onclick="setTemp('geral')">Geral</button>
+            <button class="seg-b"    data-t="quente" onclick="setTemp('quente')">🔥 Quente</button>
+            <button class="seg-b"    data-t="frio"   onclick="setTemp('frio')">❄️ Frio</button>
+          </span>
+          <span class="dim" id="cap-info"></span>
         </div>
         <div class="tbl-wrap" style="max-height:420px">
           <table class="ads-tbl"><thead><tr>
@@ -753,21 +768,8 @@ function renderCaptura() {
   // ── Tabelas por UTM ──
   renderUtms(visiveis);
 
-  // ── Anúncios de captura ──
-  const tb = document.getElementById('cap-tbody'), vz = document.getElementById('cap-vazio');
-  if (!cap.ads.length) {
-    tb.innerHTML = ''; vz.style.display = 'block';
-    vz.textContent = 'Sem anúncios de captura no período.';
-  } else {
-    vz.style.display = 'none';
-    tb.innerHTML = cap.ads.map(a => `<tr>
-      <td class="ad-nome"><span class="ad-link" title="ver o criativo"
-        onclick="verCriativo('${esc(a.ad_id)}')">${esc(a.ad)}</span>${
-        a.sem_entrega ? ' <span class="tag-zero">sem entrega</span>' : ''}</td>
-      <td>${brl(a.custo)}</td><td>${num(a.impressoes)}</td>
-      <td>${num(a.cliques)}</td><td>${brl(a.cpm)}</td></tr>`).join('');
-  }
-  document.getElementById('cap-info').textContent = `${cap.ads.length} anúncio(s)`;
+  // ── Anúncios de captura, consolidados por criativo ──
+  renderAdsCaptura();
 
   renderLives();
 
@@ -778,6 +780,82 @@ function renderCaptura() {
     'Custo por VV = investido ÷ views do marco.' +
     (sf.totais.ads ? ` <b>${sf.totais.ads} anúncio(s)</b> do lançamento estão fora das fases ` +
       `(sem tag de aquecimento, captura ou live), somando ${brl(sf.totais.custo)}.` : '');
+}
+
+// Temperatura do público, lida da tag da campanha ([Q] quente / [F] frio).
+function tempDoAd(a) {
+  const c = (a.campanha || '').toUpperCase();
+  if (c.includes('[Q]')) return 'quente';
+  if (c.includes('[F]')) return 'frio';
+  return 'outro';
+}
+
+let tempAtual = 'geral';
+function setTemp(t) {
+  tempAtual = t;
+  for (const b of document.querySelectorAll('#cap-temp .seg-b')) {
+    b.classList.toggle('on', b.dataset.t === t);
+  }
+  renderAdsCaptura();
+}
+
+function renderAdsCaptura() {
+  const cap = DADOS.fases.captura;
+  const tb = document.getElementById('cap-tbody');
+  const vz = document.getElementById('cap-vazio');
+
+  const base = tempAtual === 'geral'
+    ? cap.ads
+    : cap.ads.filter(a => tempDoAd(a) === tempAtual);
+
+  // O mesmo criativo roda em vários conjuntos e campanhas, e vinha uma linha
+  // por veiculação — "CRIATIVO 02" aparecia três vezes. Consolida pelo nome,
+  // somando o que é somável. Alcance fica de fora de propósito: a mesma
+  // pessoa atingida por dois conjuntos contaria duas vezes.
+  const porCriativo = new Map();
+  for (const a of base) {
+    const k = a.ad || '(sem nome)';
+    let e = porCriativo.get(k);
+    if (!e) {
+      e = {ad: k, ad_id: a.ad_id, custo: 0, impressoes: 0, cliques: 0,
+           veiculacoes: 0, _maiorCusto: -1};
+      porCriativo.set(k, e);
+    }
+    e.custo += a.custo || 0;
+    e.impressoes += a.impressoes || 0;
+    e.cliques += a.cliques || 0;
+    e.veiculacoes++;
+    // O criativo é o mesmo em todas, mas o preview precisa de um id: usa o
+    // da veiculação que mais gastou.
+    if ((a.custo || 0) > e._maiorCusto) { e._maiorCusto = a.custo || 0; e.ad_id = a.ad_id; }
+  }
+
+  const ads = [...porCriativo.values()].map(e => ({
+    ...e,
+    custo: Math.round(e.custo * 100) / 100,
+    // Derivada recalculada do total: média de CPM entre linhas daria outro número.
+    cpm: e.impressoes ? (e.custo * 1000) / e.impressoes : null,
+  })).sort((a, b) => b.custo - a.custo);
+
+  const rotulo = {geral: '', quente: ' no público quente', frio: ' no público frio'}[tempAtual];
+  if (!ads.length) {
+    tb.innerHTML = ''; vz.style.display = 'block';
+    vz.textContent = `Sem anúncios de captura${rotulo} no período.`;
+    document.getElementById('cap-info').textContent = '';
+    return;
+  }
+  vz.style.display = 'none';
+  tb.innerHTML = ads.map(a => `<tr>
+    <td class="ad-nome"><span class="ad-link" title="ver o criativo"
+      onclick="verCriativo('${esc(a.ad_id)}')">${esc(a.ad)}</span>${
+      a.veiculacoes > 1 ? ` <span class="dim" style="font-size:10px">${a.veiculacoes} veiculações</span>` : ''}${
+      !a.impressoes ? ' <span class="tag-zero">sem entrega</span>' : ''}</td>
+    <td>${brl(a.custo)}</td><td>${num(a.impressoes)}</td>
+    <td>${num(a.cliques)}</td><td>${brl(a.cpm)}</td></tr>`).join('');
+
+  const total = ads.reduce((x, a) => x + a.custo, 0);
+  document.getElementById('cap-info').textContent =
+    `${ads.length} criativo(s)${rotulo} · ${brl(total)}`;
 }
 
 function renderLives() {
