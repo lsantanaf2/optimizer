@@ -630,20 +630,27 @@ function renderCaptura() {
   const semUtm = todas.filter(l => l.origem === 'sem_utm').length;
   const entrega = lead.entrega || {};
 
-  // Custo do lançamento inteiro: o lead chega pela campanha que o gerou, que
-  // hoje é a de aquecimento, não só pelas campanhas marcadas como captura.
+  // Funil de captura usa SÓ a captura dos dois lados: gasto/cliques das
+  // campanhas [CAPTURA] e leads cuja UTM aponta para elas. Misturar gasto de
+  // captura com lead de aquecimento (ou o contrário) dá um CPL que não existe.
+  const deCaptura = visiveis.filter(l => l.fase === 'captura');
+  const deAquecimento = todas.filter(l => l.fase === 'aquecimento').length;
+  const semFase = visiveis.filter(l => l.origem === 'lancamento' && !l.fase).length;
+
   const custoBase = entrega.custo || 0;
-  const n = visiveis.length;
+  const n = deCaptura.length;
   const cpl = n ? custoBase / n : null;
 
   document.getElementById('cap-kpis').innerHTML = [
-    card('🎯 Leads', num(n),
-         ocultarOutros && outros ? `${outros} de outros lançamentos ocultos` : 'todos os leads do período',
-         'Leads da planilha dentro do período selecionado. O botão abaixo esconde os que vieram de lançamentos anteriores.'),
-    card('💵 Custo por lead', brl(cpl), cpl == null ? 'sem leads ainda' : 'investido ÷ leads',
-         'Investido no lançamento inteiro ÷ leads visíveis. Usa o lançamento todo porque hoje os leads chegam pela campanha de aquecimento.'),
-    card('💸 Investido', brl(custoBase), 'lançamento inteiro',
-         'Gasto de todas as campanhas do lançamento, já com os 12,15% de imposto.'),
+    card('🎯 Leads da captura', num(n),
+         deAquecimento || semFase
+           ? `+${num(deAquecimento + semFase)} de outras origens do lançamento`
+           : 'vindos das campanhas [CAPTURA]',
+         'Só os leads cuja UTM aponta para uma campanha [CAPTURA]. Leads do aquecimento e de UTM genérica aparecem abaixo, fora desta conta.'),
+    card('💵 Custo por lead', brl(cpl), cpl == null ? 'sem leads ainda' : 'captura ÷ leads da captura',
+         'Investido nas campanhas [CAPTURA] ÷ leads que vieram delas. Aquecimento fica de fora dos dois lados.'),
+    card('💸 Investido na captura', brl(custoBase), 'só campanhas [CAPTURA]',
+         'Gasto apenas das campanhas [CAPTURA], já com os 12,15% de imposto.'),
     card('🖱️ Cliques no link', num(entrega.cliques), `${num(entrega.impressoes)} impressões`),
   ].join('');
 
@@ -659,13 +666,21 @@ function renderCaptura() {
   if (lead.erro) avisos.push('Erro ao ler a planilha: ' + esc(lead.erro));
   const noAr = cap.ads.filter(a => !a.sem_entrega).length;
   if (!cap.ads.length) {
-    avisos.push('Nenhuma campanha com a tag <b>[CAPTURA]</b> no ar ainda — os leads estão chegando pela campanha de aquecimento.');
+    avisos.push('Nenhuma campanha com a tag <b>[CAPTURA]</b> no período — este funil fica vazio. Os leads que chegarem pelo aquecimento aparecem na quebra por UTM.');
   } else if (!noAr) {
     avisos.push(`A campanha de captura já está no ar com <b>${cap.ads.length} anúncio(s) ativo(s)</b>, mas ainda ` +
                 'não teve nenhuma entrega (zero impressões). Enquanto isso os leads chegam pela campanha de aquecimento.');
   }
+  if (deAquecimento || semFase) {
+    const partes = [];
+    if (deAquecimento) partes.push(`<b>${deAquecimento}</b> pela campanha de aquecimento`);
+    if (semFase) partes.push(`<b>${semFase}</b> com UTM genérica do lançamento`);
+    avisos.push(`Fora da conta acima: ${partes.join(' e ')}. ` +
+                'Eles existem e aparecem na quebra por UTM, mas não entram no funil ' +
+                'de captura — o gasto que os gerou também não está aqui.');
+  }
   if (semUtm) {
-    avisos.push(`${semUtm} lead(s) chegaram sem UTM na planilha. Eles entram na contagem, mas não aparecem quebrados por origem.`);
+    avisos.push(`${semUtm} lead(s) chegaram sem UTM na planilha, então não dá para saber de qual campanha vieram. Ficam fora do funil.`);
   }
   document.getElementById('cap-aviso').innerHTML =
     avisos.length ? `<div class="warnbox">${avisos.join('<br>')}</div>` : '';
@@ -686,17 +701,21 @@ function renderCaptura() {
   document.getElementById('cap-funil-card').style.display = imp ? '' : 'none';
   if (imp) renderFunil(funil);
 
-  // ── Série por dia: investimento da Meta + leads visíveis ──
+  // ── Série por dia: investimento da Meta + leads da captura ──
   const porDia = {};
-  for (const l of visiveis) porDia[l.data] = (porDia[l.data] || 0) + 1;
+  for (const l of deCaptura) porDia[l.data] = (porDia[l.data] || 0) + 1;
   const diario = lead.diario || [];
   const dias = [...new Set([...diario.map(d => d.data), ...Object.keys(porDia)])].sort();
   const serie = dias.map(d => {
     const m = diario.find(x => x.data === d) || {};
     const leads = porDia[d] || 0;
-    return {data: d, leads, custo: m.custo || 0,
-            impressoes: m.impressoes || 0, cliques: m.cliques || 0,
-            cpl: leads ? (m.custo || 0) / leads : null};
+    // Campos *_captura: o CPL diário tem que comparar gasto de captura com
+    // lead de captura, não gasto do lançamento com lead de captura.
+    const custoDia = m.custo_captura != null ? m.custo_captura : (m.custo || 0);
+    return {data: d, leads, custo: custoDia,
+            impressoes: m.impressoes_captura != null ? m.impressoes_captura : (m.impressoes || 0),
+            cliques: m.cliques_captura != null ? m.cliques_captura : (m.cliques || 0),
+            cpl: leads ? custoDia / leads : null};
   });
   for (const id of ['cap-chart-card', 'cap-chart2-card', 'cap-serie-card']) {
     document.getElementById(id).style.display = serie.length ? '' : 'none';

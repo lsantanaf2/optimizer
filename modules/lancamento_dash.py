@@ -864,7 +864,7 @@ def _normalizar_campanha(valor):
     return ''.join(c for c in v.upper() if c.isalnum() or c == ' ')
 
 
-def _fetch_leads(fase_cfg, cfg, since, until, ids_campanha):
+def _fetch_leads(fase_cfg, cfg, since, until, ids_campanha, fase_por_campanha=None):
     """Linhas de lead da planilha, classificadas por origem.
 
     Devolve as linhas em vez de só a contagem: a dash precisa quebrar por cada
@@ -890,6 +890,23 @@ def _fetch_leads(fase_cfg, cfg, since, until, ids_campanha):
     col_data = lcfg.get('coluna_data') or list(linhas[0].keys())[0]
     col_camp = lcfg.get('coluna_campanha') or 'UTM_CAMPAIGN'
     padroes = [_normalizar_campanha(p) for p in (cfg.get('campaign_patterns') or [])]
+
+    # De qual FASE veio o lead. Sem isso a aba de captura misturava lead de
+    # aquecimento com gasto de captura — e o CPL saía errado nos dois sentidos.
+    # Três grafias chegam na planilha: nome com colchetes, nome URL-encoded e
+    # só o ID numérico; por isso o mapa aceita id e nome normalizado.
+    mapa_fase = dict(fase_por_campanha or {})
+    padroes_fase = {chave: [_normalizar_campanha(p) for p in (f.get('patterns') or [])]
+                    for chave, f in (cfg.get('fases') or {}).items()}
+
+    def _fase_do_lead(utm_bruto, utm_norm):
+        direto = mapa_fase.get((utm_bruto or '').strip()) or mapa_fase.get(utm_norm)
+        if direto:
+            return direto
+        for chave, pats in padroes_fase.items():
+            if any(p and p in utm_norm for p in pats):
+                return chave
+        return None
 
     def _col(r, *nomes):
         for n in nomes:
@@ -924,6 +941,8 @@ def _fetch_leads(fase_cfg, cfg, since, until, ids_campanha):
         saida.append({
             'data':     d.isoformat(),
             'origem':   origem,
+            # 'captura', 'aquecimento' ou None (UTM genérica/ausente)
+            'fase':     _fase_do_lead(utm, norm) if origem == 'lancamento' else None,
             'source':   _col(r, 'UTM_SOURCE', 'utm_source'),
             'campanha': utm,
             'medium':   _col(r, 'UTM_MEDIUM', 'utm_medium'),
@@ -935,7 +954,12 @@ def _fetch_leads(fase_cfg, cfg, since, until, ids_campanha):
 
 
 def _fetch_diario(cfg, since, until, token):
-    """Investimento e entrega por dia do lançamento inteiro."""
+    """Investimento e entrega por dia, do lançamento inteiro E só da captura.
+
+    Os dois conjuntos saem da mesma consulta porque a linha diária já traz o
+    nome da campanha. O gráfico da aba de captura usa os campos *_captura: com
+    o total, o CPL diário misturava gasto de aquecimento com lead de captura.
+    """
     linhas = _fetch_insights_nivel(
         cfg, since, until, 'campaign',
         'campaign_name,spend,impressions,inline_link_clicks', token,
@@ -945,12 +969,22 @@ def _fetch_diario(cfg, since, until, token):
         d = r.get('date_start')
         if not d:
             continue
-        e = por_dia.setdefault(d, {'custo': 0.0, 'impressoes': 0, 'cliques': 0})
-        e['custo'] += float(r.get('spend', 0) or 0) * (1 + META_TAX_RATE)
-        e['impressoes'] += int(r.get('impressions', 0) or 0)
-        e['cliques'] += int(r.get('inline_link_clicks', 0) or 0)
+        e = por_dia.setdefault(d, {'custo': 0.0, 'impressoes': 0, 'cliques': 0,
+                                   'custo_captura': 0.0, 'impressoes_captura': 0,
+                                   'cliques_captura': 0})
+        custo = float(r.get('spend', 0) or 0) * (1 + META_TAX_RATE)
+        imp = int(r.get('impressions', 0) or 0)
+        cli = int(r.get('inline_link_clicks', 0) or 0)
+        e['custo'] += custo
+        e['impressoes'] += imp
+        e['cliques'] += cli
+        if _fase_de(r.get('campaign_name', ''), cfg) == 'captura':
+            e['custo_captura'] += custo
+            e['impressoes_captura'] += imp
+            e['cliques_captura'] += cli
     for e in por_dia.values():
         e['custo'] = round(e['custo'], 2)
+        e['custo_captura'] = round(e['custo_captura'], 2)
     return por_dia
 
 
@@ -1243,20 +1277,34 @@ def lancamento_fases(slug):
             'totais':   totais,
         }
 
-    # Leads da planilha. O lead chega pela campanha que o gerou, que hoje é a
-    # de aquecimento — por isso o funil e o custo por lead usam o lançamento
-    # inteiro, não só a fase de captura.
+    # Leads da planilha, agora classificados pela FASE da campanha que os
+    # gerou. Antes o funil usava o lançamento inteiro porque a captura ainda
+    # não existia e todo lead vinha do aquecimento; com a captura no ar isso
+    # passou a somar gasto e clique de aquecimento no funil de captura.
     cap = fases_cfg.get('captura') or {}
     ids_camp = {a['campaign_id'] for a in ads if a.get('campaign_id')}
+    # id e nome da campanha → fase, para casar com as três grafias de UTM
+    fase_por_campanha = {}
+    for a in ads:
+        if not a.get('fase'):
+            continue
+        if a.get('campaign_id'):
+            fase_por_campanha[str(a['campaign_id'])] = a['fase']
+        if a.get('campanha'):
+            fase_por_campanha[_normalizar_campanha(a['campanha'])] = a['fase']
+
     leads, leads_erro, diario = None, None, {}
     try:
-        leads = get_or_fetch((f'lancamento:{slug}', 'leads', since, until), CACHE_TTL,
-                             lambda: _fetch_leads(cap, cfg, since, until, ids_camp))
+        # v2 na chave: o formato das linhas mudou (ganhou 'fase'), e cache
+        # antigo serviria linha sem o campo, quebrando a conta na tela.
+        leads = get_or_fetch((f'lancamento:{slug}', 'leads-v2', since, until), CACHE_TTL,
+                             lambda: _fetch_leads(cap, cfg, since, until, ids_camp,
+                                                  fase_por_campanha))
     except Exception as e:
         leads_erro = str(e)
         logger.warning(f'[lancamento:{slug}] leads falharam: {e}')
     try:
-        diario = get_or_fetch((f'lancamento:{slug}', 'diario', since, until), CACHE_TTL,
+        diario = get_or_fetch((f'lancamento:{slug}', 'diario-v2', since, until), CACHE_TTL,
                               lambda: _fetch_diario(cfg, since, until, token))
     except Exception as e:
         avisos.append(f'Série diária indisponível: {e}')
@@ -1264,6 +1312,10 @@ def lancamento_fases(slug):
 
     geral = _totais_fase(ads)          # lançamento inteiro
     if 'captura' in saida:
+        # A entrega do funil é a da CAPTURA, não a do lançamento: somar
+        # aquecimento aqui inflava o gasto em ~18% e os cliques em ~39% (o
+        # aquecimento é VIDEO VIEW e gera clique barato em volume).
+        tcap = saida['captura']['totais']
         saida['captura']['leads'] = {
             'configurada': bool((cap.get('leads') or {}).get('spreadsheet_id')),
             'erro':        leads_erro,
@@ -1271,9 +1323,12 @@ def lancamento_fases(slug):
             # ocultar os leads de lançamentos anteriores sem recarregar.
             'linhas':      (leads or {}).get('linhas') or [],
             'diario':      [{'data': d, **v} for d, v in sorted(diario.items())],
-            # Entrega do lançamento inteiro, base do funil até o lead
-            'entrega': {'impressoes': geral['impressoes'], 'cliques': geral['cliques'],
-                        'lpv': geral['lpv'], 'custo': geral['custo']},
+            'entrega': {'impressoes': tcap['impressoes'], 'cliques': tcap['cliques'],
+                        'lpv': tcap['lpv'], 'custo': tcap['custo']},
+            # Mantida à parte para a tela poder mostrar o lançamento inteiro
+            # sem misturar com o funil de captura.
+            'entrega_lancamento': {'impressoes': geral['impressoes'], 'cliques': geral['cliques'],
+                                   'lpv': geral['lpv'], 'custo': geral['custo']},
         }
 
     # Fora das duas fases (campanha do lançamento sem tag de fase)
