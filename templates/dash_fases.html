@@ -344,6 +344,7 @@
     <div class="tabs">
       <button class="tab on" id="tab-btn-aq" onclick="setTab('aq')">🔥 Aquecimento</button>
       <button class="tab" id="tab-btn-cap" onclick="setTab('cap')">🎯 Captura</button>
+      <button class="tab" id="tab-btn-live" onclick="setTab('live')">🔴 Lives</button>
       <button class="tab" id="tab-btn-pesq" onclick="setTab('pesq')">📋 Pesquisa</button>
     </div>
 
@@ -471,6 +472,33 @@
     </div>
 
     <!-- PESQUISA DE PERFIL DOS LEADS -->
+    <!-- FASE 3 — LIVES -->
+    <div class="tab-panel" id="tab-live">
+      <div id="live-aviso"></div>
+      <div class="kpis" id="live-kpis"></div>
+
+      <div class="card" style="padding:0">
+        <div class="card-t" style="padding:20px 20px 0;margin-bottom:10px">
+          <span>Anúncios das lives</span>
+          <span class="dim" id="live-info"></span>
+        </div>
+        <div class="tbl-wrap" style="max-height:520px">
+          <table class="ads-tbl"><thead><tr>
+            <th class="ad-nome">Anúncio</th>
+            <th>Investido
+              <span class="dica" data-dica="Gasto do Gerenciador já com os 12,15% de imposto que a Meta cobra sobre a veiculação.">?</span></th>
+            <th>Impressões</th>
+            <th>Alcance
+              <span class="dica" data-dica="Pessoas diferentes que viram o anúncio. Quem viu várias vezes conta uma só.">?</span></th>
+            <th>Cliques</th>
+            <th>CPM
+              <span class="dica fim" data-dica="Custo por mil impressões.">?</span></th>
+          </tr></thead><tbody id="live-tbody"></tbody></table>
+        </div>
+        <div class="vazio-fase" id="live-vazio" style="display:none"></div>
+      </div>
+    </div>
+
     <div class="tab-panel" id="tab-pesq">
       <div id="pesq-loading" class="note">Carregando pesquisa…</div>
       <div id="pesq-erro"></div>
@@ -538,7 +566,7 @@ const dataBR = s => s ? s.slice(8, 10) + '/' + s.slice(5, 7) : '—';
 let DADOS = null, ordem = {campo: 'custo', desc: true}, grafico = null, grafico2 = null;
 
 function setTab(t) {
-  for (const k of ['aq', 'cap', 'pesq']) {
+  for (const k of ['aq', 'cap', 'live', 'pesq']) {
     document.getElementById('tab-' + k).classList.toggle('on', t === k);
     document.getElementById('tab-btn-' + k).classList.toggle('on', t === k);
   }
@@ -741,13 +769,62 @@ function renderCaptura() {
   }
   document.getElementById('cap-info').textContent = `${cap.ads.length} anúncio(s)`;
 
+  renderLives();
+
   const sf = DADOS.sem_fase;
   document.getElementById('rodape').innerHTML =
     `Custo com os ${pct(DADOS.config.imposto * 100)} de imposto da Meta. ` +
     'Hook rate = views contínuos de 2 segundos ÷ impressões (a Meta aposentou a métrica de 3s). ' +
     'Custo por VV = investido ÷ views do marco.' +
-    (sf.totais.ads ? ` <b>${sf.totais.ads} anúncio(s)</b> do lançamento estão fora das duas fases ` +
-      `(sem tag [AQUECIMENTO] ou [CAPTURA]), somando ${brl(sf.totais.custo)}.` : '');
+    (sf.totais.ads ? ` <b>${sf.totais.ads} anúncio(s)</b> do lançamento estão fora das fases ` +
+      `(sem tag de aquecimento, captura ou live), somando ${brl(sf.totais.custo)}.` : '');
+}
+
+function renderLives() {
+  // A fase pode nem existir na config de outro lançamento — a aba some.
+  const live = (DADOS.fases || {}).live;
+  const btn = document.getElementById('tab-btn-live');
+  if (!live) { btn.style.display = 'none'; return; }
+  btn.style.display = '';
+
+  const t = live.totais || {};
+  const cpm = t.impressoes ? (t.custo * 1000) / t.impressoes : null;
+  const cpc = t.cliques ? t.custo / t.cliques : null;
+  document.getElementById('live-kpis').innerHTML = [
+    card('💸 Investido', brl(t.custo), 'nas campanhas de live',
+         'Gasto das campanhas de live, já com os 12,15% de imposto.'),
+    card('👁️ Impressões', num(t.impressoes), `alcance ${num(t.alcance)}`),
+    card('🖱️ Cliques', num(t.cliques), cpc != null ? `CPC ${brl(cpc)}` : ''),
+    card('📊 CPM', brl(cpm), 'custo por mil impressões'),
+  ].join('');
+
+  const ads = (live.ads || []).slice().sort((a, b) => b.custo - a.custo);
+  const tb = document.getElementById('live-tbody');
+  const vz = document.getElementById('live-vazio');
+  document.getElementById('live-info').textContent = `${ads.length} anúncio(s)`;
+  if (!ads.length) {
+    tb.innerHTML = ''; vz.style.display = 'block';
+    vz.textContent = 'Nenhuma campanha de live no período.';
+    return;
+  }
+  vz.style.display = 'none';
+  // Mesmo padrão da tabela de captura: nome clicável abre o criativo.
+  tb.innerHTML = ads.map(a => `<tr>
+    <td class="ad-nome"><span class="ad-link" title="ver o criativo"
+      onclick="verCriativo('${esc(a.ad_id)}')">${esc(a.ad)}</span>
+      <div class="dim" style="font-size:11px;margin-top:2px">${esc(a.campanha)}</div></td>
+    <td>${brl(a.custo)}</td><td>${num(a.impressoes)}</td>
+    <td>${num(a.alcance)}</td><td>${num(a.cliques)}</td>
+    <td>${brl(a.impressoes ? (a.custo * 1000) / a.impressoes : null)}</td></tr>`).join('');
+
+  // O funil de captura não conta estes leads; dizer isso aqui evita a
+  // leitura de que a live não trouxe ninguém.
+  const linhas = ((DADOS.fases.captura || {}).leads || {}).linhas || [];
+  const daLive = linhas.filter(l => (l.source || '').toLowerCase().includes('live')).length;
+  document.getElementById('live-aviso').innerHTML = daLive
+    ? `<div class="warnbox">${daLive} lead(s) do período chegaram com <b>utm_source</b> de live.
+       Eles não entram no funil de captura, que conta só as campanhas [CAPTURA].</div>`
+    : '';
 }
 
 const UTM_TABELAS = [

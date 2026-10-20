@@ -52,6 +52,15 @@ LANCAMENTOS = {
                 'label': 'Aquecimento',
                 'patterns': ['[AQUECIMENTO]'],
             },
+            # A campanha de live NÃO usa [LIVE] no nome — ela subiu como
+            # "[BLACK26] ENGAJAMENTO LIVES DE AQUECIMENTO". O padrão casa pelo
+            # texto real; '[LIVE]' fica para campanhas futuras já etiquetadas.
+            # Vem ANTES de 'captura' e depois de 'aquecimento' só por ordem de
+            # leitura — nenhum nome casa com duas fases hoje.
+            'live': {
+                'label': 'Lives',
+                'patterns': ['[LIVE]', '[LIVES]', 'ENGAJAMENTO LIVES'],
+            },
             'captura': {
                 'label': 'Captura',
                 'patterns': ['[CAPTURA]'],
