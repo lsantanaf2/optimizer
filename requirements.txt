@@ -9,3 +9,4 @@ cryptography
 yt-dlp
 psycopg2-binary
 phonenumbers
+pywebpush

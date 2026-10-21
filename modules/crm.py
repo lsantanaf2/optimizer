@@ -30,6 +30,9 @@ Rotas:
   POST   /api/crm/tarefas/<id>/concluir     — conclui tarefa
   GET    /api/crm/tarefas                   — tarefas pendentes
   GET    /api/crm/novos?since=<iso>         — polling do alerta de lead novo
+  GET    /api/crm/push/chave                — chave VAPID pública
+  POST   /api/crm/push/inscrever            — registra o navegador para Web Push
+  POST   /api/crm/push/cancelar             — remove a inscrição
   GET    /api/crm/metricas                  — métricas (JSON)
 """
 
@@ -46,6 +49,7 @@ from flask import (
 )
 
 from modules import crm_core as core
+from modules import crm_push
 from modules import meta_capi
 from modules.crm_core import BR_TZ, ETAPA_LABELS, ETAPAS, STATUS_LABELS, TelefoneInvalido
 from modules.database import fetch_one
@@ -291,6 +295,20 @@ def captura_lead():
     except Exception:
         # Falha de CAPI nunca pode derrubar a captura do lead.
         logger.exception("CRM captura: erro ao disparar CAPI do lead %s", res['lead_id'])
+
+    # Push: é o único caminho que avisa com a aba do CRM fechada. Em thread,
+    # depois do lead já estar salvo — falha de push nunca derruba a captura.
+    try:
+        crm_push.avisar_lead(
+            nome=nome,
+            whatsapp=core.telefone_display(e164),
+            origem=' · '.join(x for x in (atribuicao.get('utm_source'),
+                                          atribuicao.get('utm_campaign')) if x) or 'direto',
+            lead_id=res['lead_id'],
+            recadastro=not res['is_novo'],
+        )
+    except Exception:
+        logger.exception("CRM captura: erro ao disparar push do lead %s", res['lead_id'])
 
     return responder({
         'ok': True,
@@ -670,6 +688,39 @@ def api_excluir_lead(lead_id):
         apagado['eventos'], apagado['notas'], apagado['tarefas'],
     )
     return jsonify({'ok': True, 'apagado': core._row(apagado)})
+
+
+@crm_bp.route('/api/crm/push/chave')
+@_login_required
+def api_push_chave():
+    """Chave pública VAPID, para o navegador se inscrever."""
+    return jsonify({'chave': crm_push.VAPID_PUBLIC_KEY,
+                    'habilitado': crm_push.habilitado()})
+
+
+@crm_bp.route('/api/crm/push/inscrever', methods=['POST'])
+@_login_required
+def api_push_inscrever():
+    """Guarda a inscrição deste navegador."""
+    d = request.get_json(silent=True) or {}
+    endpoint = (d.get('endpoint') or '').strip()
+    keys = d.get('keys') or {}
+    if not endpoint or not keys.get('p256dh') or not keys.get('auth'):
+        return jsonify({'error': 'inscrição incompleta'}), 422
+    crm_push.registrar(endpoint, keys['p256dh'], keys['auth'],
+                       user_id=_autor(), user_agent=request.headers.get('User-Agent'))
+    logger.info("Push: navegador inscrito (user=%s)", _autor())
+    return jsonify({'ok': True})
+
+
+@crm_bp.route('/api/crm/push/cancelar', methods=['POST'])
+@_login_required
+def api_push_cancelar():
+    d = request.get_json(silent=True) or {}
+    endpoint = (d.get('endpoint') or '').strip()
+    if endpoint:
+        crm_push.remover(endpoint)
+    return jsonify({'ok': True})
 
 
 @crm_bp.route('/api/crm/tarefas')

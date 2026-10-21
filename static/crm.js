@@ -644,10 +644,63 @@ const CRM = (() => {
         localStorage.setItem('crm-alertas', '1');
         const btn = $('#btn-alertas');
         btn.classList.add('on');
-        btn.textContent = permissao === 'granted' ? '🔔 Alertas ativos' : '🔔 Alertas (só som)';
         beep();   // confirma que o som funciona AGORA, não na hora do lead
+
         if (permissao !== 'granted') {
+            btn.textContent = '🔔 Alertas (só som)';
             mostrarToast('Som ativo. Permita notificações para ser avisado com a aba em segundo plano.');
+            return;
+        }
+
+        // Com permissão concedida, tenta também o push — é o que cobre a aba
+        // fechada. Se falhar, o som e a notificação continuam valendo.
+        btn.textContent = '🔔 Alertas ativos';
+        const push = await inscreverPush();
+        if (push.ok) {
+            btn.textContent = '🔔 Alertas ativos + push';
+            mostrarToast('✅ Avisos ativos — inclusive com o CRM fechado');
+        } else {
+            mostrarToast('Som e notificação ativos. Push indisponível: ' + push.motivo);
+        }
+    }
+
+    // ── Web Push: aviso com a aba do CRM fechada ──────────────
+    // O alerta da página (toque + overlay) só existe com a aba aberta. O push
+    // é entregue ao Service Worker, que o navegador acorda sozinho — é o que
+    // cobre "fechei o CRM e fui almoçar". Os dois convivem: com a aba aberta
+    // você ouve o toque; sem ela, chega a notificação.
+    function base64UrlParaBytes(b64) {
+        const pad = '='.repeat((4 - (b64.length % 4)) % 4);
+        const bruto = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
+        return Uint8Array.from(bruto, c => c.charCodeAt(0));
+    }
+
+    async function inscreverPush() {
+        if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+            return { ok: false, motivo: 'navegador sem suporte a push' };
+        }
+        if (Notification.permission !== 'granted') {
+            return { ok: false, motivo: 'notificações não permitidas' };
+        }
+        try {
+            const r = await api('/api/crm/push/chave');
+            if (!r.habilitado) return { ok: false, motivo: 'servidor sem VAPID_PRIVATE_KEY' };
+
+            // O SW já é registrado pelo upload-manager; aqui só esperamos ficar pronto.
+            const reg = await navigator.serviceWorker.ready;
+            let sub = await reg.pushManager.getSubscription();
+            if (!sub) {
+                sub = await reg.pushManager.subscribe({
+                    userVisibleOnly: true,     // exigido pelo Chrome
+                    applicationServerKey: base64UrlParaBytes(r.chave),
+                });
+            }
+            await api('/api/crm/push/inscrever', {
+                method: 'POST', body: JSON.stringify(sub.toJSON()),
+            });
+            return { ok: true };
+        } catch (e) {
+            return { ok: false, motivo: e.message };
         }
     }
 

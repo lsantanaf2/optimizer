@@ -12,7 +12,7 @@
  * - Registra histórico ao final (/api/upload-history/add)
  */
 
-const SW_VERSION = 'v2.14.0';
+const SW_VERSION = 'v2.15.0';
 const DB_NAME = 'optimizer-uploads';
 const DB_VERSION = 1;
 const STORE_JOBS = 'jobs';
@@ -767,4 +767,69 @@ self.addEventListener('message', async (e) => {
     } else if (type === 'ping') {
         if (e.source) e.source.postMessage({ type: 'pong', version: SW_VERSION });
     }
+});
+
+
+/* ============================================================
+   WEB PUSH — aviso de lead novo com a aba do CRM fechada
+   ============================================================
+   Este é o único caminho que funciona sem a página aberta: quem recebe é o
+   Service Worker, que o navegador acorda sozinho. O alerta sonoro da página
+   continua existindo para quando o CRM está aberto — são complementares, não
+   substitutos (aqui não dá para tocar som: SW não tem acesso ao áudio).
+   ============================================================ */
+
+self.addEventListener('push', (e) => {
+    let d = {};
+    try { d = e.data ? e.data.json() : {}; } catch (err) { d = {}; }
+
+    const titulo = d.titulo || '🎯 LEAD NOVO!';
+    const opcoes = {
+        body: d.corpo || 'Um lead acabou de chegar.',
+        // tag por lead: dois leads diferentes geram dois avisos; o mesmo lead
+        // reenviado substitui o anterior em vez de empilhar.
+        tag: 'crm-lead-' + (d.lead_id || Date.now()),
+        // Fica na tela até o usuário agir — é o ponto do alerta.
+        requireInteraction: true,
+        renotify: true,
+        // Vibração no celular; ignorada no desktop.
+        vibrate: [300, 150, 300, 150, 300],
+        data: { url: d.url || '/crm', lead_id: d.lead_id || null },
+        actions: [{ action: 'abrir', title: 'Abrir o CRM' }],
+    };
+    e.waitUntil(self.registration.showNotification(titulo, opcoes));
+});
+
+self.addEventListener('notificationclick', (e) => {
+    e.notification.close();
+    const alvo = (e.notification.data && e.notification.data.url) || '/crm';
+    e.waitUntil((async () => {
+        const abas = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+        // Se o CRM já está aberto em alguma aba, foca nela em vez de abrir
+        // outra — senão o usuário acumula abas a cada lead.
+        for (const c of abas) {
+            if (c.url.includes('/crm')) { await c.focus(); return; }
+        }
+        if (self.clients.openWindow) await self.clients.openWindow(alvo);
+    })());
+});
+
+// O navegador pode trocar a inscrição sozinho (rotação de chave, por
+// exemplo). Sem reinscrever, o push para de chegar em silêncio.
+self.addEventListener('pushsubscriptionchange', (e) => {
+    e.waitUntil((async () => {
+        try {
+            const antiga = e.oldSubscription || await self.registration.pushManager.getSubscription();
+            const chave = antiga && antiga.options && antiga.options.applicationServerKey;
+            if (!chave) return;
+            const nova = await self.registration.pushManager.subscribe({
+                userVisibleOnly: true, applicationServerKey: chave,
+            });
+            await fetch('/api/crm/push/inscrever', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(nova.toJSON()),
+            });
+        } catch (err) { /* melhor-esforço */ }
+    })());
 });
