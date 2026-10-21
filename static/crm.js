@@ -640,6 +640,7 @@ const CRM = (() => {
         }
 
         alertasAtivos = true;
+        ligarKeepalive();
         localStorage.setItem('crm-alertas', '1');
         const btn = $('#btn-alertas');
         btn.classList.add('on');
@@ -650,24 +651,75 @@ const CRM = (() => {
         }
     }
 
-    // Som gerado na hora (Web Audio): nada para baixar, nada para hospedar.
-    // Dois tons curtos, perceptíveis sem ser irritantes.
-    function beep() {
+    // ── Toque de telefone ──────────────────────────────────────
+    // Gerado na hora com Web Audio: nada para baixar nem hospedar, e o
+    // volume não depende do arquivo. Imita o toque brasileiro: dois tons
+    // juntos (425Hz, como a telefonia usa), 1s tocando e 4s de silêncio.
+    let toqueTimer = null;
+    let tocando = false;
+
+    function umToque() {
         if (!audioCtx) return;
-        const agora = audioCtx.currentTime;
-        [0, 0.18].forEach((offset, i) => {
+        const t0 = audioCtx.currentTime;
+        const DUR = 1.0;
+        const mestre = audioCtx.createGain();
+        // Alto de propósito: é para ouvir de outro cômodo.
+        mestre.gain.setValueAtTime(0.9, t0);
+        mestre.connect(audioCtx.destination);
+
+        // Duas frequências somadas dão o timbre de telefone; uma só soa
+        // como alarme de micro-ondas.
+        for (const hz of [440, 480]) {
             const osc = audioCtx.createOscillator();
-            const gain = audioCtx.createGain();
+            const g = audioCtx.createGain();
             osc.type = 'sine';
-            osc.frequency.value = i === 0 ? 880 : 1180;
-            gain.gain.setValueAtTime(0, agora + offset);
-            gain.gain.linearRampToValueAtTime(0.28, agora + offset + 0.02);
-            gain.gain.exponentialRampToValueAtTime(0.001, agora + offset + 0.16);
-            osc.connect(gain).connect(audioCtx.destination);
-            osc.start(agora + offset);
-            osc.stop(agora + offset + 0.18);
-        });
+            osc.frequency.value = hz;
+            // Ataque e corte rápidos evitam o "clique" do corte seco.
+            g.gain.setValueAtTime(0, t0);
+            g.gain.linearRampToValueAtTime(0.5, t0 + 0.02);
+            g.gain.setValueAtTime(0.5, t0 + DUR - 0.03);
+            g.gain.linearRampToValueAtTime(0, t0 + DUR);
+            osc.connect(g).connect(mestre);
+            osc.start(t0);
+            osc.stop(t0 + DUR + 0.05);
+        }
     }
+
+    // ── Keepalive contra o estrangulamento de aba em segundo plano ──
+    // O Chrome limita timers de aba escondida a ~1 execução por minuto depois
+    // de alguns minutos ("intensive throttling"), o que atrasaria o alerta em
+    // até 1 min por mais alto que fosse o som. Aba que está REPRODUZINDO ÁUDIO
+    // é isenta. Então mantemos um tom inaudível rodando: o custo é desprezível
+    // e o polling continua nos 12s mesmo com a aba no fundo.
+    let keepaliveNo = null;
+
+    function ligarKeepalive() {
+        if (!audioCtx || keepaliveNo) return;
+        const osc = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = 20;          // abaixo do audível
+        g.gain.value = 0.0001;             // inaudível, mas conta como áudio
+        osc.connect(g).connect(audioCtx.destination);
+        osc.start();
+        keepaliveNo = osc;
+    }
+
+    function tocarAteAtender() {
+        if (tocando) return;          // já está chamando por outro lead
+        tocando = true;
+        umToque();
+        // 5s = 1s de toque + 4s de silêncio, a cadência de telefone.
+        toqueTimer = setInterval(umToque, 5000);
+    }
+
+    function pararToque() {
+        tocando = false;
+        if (toqueTimer) { clearInterval(toqueTimer); toqueTimer = null; }
+    }
+
+    // Mantido só para o teste do botão "Ativar alertas": um toque único.
+    function beep() { umToque(); }
 
     function notificar(lead) {
         if (!('Notification' in window) || Notification.permission !== 'granted') return;
@@ -680,7 +732,7 @@ const CRM = (() => {
                 requireInteraction: true,   // fica na tela até você olhar
             }
         );
-        n.onclick = () => { window.focus(); abrirLead(lead.lead_id); n.close(); };
+        n.onclick = () => { window.focus(); pararToque(); dispensarChamada(); abrirLead(lead.lead_id); n.close(); };
     }
 
     // Título piscando + contador: funciona mesmo sem permissão nenhuma.
@@ -702,6 +754,39 @@ const CRM = (() => {
         document.title = tituloOriginal;
     }
 
+    // Overlay de chamada: ocupa a tela do CRM e só sai no clique, como uma
+    // ligação. A notificação do Windows cobre o caso de estar em outro app;
+    // este cobre o caso de estar no navegador, em outra aba.
+    function abrirChamada(novos) {
+        const el = $('#crm-chamada');
+        if (!el) return;
+        const l = novos[0];
+        const origem = [l.utm_source, l.utm_campaign].filter(Boolean).join(' · ') || 'direto';
+        $('#ch-titulo').textContent = novos.length > 1
+            ? `${novos.length} leads novos` : (l.tipo === 'recadastro' ? 'Lead voltou!' : 'Lead novo!');
+        $('#ch-nome').textContent = l.nome || 'Sem nome';
+        $('#ch-meta').textContent = `${l.whatsapp || ''} · ${origem}`;
+        el.dataset.leadId = l.lead_id;
+        el.classList.add('open');
+        document.title = '🔴 LEAD NOVO!';
+    }
+
+    function atender() {
+        pararToque();
+        pararPisca();
+        const el = $('#crm-chamada');
+        const id = el && el.dataset.leadId;
+        if (el) el.classList.remove('open');
+        if (id) abrirLead(id);
+    }
+
+    function dispensarChamada() {
+        pararToque();
+        pararPisca();
+        const el = $('#crm-chamada');
+        if (el) el.classList.remove('open');
+    }
+
     function banner(lead) {
         const wrap = $('#crm-alertas');
         const el = document.createElement('div');
@@ -713,7 +798,12 @@ const CRM = (() => {
             <div class="crm-alert-nome">${esc(lead.nome || 'Sem nome')}</div>
             <div class="crm-alert-meta">${esc(lead.whatsapp)} · ${esc(origem)}</div>
             <div class="crm-alert-meta">clique para abrir</div>`;
-        el.onclick = () => { abrirLead(lead.lead_id); el.remove(); if (!wrap.children.length) wrap.classList.remove('show'); };
+        el.onclick = () => {
+            pararToque();
+            abrirLead(lead.lead_id);
+            el.remove();
+            if (!wrap.children.length) wrap.classList.remove('show');
+        };
         wrap.appendChild(el);
         wrap.classList.add('show');
         setTimeout(() => {
@@ -734,8 +824,12 @@ const CRM = (() => {
             if (novos.length) {
                 novos.forEach(lead => {
                     banner(lead);
-                    if (alertasAtivos) { beep(); notificar(lead); }
+                    if (alertasAtivos) notificar(lead);
                 });
+                if (alertasAtivos) {
+                    tocarAteAtender();     // insiste até você clicar
+                    abrirChamada(novos);
+                }
                 document.body.classList.add('crm-lead-chegou');
                 setTimeout(() => document.body.classList.remove('crm-lead-chegou'), 3200);
                 if (document.hidden) piscarTitulo();
@@ -802,6 +896,6 @@ const CRM = (() => {
         salvarNota, criarTarefa, concluirTarefa,
         abrirSaida, fecharSaida, confirmarSaida,
         abrirExclusao, fecharExclusao, validarExclusao, confirmarExclusao,
-        ativarAlertas,
+        ativarAlertas, atender, dispensarChamada,
     };
 })();

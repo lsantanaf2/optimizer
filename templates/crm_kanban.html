@@ -65,6 +65,22 @@
 <!-- Banner de alerta de lead novo -->
 <div class="crm-alert-banner" id="crm-alertas"></div>
 
+<!-- Chamada: ocupa a tela e o toque só para no clique, como uma ligação.
+     A notificação do Windows cobre quando você está em outro app; este
+     overlay cobre quando você está no navegador, em outra aba. -->
+<div class="crm-chamada" id="crm-chamada">
+    <div class="crm-chamada-box">
+        <div class="crm-chamada-icone">📞</div>
+        <div class="crm-chamada-titulo" id="ch-titulo">Lead novo!</div>
+        <div class="crm-chamada-nome" id="ch-nome">—</div>
+        <div class="crm-chamada-meta" id="ch-meta">—</div>
+        <div class="crm-chamada-acoes">
+            <button class="crm-btn primary grande" onclick="CRM.atender()">Abrir lead</button>
+            <button class="crm-btn grande" onclick="CRM.dispensarChamada()">Silenciar</button>
+        </div>
+    </div>
+</div>
+
 <!-- ============ Modal: ficha do lead ============ -->
 <div class="crm-modal-overlay" id="modal-lead" onclick="if(event.target===this)CRM.fecharLead()">
     <div class="crm-modal">

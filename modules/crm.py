@@ -714,7 +714,12 @@ def api_novos():
         return jsonify({'error': 'since inválido'}), 422
 
     novos = core.leads_desde(since_dt)
-    agora = datetime.now(BR_TZ)
+    # O relógio do BANCO, não o da aplicação. Os eventos são carimbados com
+    # NOW() do Postgres, que está adiantado em relação à VPS; devolver a hora
+    # da aplicação fazia o lastSeen do navegador ficar sempre atrás dos
+    # eventos — e o MESMO lead era redescoberto a cada poll, para sempre.
+    # Na prática: telefone tocando sem parar mesmo depois de atender.
+    agora = fetch_one('SELECT NOW() AS agora')['agora']
     return jsonify({
         'server_time': agora.isoformat(),
         'novos': [{

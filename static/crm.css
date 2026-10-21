@@ -317,6 +317,47 @@
 .crm-alert-nome { font-size: 14px; font-weight: 600; }
 .crm-alert-meta { font-size: 11px; color: var(--text-secondary); margin-top: 3px; }
 
+/* ---------- Chamada de lead ---------- */
+.crm-chamada {
+    position: fixed; inset: 0; z-index: 980;
+    background: rgba(5, 8, 12, .88);
+    backdrop-filter: blur(6px);
+    display: none; align-items: center; justify-content: center;
+    padding: 24px;
+}
+.crm-chamada.open { display: flex; animation: crm-chamada-in .25s ease-out; }
+@keyframes crm-chamada-in { from { opacity: 0 } to { opacity: 1 } }
+
+.crm-chamada-box {
+    background: var(--bg-surface);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-xl);
+    box-shadow: 0 0 60px var(--accent-glow);
+    padding: 40px 36px;
+    text-align: center;
+    max-width: 420px; width: 100%;
+    /* Pulsa junto com a cadência do toque (5s), para o olho acompanhar o som */
+    animation: crm-pulso 5s ease-in-out infinite;
+}
+@keyframes crm-pulso {
+    0%, 20%, 100% { box-shadow: 0 0 60px var(--accent-glow); }
+    10%           { box-shadow: 0 0 95px var(--accent); }
+}
+.crm-chamada-icone { font-size: 48px; margin-bottom: 14px; animation: crm-tremer 5s ease-in-out infinite; }
+@keyframes crm-tremer {
+    0%, 16%, 100% { transform: rotate(0); }
+    2%, 6%, 10%   { transform: rotate(-12deg); }
+    4%, 8%, 12%   { transform: rotate(12deg); }
+}
+.crm-chamada-titulo {
+    font-size: 13px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--accent); margin-bottom: 10px;
+}
+.crm-chamada-nome { font-size: 26px; font-weight: 700; margin-bottom: 6px; }
+.crm-chamada-meta { font-size: 13.5px; color: var(--text-secondary); margin-bottom: 28px; }
+.crm-chamada-acoes { display: flex; gap: 10px; justify-content: center; }
+.crm-btn.grande { padding: 12px 22px; font-size: 14px; }
+
 /* Pisca a página inteira quando chega lead e a aba está em foco */
 body.crm-lead-chegou { animation: crm-page-flash 1s ease-out 3; }
 @keyframes crm-page-flash {
