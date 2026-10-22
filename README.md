@@ -82,7 +82,6 @@ da Meta ao vivo e não deve ser executado à toa.
 ## Documentação
 
 - [AGENTS.md](AGENTS.md) — comandos e restrições para agentes
-- [CLAUDE.md](CLAUDE.md) — específico do Claude neste repositório
 - `.clauderules` — regras de conduta
 - `docs/SETUP-NOVO-PC.md` — preparar máquina nova
 - `deploy/README.md` — autodeploy por systemd
