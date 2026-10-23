@@ -73,11 +73,21 @@ datado em `database/migrations/`, idempotente. Toda tabela do schema `public`
 tem RLS ligado — as de uso exclusivo do servidor ficam com RLS e **zero policy**,
 o que basta porque a aplicação conecta como dona das tabelas.
 
-## Testes
+## Qualidade
 
-**Não há suíte de testes nem linter configurados.** `test_cruzamento_logic.py`
-roda como script e imprime `SUCCESS`; `test_creative.py` é debug que chama a API
-da Meta ao vivo e não deve ser executado à toa.
+Lint com `ruff` — config em `ruff.toml`, hoje passando limpo:
+
+```bash
+pip install -r requirements-dev.txt
+python -m ruff check .
+```
+
+As regras que ainda têm violação estão anotadas como baseline dentro do
+`ruff.toml`, com a contagem medida; voltam a valer quando zerarem.
+
+**Não há suíte de testes.** `test_cruzamento_logic.py` roda como script e
+imprime `SUCCESS`; `test_creative.py` é debug que chama a API da Meta ao vivo e
+não deve ser executado à toa.
 
 ## Documentação
 

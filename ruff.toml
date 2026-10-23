@@ -1,0 +1,84 @@
+# ruff — gate de lint do Optimizer
+#
+# Medido em 2026-10-22 sobre o código vivo (app.py, meta_api.py, modules/).
+# A severidade saiu da CONTAGEM, não de gosto: regra limpa entra como erro;
+# regra suja fica na lista de baseline lá embaixo, com o número anotado, e só
+# volta a valer quando zerar.
+#
+# Rodar:  python -m ruff check .
+# Corrigir o que é automático:  python -m ruff check . --fix
+
+target-version = "py311"   # igual ao Dockerfile (python:3.11-slim)
+line-length = 100
+
+# Código morto: nenhum destes é importado por ninguém (verificado). Lintar
+# arquivo que ninguém executa só gera ruído que faz desligarem o gate.
+# `temp_routes.py` nem UTF-8 válido é.
+exclude = [
+    "app_old.py",
+    "meta_150.py",
+    "temp_routes.py",
+    "diag_squad.py",
+    "verify_payload.py",
+    "test_creative.py",        # script de debug que chama a API da Meta ao vivo
+    "database/migrations",
+    ".ruff_cache",
+]
+
+[lint]
+# O gate: hoje passa limpo. Qualquer violação nova quebra.
+select = [
+    "E9",      # erro de sintaxe / arquivo ilegível
+    "F821",    # nome indefinido — NameError esperando acontecer
+    "F811",    # redefinição que apaga a anterior em silêncio
+    "F502",    # format com argumento errado
+    "S113",    # requests sem timeout — regra da casa, já travou produção
+    "ASYNC",   # armadilhas de async (hoje não há async, então é preventivo)
+    "T100",    # breakpoint() esquecido no código
+    "S102",    # exec()
+    "S307",    # eval()
+    "PLE",     # erros do pylint (não estilo)
+]
+
+# ── BASELINE ────────────────────────────────────────────────────────────────
+# Regras boas que hoje têm violação. Não entram no `select` para o gate não
+# nascer vermelho — gate vermelho no dia 1 é gate que alguém desliga. Cada uma
+# volta para o `select` quando zerar. Contagem medida em 2026-10-22, só no
+# código vivo:
+#
+#   I001    75   imports fora de ordem
+#   E701    41   dois comandos na mesma linha (`if x: y`)
+#   F401    34   import sem uso
+#   DTZ007  30   strptime sem fuso
+#   E702    28   comandos separados por ponto e vírgula
+#   DTZ011  16   date.today() sem fuso
+#   E402    15   import fora do topo do arquivo
+#   F541    14   f-string sem placeholder
+#   E741     8   nome de variável ambíguo (l, I, O)
+#   SIM105   8   try/except/pass no lugar de contextlib.suppress
+#   RET504   7   atribuir só para retornar na linha seguinte
+#   DTZ005   6   datetime.now() sem tzinfo
+#   SIM118   6   `x in dict.keys()`
+#   F841     6   variável atribuída e nunca usada
+#   B904     5   raise dentro de except sem `from`
+#   ARG001   5   argumento de função sem uso
+#   B905     5   zip() sem strict=
+#   B007     4   variável de loop sem uso
+#   DTZ003   3   datetime.utcnow()
+#   SIM102   3   if aninhado que daria para juntar
+#
+# DTZ (55 no total) merece atenção especial: este projeto já teve bug de
+# relógio em produção, com o horário da aplicação ~100s atrás do banco. Ver
+# a nota em CLAUDE.md / AGENTS.md.
+
+[lint.per-file-ignores]
+# Dívida explícita e curta, do jeito que vale mais que regra em que ninguém
+# confia. Cada linha sai daqui quando o arquivo for corrigido — e corrigir é
+# outra tarefa, não esta.
+"meta_api.py" = [
+    "F821",   # 2 — `urllib` usado sem import nas linhas 1081-1082
+    "S113",   # 1 — requests sem timeout na linha 134
+]
+"modules/auth.py" = [
+    "S113",   # 1 — requests sem timeout na linha 216
+]

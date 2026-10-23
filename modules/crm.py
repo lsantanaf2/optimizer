@@ -92,6 +92,22 @@ def _autor():
     return session.get('user_id')
 
 
+def _data_do_formulario(valor):
+    """Interpreta data vinda de `<input type="datetime-local">`.
+
+    Esse input manda "2026-10-23T15:00", SEM fuso. Um datetime naive entrando
+    numa coluna timestamptz é carimbado pelo Postgres com o fuso da sessão —
+    que aqui é UTC. Resultado: a pessoa agenda 15h, grava 15:00 UTC e a tela
+    mostra 12:00. Três horas a menos, silenciosamente.
+
+    O horário digitado é o do operador, então datetime sem fuso assume
+    America/Sao_Paulo. Valor que já venha com fuso (ISO com Z ou offset) é
+    respeitado como está.
+    """
+    d = datetime.fromisoformat(str(valor).strip().replace('Z', '+00:00'))
+    return d if d.tzinfo is not None else d.replace(tzinfo=BR_TZ)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Captura pública
 # ─────────────────────────────────────────────────────────────────────────────
@@ -582,7 +598,7 @@ def api_mover_lead(lead_id):
     tarefa = None
     if status == 'timing_errado' and dados.get('data_recontato'):
         try:
-            due = datetime.fromisoformat(str(dados['data_recontato']).replace('Z', '+00:00'))
+            due = _data_do_formulario(dados['data_recontato'])
             tarefa = core.criar_tarefa(lead_id, due_at=due, tipo='recontato',
                                        motivo=motivo, owner_id=_autor(), autor_id=_autor())
         except ValueError:
@@ -627,7 +643,7 @@ def api_criar_tarefa(lead_id):
     if not dados.get('due_at'):
         return jsonify({'error': 'Informe a data.'}), 422
     try:
-        due = datetime.fromisoformat(str(dados['due_at']).replace('Z', '+00:00'))
+        due = _data_do_formulario(dados['due_at'])
     except ValueError:
         return jsonify({'error': 'Data inválida.'}), 422
     tarefa = core.criar_tarefa(lead_id, due_at=due, tipo=dados.get('tipo') or 'recontato',

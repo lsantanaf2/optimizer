@@ -1,0 +1,7 @@
+# Ferramentas de desenvolvimento. NÃO entram na imagem de produção: o
+# Dockerfile instala só requirements.txt, e lint não roda em container.
+#
+#   pip install -r requirements-dev.txt
+#   python -m ruff check .
+
+ruff

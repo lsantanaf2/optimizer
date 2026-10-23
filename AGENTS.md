@@ -11,12 +11,20 @@ Python 3.11 + Flask com Blueprints, PostgreSQL no Supabase, Docker na VPS.
 | Checar sintaxe Python | `python -m py_compile modules/<arquivo>.py` | ✅ |
 | Checar sintaxe JS | `node --check static/<arquivo>.js` | ✅ |
 | "Teste" de cruzamento | `python test_cruzamento_logic.py` → imprime `SUCCESS` | ✅ |
+| Lint | `python -m ruff check .` → hoje passa limpo | ✅ |
+| Lint, corrigindo o automático | `python -m ruff check . --fix` | ✅ |
 | Build da imagem | `docker build -t optimizer-image:auto .` | ⚠️ não verificado (sem Docker local) |
 | Subir em produção | `bash /var/www/optimizer/deploy.sh` (na VPS) | ⚠️ não verificado |
 
-**Não existe suíte de testes, linter nem build de front.** Sem pytest
-configurado, sem ESLint, sem bundler. Não invente `npm test` nem `pytest`.
-`test_creative.py` não é teste: chama a API da Meta ao vivo — não execute.
+**Não existe suíte de testes nem build de front.** Sem pytest configurado, sem
+bundler. Não invente `npm test` nem `pytest`. `test_creative.py` não é teste:
+chama a API da Meta ao vivo — não execute.
+
+O lint é `ruff` (config em `ruff.toml`, instalação em `requirements-dev.txt`).
+Ele **passa limpo hoje**: qualquer violação nova quebra. As regras boas que
+ainda têm violação estão listadas como baseline no próprio `ruff.toml`, com a
+contagem — voltam a valer quando zerarem. Não suba o teto nem amplie o
+`per-file-ignores` para fazer código novo passar.
 
 ## Deploy
 
@@ -53,6 +61,7 @@ Antes de todo push: **bumpar `VERSION` em `app.py`** (e `SW_VERSION` em
 - `docs/SETUP-NOVO-PC.md` — preparar máquina nova.
 - `deploy/README.md` — como o autodeploy por systemd foi instalado.
 - `deploy/nginx/README.md` — DNS, nginx e TLS do subdomínio de captura.
+- `ruff.toml` — regras do lint, baseline medido e dívida por arquivo.
 - `README.md` — visão do produto e stack.
 
 ## Mapa
