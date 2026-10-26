@@ -379,6 +379,7 @@ def _new_bucket():
         'bruto': 0.0, 'reembolsos': 0.0,
         'por_tipo': {t: {'valor': 0.0, 'qtd': 0} for t in TIPOS},
         'qtd_vendas': 0, 'qtd_reembolsos': 0,
+        'produtos': {},   # (product_id, nome) → valores
     }
 
 
@@ -468,14 +469,26 @@ def _aggregate(rows, since_d=None, until_d=None, renovacoes=None, gasto=None):
         else:
             bucket = sem_atrib
 
+        # Quebra por produto dentro da baia: é como se audita de onde veio o
+        # dinheiro e, principalmente, de onde vêm os reembolsos.
+        prod = bucket['produtos'].setdefault(
+            (pid, (r.get('Produto') or '').strip()),
+            {'bruto': 0.0, 'reembolsos': 0.0, 'qtd': 0, 'qtd_reembolsos': 0,
+             'tipos': set()})
+        prod['tipos'].add(tipo)
+
         if status == 'APPROVED':
             bucket['bruto'] += valor
             bucket['por_tipo'][tipo]['valor'] += valor
             bucket['por_tipo'][tipo]['qtd'] += 1
             bucket['qtd_vendas'] += 1
+            prod['bruto'] += valor
+            prod['qtd'] += 1
         elif status in ('REFUNDED', 'CHARGEBACK'):
             bucket['reembolsos'] += valor
             bucket['qtd_reembolsos'] += 1
+            prod['reembolsos'] += valor
+            prod['qtd_reembolsos'] += 1
 
         if not funil_key and bucket is sem_atrib:
             key = (pid, (r.get('Produto') or '').strip())
@@ -487,7 +500,16 @@ def _aggregate(rows, since_d=None, until_d=None, renovacoes=None, gasto=None):
                 p['reembolsos'] += valor
 
     def _finalize(b):
+        produtos = [
+            {'product_id': pid, 'produto': nome,
+             'bruto': round(v['bruto'], 2), 'reembolsos': round(v['reembolsos'], 2),
+             'qtd': v['qtd'], 'qtd_reembolsos': v['qtd_reembolsos'],
+             'tipos': sorted(v['tipos'])}
+            for (pid, nome), v in sorted(b['produtos'].items(),
+                                         key=lambda x: -(x[1]['bruto'] + x[1]['reembolsos']))
+        ]
         out = {
+            'produtos': produtos,
             'bruto': round(b['bruto'], 2),
             'reembolsos': round(b['reembolsos'], 2),
             'liquido': round(b['bruto'] - b['reembolsos'], 2),
@@ -502,6 +524,13 @@ def _aggregate(rows, since_d=None, until_d=None, renovacoes=None, gasto=None):
     ema = _new_bucket()
     for k in EMA_KEYS:
         b = funis[k]
+        for chave, v in b['produtos'].items():
+            e = ema['produtos'].setdefault(
+                chave, {'bruto': 0.0, 'reembolsos': 0.0, 'qtd': 0,
+                        'qtd_reembolsos': 0, 'tipos': set()})
+            e['bruto'] += v['bruto']; e['reembolsos'] += v['reembolsos']
+            e['qtd'] += v['qtd']; e['qtd_reembolsos'] += v['qtd_reembolsos']
+            e['tipos'] |= v['tipos']
         ema['bruto'] += b['bruto']
         ema['reembolsos'] += b['reembolsos']
         ema['qtd_vendas'] += b['qtd_vendas']
