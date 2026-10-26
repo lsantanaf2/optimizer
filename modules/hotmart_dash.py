@@ -97,6 +97,24 @@ FUNIL_LABEL = {'PT': 'Português', 'ES': 'Espanhol', 'EN': 'Inglês',
 EMA_KEYS = ['PT', 'ES', 'EN', 'FR', 'IT', 'DE']
 TIPOS = ['TOPO FUNIL', 'ORDER BUMP', 'UPSELL']
 
+# Conta de anúncio → baia. Cada mercado tem a sua conta, então o rateio do
+# investimento é direto, sem olhar nome de campanha. Vale para qualquer troca
+# de produto de entrada: a campanha continua alimentando o mesmo idioma.
+CONTAS_FUNIL = {
+    '1011098189439378': 'PT',   # CA11 - Iuri Castro
+    '1519281745348641': 'PT',   # CA31 - EMA PT
+    '1367733682158227': 'PT',   # CA35 - SFD
+    '902976780487218':  'ES',   # CA12 - Iuri Castro (campanhas [LATAM])
+    '1752560972727827': 'EN',   # CA32 - EMA ING
+    '794261530107923':  'FR',   # CA15 - IURI CASTRO (campanhas [FRA])
+    '1675469107525551': 'IT',   # CA34 - EMA ITALIANO
+    '1557623615821482': 'DE',   # CA33 - EMA ALEMÃO
+    '744200434213845':  'SSM',  # CA51 - SSM
+}
+# Primeira venda da planilha. Serve de piso quando a tela está sem filtro de
+# data ("Tudo"): insights da Meta exigem um intervalo fechado.
+PRIMEIRA_VENDA = date(2026, 7, 17)
+
 
 # ── Leitura da planilha ───────────────────────────────────────────────────────
 
@@ -254,6 +272,46 @@ def renovacoes_de(rows, resolve_funil):
     return {tx for tx, n in recs.items() if n > 1}
 
 
+def _fetch_gasto_meta(since_d, until_d, token):
+    """Investimento por baia no período, já com o imposto da Meta.
+
+    Uma chamada por conta, em paralelo. O token vem de fora porque estas
+    buscas rodam em thread e obter_token() lê a sessão do Flask, que não
+    existe fora do contexto da requisição.
+    """
+    import concurrent.futures
+    from modules.meta_client import GRAPH_BASE, meta_get, apply_meta_tax
+
+    if not token:
+        raise RuntimeError('Sistema não autenticado na Meta.')
+    desde = (since_d or PRIMEIRA_VENDA).isoformat()
+    ate = (until_d or date.today()).isoformat()
+
+    def _uma(acct):
+        params = {
+            'access_token': token, 'level': 'account', 'fields': 'spend',
+            'time_range': json.dumps({'since': desde, 'until': ate},
+                                     separators=(',', ':')),
+        }
+        dados = meta_get(f'{GRAPH_BASE}/act_{acct}/insights', params, timeout=45) or {}
+        linhas = dados.get('data') or []
+        return sum(float(r.get('spend', 0) or 0) for r in linhas)
+
+    por_funil = {}
+    erros = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as ex:
+        futuros = {ex.submit(_uma, a): (a, f) for a, f in CONTAS_FUNIL.items()}
+        for fut in concurrent.futures.as_completed(futuros):
+            acct, funil = futuros[fut]
+            try:
+                por_funil[funil] = por_funil.get(funil, 0.0) + fut.result()
+            except Exception as e:
+                logger.warning(f'[faturamento] gasto da conta {acct} falhou: {e}')
+                erros.append(f'{acct}: {e}')
+    return {'gasto': {k: apply_meta_tax(v) for k, v in por_funil.items()},
+            'erros': erros, 'periodo': {'since': desde, 'until': ate}}
+
+
 # ── Agregação ─────────────────────────────────────────────────────────────────
 
 def _resolver(rows):
@@ -324,7 +382,26 @@ def _new_bucket():
     }
 
 
-def _aggregate(rows, since_d=None, until_d=None, renovacoes=None):
+def _com_cac(bucket, gasto):
+    """Acrescenta investimento, CAC real, CAC ideal e ROI ao bucket da baia.
+
+    CAC real  = investido (com imposto) ÷ vendas de ENTRADA (topo de funil).
+    CAC ideal = metade do que cada entrada traz de líquido para o funil
+                inteiro — (líquido ÷ entradas) ÷ 2. É o teto de aquisição
+                para o funil fechar com 2x.
+    ROI       = líquido ÷ investido.
+    """
+    entradas = bucket['por_tipo']['TOPO FUNIL']['qtd']
+    liquido = bucket['liquido']
+    bucket['entradas'] = entradas
+    bucket['gasto'] = round(gasto, 2) if gasto is not None else None
+    bucket['cac_real'] = round(gasto / entradas, 2) if gasto and entradas else None
+    bucket['cac_ideal'] = round(liquido / entradas / 2, 2) if entradas else None
+    bucket['roi'] = round(liquido / gasto, 2) if gasto else None
+    return bucket
+
+
+def _aggregate(rows, since_d=None, until_d=None, renovacoes=None, gasto=None):
     """Agrega vendas por funil no período.
 
     IMPORTANTE: a resolução de âncoras (transação topo → funil) e a cadeia de
@@ -336,6 +413,7 @@ def _aggregate(rows, since_d=None, until_d=None, renovacoes=None):
     de funil, são cobrança recorrente da base.
     """
     renovacoes = renovacoes or set()
+    gasto = gasto or {}
     resolve_funil, approved_date = _resolver(rows)
 
     # Passada 2 (com filtro de data): somatório
@@ -443,9 +521,11 @@ def _aggregate(rows, since_d=None, until_d=None, renovacoes=None):
     return {
         'totals': _finalize(tot),
         'reembolsos_sem_data_fora': reembolsos_sem_data_fora,
-        'ema_global': _finalize(ema),
+        'ema_global': _com_cac(_finalize(ema),
+                               sum(v for k, v in gasto.items() if k in EMA_KEYS) or None),
         'renovacoes': _finalize(renov),
-        'funis': [{'key': k, 'label': FUNIL_LABEL.get(k, k), **_finalize(funis[k])}
+        'funis': [{'key': k, 'label': FUNIL_LABEL.get(k, k),
+                   **_com_cac(_finalize(funis[k]), gasto.get(k))}
                   for k in FUNIL_ORDER],
         'sem_atribuicao': {
             **_finalize(sem_atrib),
@@ -478,6 +558,7 @@ def faturamento_data():
 
     if request.args.get('refresh') == '1':
         invalidate('hotmart_rows')
+        invalidate('hotmart_gasto')
 
     try:
         rows = get_or_fetch(('hotmart_rows',), CACHE_TTL, _fetch_sheet_rows)
@@ -504,8 +585,23 @@ def faturamento_data():
         logger.warning(f'[faturamento] renovações indisponíveis: {e}')
         renovacoes = set()
 
-    result = _aggregate(rows, since_d, until_d, renovacoes)
+    # Investimento na Meta por baia. Falha aqui não derruba a tela: a dash
+    # continua mostrando faturamento, só sem CAC e ROI.
+    gasto, gasto_erros = {}, []
+    try:
+        from app import obter_token
+        token = obter_token()   # resolvido aqui: não existe sessão nas threads
+        g = get_or_fetch(('hotmart_gasto', str(since_d), str(until_d)), CACHE_TTL,
+                         lambda: _fetch_gasto_meta(since_d, until_d, token))
+        gasto, gasto_erros = g['gasto'], g['erros']
+    except Exception as e:
+        logger.warning(f'[faturamento] investimento indisponível: {e}')
+        gasto_erros = [str(e)]
+
+    result = _aggregate(rows, since_d, until_d, renovacoes, gasto)
     result['success'] = True
+    result['gasto_erros'] = gasto_erros
+    result['imposto'] = 0.1215
     result['meta'] = {
         'linhas_planilha': len(rows),
         'periodo': {'since': str(since_d) if since_d else None,
