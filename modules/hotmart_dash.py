@@ -66,6 +66,10 @@ PRODUTO_IDIOMA = {
     '7084722': 'EN',   # EMA Assistant 🇺🇸
     '8773526': 'EN',   # SFD Radar 🇺🇸 (front desde 21/10/2026)
     '8773580': 'EN',   # AI Assistant 🇺🇸
+    '7763423': 'EN',   # Secret Flight Deals → SFD Radar (08/10). Sem bandeira
+                       # no nome e vendido como upsell em TODOS os idiomas —
+                       # quando tem mãe, quem manda é ela; o idioma aqui só
+                       # vale para as vendas de entrada (cliente, 26/10/2026).
     # ── Francês ──
     '7527383': 'FR',   # EMA Assistant 🇫🇷
     '8776426': 'FR',   # SFD Radar 🇫🇷 (front desde 21/10/2026)
@@ -82,13 +86,9 @@ PRODUTO_IDIOMA = {
     '8126548': 'SSM',  # Segundo Salário com Milhas
     #
     # FORA DE PROPÓSITO:
-    #   7763423  'Secret Flight Deals' → 'SFD Radar' (08/10). Sem bandeira no
-    #            nome porque é vendido como upsell nos funis de TODOS os
-    #            idiomas — ES 377, EN 203, FR 83, DE 24, IT 23. Quem decide o
-    #            funil dele é a transação mãe.
-    #   7086112  'Exclusive Flight Alerts'. 19 vendas de entrada, nome em
-    #            inglês mas sem bandeira e sem funil identificável. Fica em
-    #            "sem atribuição" até o cliente dizer de qual idioma é.
+    #   7086112  'Exclusive Flight Alerts'. Nome em inglês mas sem bandeira e
+    #            sem funil identificável. Fica em "sem atribuição" até o
+    #            cliente dizer de qual idioma é.
 }
 FUNIL_ORDER = ['PT', 'ES', 'EN', 'FR', 'IT', 'DE', 'SSM']
 FUNIL_LABEL = {'PT': 'Português', 'ES': 'Espanhol', 'EN': 'Inglês',
