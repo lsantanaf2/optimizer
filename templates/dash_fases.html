@@ -527,7 +527,7 @@
       </div>
 
       <div class="card" id="ven-chart-card" style="display:none;margin-top:14px">
-        <div class="card-t"><span>Vendas e investimento por dia</span>
+        <div class="card-t"><span>Cliques e investimento por dia</span>
           <span class="dim" id="ven-chart-info"></span></div>
         <div class="chart-wrap"><canvas id="ven-grafico"></canvas></div>
       </div>
@@ -550,8 +550,8 @@
         </div>
         <div class="tbl-wrap" style="max-height:340px">
           <table class="ads-tbl"><thead><tr>
-            <th class="ad-nome">Dia</th><th>Investido</th><th>Vendas</th>
-            <th>Faturamento</th><th>Comissão</th><th>CAC</th>
+            <th class="ad-nome">Dia</th><th>Investido</th><th>Impressões</th>
+            <th>Cliques</th>
           </tr></thead><tbody id="ven-dia"></tbody></table>
         </div>
       </div>
@@ -566,10 +566,12 @@
             <th>Investido
               <span class="dica" data-dica="Gasto do Gerenciador já com os 12,15% de imposto que a Meta cobra sobre a veiculação.">?</span></th>
             <th>Impressões</th><th>Cliques</th>
-            <th>CTR
-              <span class="dica" data-dica="Cliques no link ÷ impressões.">?</span></th>
-            <th>CPM
-              <span class="dica fim" data-dica="Custo por mil impressões.">?</span></th>
+            <th>Compras
+              <span class="dica" data-dica="Compras do Pixel atribuídas a este anúncio pela Meta.">?</span></th>
+            <th>CPA
+              <span class="dica" data-dica="Investido ÷ compras atribuídas.">?</span></th>
+            <th>ROAS
+              <span class="dica fim" data-dica="Receita do Pixel ÷ investido.">?</span></th>
           </tr></thead><tbody id="ven-tbody"></tbody></table>
         </div>
         <div class="vazio-fase" id="ven-vazio" style="display:none"></div>
@@ -1512,134 +1514,106 @@ function renderPesqTextos() {
 let graficoVen = null;
 
 function renderVendas() {
-  // A fase pode nem existir na config de outro lançamento — a aba some.
+  // A fase pode nem existir na config de outro lancamento - a aba some.
   const ven = (DADOS.fases || {}).vendas;
   const btn = document.getElementById('tab-btn-ven');
   if (!ven) { btn.style.display = 'none'; return; }
   btn.style.display = '';
 
   const t = ven.totais || {};
-  const pl = ven.planilha || {};
-  const pt = pl.totais || {};
   const custo = t.custo || 0;
-  // Faturamento é o que o cliente pagou; comissão é o que entra pro expert.
-  // O ROAS usa comissão, que é o dinheiro que existe de verdade.
-  const roas = custo && pt.comissao ? pt.comissao / custo : null;
-  const cac = pt.vendas ? custo / pt.vendas : null;
-  const ticket = pt.vendas ? pt.faturamento / pt.vendas : null;
 
   document.getElementById('ven-kpis').innerHTML = [
-    card('💸 Investido', brl(custo), 'campanha de vendas',
-         'Gasto das campanhas com VENDAS no nome, já com os 12,15% de imposto.'),
-    card('🧾 Vendas', num(pt.vendas), pt.principal != null
-           ? `${num(pt.principal)} do produto principal` : 'na planilha',
-         'Vendas aprovadas na planilha da plataforma, dentro do período e só dos produtos desta edição.'),
-    card('💰 Faturamento', brl(pt.faturamento), ticket != null
-           ? `ticket ${brl(ticket)}` : '',
-         'Soma da coluna FATURAMENTO: o valor cheio pago pelo cliente, antes da taxa da plataforma.'),
-    card('🤝 Comissão', brl(pt.comissao), 'o que entra pro expert',
-         'Soma da coluna COMISSÃO: o que sobra depois da taxa da plataforma. É a base do ROAS.'),
-    card('📈 ROAS', roas != null ? roas.toLocaleString('pt-BR',
-           {minimumFractionDigits: 2, maximumFractionDigits: 2}) + 'x' : '—',
-         'comissão ÷ investido',
-         'Quanto de comissão cada real investido trouxe. Abaixo de 1x o anúncio não se paga.'),
-    card('🎯 CAC', brl(cac), 'investido ÷ vendas',
-         'Custo de aquisição por venda, contando só o gasto da campanha de vendas.'),
+    card('\u{1F4B8} Investido', brl(custo), `${t.ads || 0} an\u00fancio(s) \u00b7 com imposto`,
+         'Gasto das campanhas com VENDAS no nome, j\u00e1 com os 12,15% de imposto da Meta.'),
+    card('\u{1F9FE} Compras', num(t.compras), t.cpa != null ? `CPA ${brl(t.cpa)}` : 'nenhuma ainda',
+         'Compras registradas pelo Pixel e atribu\u00eddas a estes an\u00fancios pela Meta.'),
+    card('\u{1F4B0} Receita', brl(t.receita), t.ticket != null ? `ticket ${brl(t.ticket)}` : '',
+         'Valor das compras informado pelo Pixel. Depende do valor que a p\u00e1gina envia no evento.'),
+    card('\u{1F4C8} ROAS', t.roas != null ? t.roas.toLocaleString('pt-BR',
+           {minimumFractionDigits: 2, maximumFractionDigits: 2}) + 'x' : '\u2014',
+         'receita \u00f7 investido',
+         'Quanto cada real investido devolveu em receita, pelo que o Pixel registrou.'),
+    card('\u{1F5B1}\uFE0F Cliques no link', num(t.cliques), `CTR ${pct(t.ctr)}`),
+    card('\u{1F4CA} CPM', brl(t.cpm), `${num(t.impressoes)} impress\u00f5es`),
   ].join('');
 
   const avisos = [];
-  if (pl.erro) avisos.push('Planilha de vendas: ' + esc(pl.erro));
-  if (!t.ads) avisos.push('Nenhuma campanha com <b>VENDAS</b> no nome entregou no período.');
-  if (pt.reembolsos) {
-    avisos.push(`${pt.reembolsos} reembolso(s) no período — não entram nos números acima.`);
+  if (!t.ads) avisos.push('Nenhuma campanha com <b>VENDAS</b> no nome entregou no per\u00edodo.');
+  if (t.ads && !t.compras) {
+    avisos.push('Os an\u00fancios entregaram mas o Pixel n\u00e3o registrou compra atribu\u00edda a eles. ' +
+                'Pode ser atribui\u00e7\u00e3o (a venda saiu por outro caminho) ou evento n\u00e3o configurado.');
+  }
+  if (t.compras && !t.receita) {
+    avisos.push('O Pixel registrou compra mas sem valor \u2014 a p\u00e1gina n\u00e3o est\u00e1 enviando o valor no evento.');
   }
   document.getElementById('ven-aviso').innerHTML =
     avisos.length ? `<div class="warnbox">${avisos.join('<br>')}</div>` : '';
 
-  // ── Funil: do anúncio à venda ──
-  const temFunil = t.impressoes && pt.vendas != null;
-  document.getElementById('ven-funil-card').style.display = temFunil ? '' : 'none';
-  if (temFunil) {
-    const cl = t.cliques || 0, lp = t.lpv || 0, vd = pt.vendas || 0;
+  // Funil: do anuncio a compra
+  document.getElementById('ven-funil-card').style.display = t.impressoes ? '' : 'none';
+  if (t.impressoes) {
+    const cl = t.cliques || 0, lp = t.lpv || 0, vd = t.compras || 0;
     renderFunil([
-      {etapa: 'Impressões', volume: t.impressoes,
+      {etapa: 'Impress\u00f5es', volume: t.impressoes,
        custo: custo / t.impressoes * 1000, custo_label: 'CPM'},
       {etapa: 'Cliques no link', volume: cl, custo: cl ? custo / cl : null,
-       custo_label: 'por clique', taxa: t.impressoes ? cl / t.impressoes * 100 : null,
-       taxa_label: 'CTR'},
-      {etapa: 'Visitas na página', volume: lp, custo: lp ? custo / lp : null,
+       custo_label: 'por clique', taxa: cl / t.impressoes * 100, taxa_label: 'CTR'},
+      {etapa: 'Visitas na p\u00e1gina', volume: lp, custo: lp ? custo / lp : null,
        custo_label: 'por visita', taxa: cl ? lp / cl * 100 : null,
        taxa_label: 'dos cliques'},
-      {etapa: 'Vendas', volume: vd, custo: vd ? custo / vd : null,
-       custo_label: 'CAC', taxa: lp ? vd / lp * 100 : null,
+      {etapa: 'Compras', volume: vd, custo: vd ? custo / vd : null,
+       custo_label: 'CPA', taxa: lp ? vd / lp * 100 : null,
        taxa_label: 'das visitas'},
     ], 'ven-funil');
   }
 
-  // ── Série por dia: vendas da planilha + investimento da campanha ──
-  const dias = pl.por_dia || [];
-  const diarioFase = {};
-  for (const d of (DADOS.fases.vendas.diario || [])) diarioFase[d.data] = d;
-  const serie = dias.map(d => ({
-    ...d,
-    custo: (diarioFase[d.data] || {}).custo || 0,
-  }));
+  // Serie por dia
+  const serie = ven.diario || [];
   document.getElementById('ven-chart-card').style.display = serie.length ? '' : 'none';
   document.getElementById('ven-dia-card').style.display = serie.length ? '' : 'none';
   if (serie.length) { renderGraficoVen(serie); renderDiaVen(serie); }
 
-  // ── Produtos ──
-  const prods = pl.por_produto || [];
-  document.getElementById('ven-prod-card').style.display = prods.length ? '' : 'none';
-  if (prods.length) {
-    document.getElementById('ven-prod-info').textContent = `${prods.length} produto(s)`;
-    document.getElementById('ven-prod').innerHTML = prods.map(p => `<tr>
-      <td class="ad-nome">${esc(p.produto)}${p.principal
-        ? ' <span class="tag-zero">principal</span>' : ''}</td>
-      <td>${num(p.vendas)}</td><td>${brl(p.faturamento)}</td>
-      <td>${brl(p.comissao)}</td><td>${p.reembolsos || '—'}</td></tr>`).join('');
-  }
+  // Sem planilha: a quebra por produto deixa de existir
+  document.getElementById('ven-prod-card').style.display = 'none';
 
-  // ── Anúncios ──
+  // Anuncios
   const ads = (ven.ads || []).slice().sort((a, b) => b.custo - a.custo);
   const tb = document.getElementById('ven-tbody'), vz = document.getElementById('ven-vazio');
   if (!ads.length) {
     tb.innerHTML = ''; vz.style.display = 'block';
-    vz.textContent = 'Sem anúncios de vendas com entrega no período.';
+    vz.textContent = 'Sem an\u00fancios de vendas com entrega no per\u00edodo.';
   } else {
     vz.style.display = 'none';
     tb.innerHTML = ads.map(a => `<tr>
       <td class="ad-nome"><span class="ad-link" title="ver o criativo"
-        onclick="verCriativo('${esc(a.ad_id)}')">${esc(a.ad)}</span>${
-        a.sem_entrega ? ' <span class="tag-zero">sem entrega</span>' : ''}</td>
+        onclick="verCriativo('${esc(a.ad_id)}')">${esc(a.ad)}</span></td>
       <td>${brl(a.custo)}</td><td>${num(a.impressoes)}</td>
-      <td>${num(a.cliques)}</td><td>${pct(a.ctr)}</td><td>${brl(a.cpm)}</td></tr>`).join('');
+      <td>${num(a.cliques)}</td><td>${num(a.compras)}</td>
+      <td>${brl(a.cpa)}</td><td>${a.roas != null ? a.roas.toFixed(2) + 'x' : '\u2014'}</td>
+      </tr>`).join('');
   }
   document.getElementById('ven-info').textContent =
-    `${ads.length} anúncio(s) · ${brl(custo)}`;
+    `${ads.length} an\u00fancio(s) \u00b7 ${brl(custo)}`;
 }
 
 function renderDiaVen(serie) {
   document.getElementById('ven-dia-info').textContent = `${serie.length} dia(s)`;
-  document.getElementById('ven-dia').innerHTML = serie.map(d => {
-    const cac = d.vendas ? d.custo / d.vendas : null;
-    return `<tr><td class="ad-nome">${dataBR(d.data)}</td>
-      <td>${brl(d.custo)}</td><td>${num(d.vendas)}</td>
-      <td>${brl(d.faturamento)}</td><td>${brl(d.comissao)}</td>
-      <td>${brl(cac)}</td></tr>`;
-  }).join('');
+  document.getElementById('ven-dia').innerHTML = serie.map(d => `<tr>
+    <td class="ad-nome">${dataBR(d.data)}</td><td>${brl(d.custo)}</td>
+    <td>${num(d.impressoes)}</td><td>${num(d.cliques)}</td></tr>`).join('');
 }
 
 function renderGraficoVen(serie) {
   document.getElementById('ven-chart-info').textContent =
-    `${serie.length} dia(s) com venda`;
+    `${serie.length} dia(s)`;
   if (graficoVen) graficoVen.destroy();
   const ctx = document.getElementById('ven-grafico').getContext('2d');
   graficoVen = new Chart(ctx, {
     data: {
       labels: serie.map(d => dataBR(d.data)),
       datasets: [
-        {type: 'bar', label: 'Vendas', data: serie.map(d => d.vendas),
+        {type: 'bar', label: 'Cliques no link', data: serie.map(d => d.cliques),
          backgroundColor: 'rgba(139,147,248,.9)', borderRadius: 4, yAxisID: 'y'},
         {type: 'line', label: 'Investido (R$)', data: serie.map(d => d.custo),
          borderColor: '#F5C84E', backgroundColor: '#F5C84E', tension: .3,
@@ -1652,7 +1626,7 @@ function renderGraficoVen(serie) {
       plugins: {
         legend: {labels: {color: '#9AA0C7', boxWidth: 12}},
         tooltip: {callbacks: {label: c => c.datasetIndex === 1
-          ? `Investido: ${brl(c.raw)}` : `Vendas: ${num(c.raw)}`}},
+          ? `Investido: ${brl(c.raw)}` : `Cliques: ${num(c.raw)}`}},
       },
       scales: {
         x: {ticks: {color: '#9AA0C7'}, grid: {color: 'rgba(42,42,94,.5)'}},

@@ -75,24 +75,6 @@ LANCAMENTOS = {
             'vendas': {
                 'label': 'Vendas',
                 'patterns': ['VENDAS'],
-                # Mesma planilha do LP11 — é a conta Hotmart do expert.
-                # O que separa esta edição é a lista de produtos abaixo.
-                'planilha': {
-                    'spreadsheet_id': '1ADWoRJg4MSTgf7mWZfRybFRvwNwwv9aNobjLHd_OqTY',
-                    'gid': '0',
-                    'principal': 'BLACK RAIZ 2026 - VITALÍCIA',
-                    # Bumps e upsells vendidos junto. Casa por prefixo, em
-                    # minúsculas, porque o nome na planilha vem truncado.
-                    'produtos': [
-                        'BLACK RAIZ 2026 - VITALÍCIA',
-                        'Time Sorveteiro Raiz',
-                        'Comece Certo',
-                        'Combo: 4 Ebooks',
-                        'Ebook - A CIÊNCIA DO SABOR',
-                        'Ebook - Comprar Pronto ou Criar o Seu',
-                        'Profissão Sorveteiro',
-                    ],
-                },
             },
         },
         'datas': {
@@ -734,7 +716,7 @@ def _fetch_por_anuncio(cfg, since, until):
                          'spend,impressions,reach,frequency,inline_link_clicks,'
                          'video_continuous_2_sec_watched_actions,'
                          'video_p75_watched_actions,'
-                         'video_p95_watched_actions,actions'),
+                         'video_p95_watched_actions,actions,action_values'),
         'limit':        500,
         'time_range':   json.dumps({'since': since, 'until': until}, separators=(',', ':')),
     }
@@ -767,7 +749,24 @@ def _fetch_por_anuncio(cfg, since, until):
                       if a.get('action_type') == tipo)
             if lpv:
                 break
+        # Compras do Pixel. Nunca somar tipos que se sobrepõem: pega o
+        # primeiro que existir, na ordem de confiança.
+        compras, receita = 0, 0.0
+        valores = r.get('action_values') or []
+        for tipo in ('purchase', 'omni_purchase',
+                     'offsite_conversion.fb_pixel_purchase'):
+            compras = sum(int(float(a.get('value', 0) or 0)) for a in acoes
+                          if a.get('action_type') == tipo)
+            if compras:
+                receita = sum(float(a.get('value', 0) or 0) for a in valores
+                              if a.get('action_type') == tipo)
+                break
+
         saida.append({
+            'compras':     compras,
+            'receita':     round(receita, 2),
+            'cpa':         round(custo / compras, 2) if compras else None,
+            'roas':        round(receita / custo, 2) if custo and receita else None,
             'fase':        _fase_de(nome_camp, cfg),
             'campanha':    nome_camp,
             'campaign_id': r.get('campaign_id', ''),
@@ -872,8 +871,12 @@ def _totais_fase(ads):
     """Soma os anúncios de uma fase, recalculando as taxas sobre o total."""
     t = {k: sum(a.get(k) or 0 for a in ads) for k in
          ('custo', 'impressoes', 'alcance', 'cliques', 'lpv',
-          'video_2s', 'video_p75', 'video_p95')}
+          'video_2s', 'video_p75', 'video_p95', 'compras', 'receita')}
     t['custo'] = round(t['custo'], 2)
+    t['receita'] = round(t['receita'], 2)
+    t['cpa']  = round(t['custo'] / t['compras'], 2) if t['compras'] else None
+    t['roas'] = round(t['receita'] / t['custo'], 2) if t['custo'] and t['receita'] else None
+    t['ticket'] = round(t['receita'] / t['compras'], 2) if t['compras'] else None
     t['ads'] = len(ads)
     t['ctr']        = round(t['cliques'] / t['impressoes'] * 100, 2) if t['impressoes'] else None
     t['hook_rate']  = round(t['video_2s'] / t['impressoes'] * 100, 2) if t['impressoes'] else None
@@ -1469,17 +1472,6 @@ def lancamento_fases(slug):
                 saida[chave]['diario'] = dias
     except Exception as e:
         logger.warning(f'[lancamento:{slug}] série diária por fase falhou: {e}')
-
-    # Vendas da planilha, na aba de vendas
-    vfase = fases_cfg.get('vendas') or {}
-    if 'vendas' in saida and (vfase.get('planilha') or {}).get('spreadsheet_id'):
-        try:
-            saida['vendas']['planilha'] = get_or_fetch(
-                (f'lancamento:{slug}', 'vendas-planilha', since, until), CACHE_TTL,
-                lambda: _fetch_vendas_fase(vfase, since, until))
-        except Exception as e:
-            logger.warning(f'[lancamento:{slug}] planilha de vendas falhou: {e}')
-            saida['vendas']['planilha'] = {'configurada': True, 'erro': str(e)}
 
     geral = _totais_fase(ads)          # lançamento inteiro
     if 'captura' in saida:
