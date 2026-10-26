@@ -348,7 +348,8 @@
   <div id="content" style="display:none">
 
     <div class="tabs">
-      <button class="tab on" id="tab-btn-aq" onclick="setTab('aq')">🔥 Aquecimento</button>
+      <button class="tab on" id="tab-btn-ger" onclick="setTab('ger')">📊 Geral</button>
+      <button class="tab" id="tab-btn-aq" onclick="setTab('aq')">🔥 Aquecimento</button>
       <button class="tab" id="tab-btn-cap" onclick="setTab('cap')">🎯 Captura</button>
       <button class="tab" id="tab-btn-live" onclick="setTab('live')">🔴 Lives</button>
       <button class="tab" id="tab-btn-ven" onclick="setTab('ven')">💰 Vendas</button>
@@ -356,7 +357,35 @@
     </div>
 
     <!-- FASE 1 — AQUECIMENTO -->
-    <div class="tab-panel on" id="tab-aq">
+    <!-- GERAL -->
+    <div class="tab-panel on" id="tab-ger">
+      <div class="kpis" id="ger-kpis"></div>
+
+      <div class="card" style="margin-top:14px">
+        <div class="card-t"><span>Investimento por etapa</span>
+          <span class="dim" id="ger-chart-info"></span></div>
+        <div class="chart-wrap"><canvas id="ger-grafico"></canvas></div>
+      </div>
+
+      <div class="card" style="padding:0;margin-top:14px">
+        <div class="card-t" style="padding:20px 20px 0;margin-bottom:10px">
+          <span>Etapas do lançamento</span><span class="dim" id="ger-info"></span>
+        </div>
+        <div class="tbl-wrap">
+          <table class="ads-tbl"><thead><tr>
+            <th class="ad-nome">Etapa</th>
+            <th>Investido
+              <span class="dica" data-dica="Gasto do Gerenciador já com os 12,15% de imposto da Meta.">?</span></th>
+            <th>% do total</th><th>Anúncios</th><th>Impressões</th>
+            <th>Cliques</th><th>CPM</th><th>Resultado</th>
+          </tr></thead><tbody id="ger-tbody"></tbody></table>
+        </div>
+      </div>
+
+      <div class="note" id="ger-nota"></div>
+    </div>
+
+    <div class="tab-panel" id="tab-aq">
       <div id="aq-aviso"></div>
       <div class="kpis" id="aq-kpis"></div>
 
@@ -645,7 +674,7 @@ const dataBR = s => s ? s.slice(8, 10) + '/' + s.slice(5, 7) : '—';
 let DADOS = null, ordem = {campo: 'custo', desc: true}, grafico = null, grafico2 = null;
 
 function setTab(t) {
-  for (const k of ['aq', 'cap', 'live', 'ven', 'pesq']) {
+  for (const k of ['ger', 'aq', 'cap', 'live', 'ven', 'pesq']) {
     document.getElementById('tab-' + k).classList.toggle('on', t === k);
     document.getElementById('tab-btn-' + k).classList.toggle('on', t === k);
   }
@@ -838,6 +867,7 @@ function renderCaptura() {
   renderLives();
 
   renderVendas();
+  renderGeral();
 
   const sf = DADOS.sem_fase;
   document.getElementById('rodape').innerHTML =
@@ -1639,6 +1669,123 @@ function renderGraficoVen(serie) {
             ticks: {color: '#9AA0C7', precision: 0}, grid: {color: 'rgba(42,42,94,.5)'}},
         y2: {position: 'right', beginAtZero: true,
              ticks: {color: '#F5C84E'}, grid: {display: false}},
+      },
+    },
+  });
+}
+
+let graficoGer = null;
+
+// Consolidado do lancamento: o que cada etapa custou e o que devolveu. As
+// outras abas olham uma fase por vez; aqui o numero que importa e o do
+// lancamento inteiro, porque a campanha de vendas so colhe o que as de
+// aquecimento e captura semearam.
+const GER_ORDEM = ['aquecimento', 'live', 'captura', 'vendas'];
+const GER_ICONE = {aquecimento: '\u{1F525}', live: '\u{1F534}',
+                   captura: '\u{1F3AF}', vendas: '\u{1F4B0}'};
+
+function renderGeral() {
+  const fases = DADOS.fases || {};
+  const chaves = GER_ORDEM.filter(k => fases[k]);
+  const semFase = DADOS.sem_fase || {totais: {}};
+
+  // Investido do lancamento inteiro, inclusive o que ficou fora das fases
+  const investido = chaves.reduce((x, k) => x + (fases[k].totais.custo || 0), 0)
+                  + (semFase.totais.custo || 0);
+
+  const cap = fases.captura || {};
+  const leads = ((cap.leads || {}).linhas || [])
+    .filter(l => !ocultarOutros || l.origem !== 'outro').length;
+
+  const tv = (fases.vendas || {}).totais || {};
+  const compras = tv.compras || 0;
+  const receita = tv.receita || 0;
+  const roas = investido && receita ? receita / investido : null;
+  const cac = compras ? investido / compras : null;
+  const cpl = leads ? investido / leads : null;
+
+  document.getElementById('ger-kpis').innerHTML = [
+    card('\u{1F4B8} Investido no lan\u00e7amento', brl(investido),
+         `${chaves.length} etapa(s)` + (semFase.totais.custo
+           ? ` \u00b7 ${brl(semFase.totais.custo)} fora das fases` : ''),
+         'Soma do gasto de todas as campanhas do lan\u00e7amento, j\u00e1 com os 12,15% de imposto da Meta.'),
+    card('\u{1F3AF} Leads', num(leads), cpl != null ? `CPL ${brl(cpl)}` : '',
+         'Leads da planilha no per\u00edodo. O CPL usa o investimento do lan\u00e7amento inteiro, n\u00e3o s\u00f3 o da captura.'),
+    card('\u{1F9FE} Compras', num(compras), cac != null ? `CAC ${brl(cac)}` : 'nenhuma ainda',
+         'Compras do Pixel atribu\u00eddas \u00e0 campanha de vendas. O CAC aqui usa o investimento do lan\u00e7amento inteiro.'),
+    card('\u{1F4B0} Receita', brl(receita), compras ? `ticket ${brl(receita / compras)}` : '',
+         'Valor das compras informado pelo Pixel.'),
+    card('\u{1F4C8} ROAS do lan\u00e7amento',
+         roas != null ? roas.toLocaleString('pt-BR',
+           {minimumFractionDigits: 2, maximumFractionDigits: 2}) + 'x' : '\u2014',
+         'receita \u00f7 investido total',
+         'Diferente do ROAS da aba de Vendas, que olha s\u00f3 a campanha de vendas. Aqui entra tudo o que foi gasto no lan\u00e7amento.'),
+    card('\u{1F441}\uFE0F Impress\u00f5es', num(
+           chaves.reduce((x, k) => x + (fases[k].totais.impressoes || 0), 0)),
+         'todas as etapas'),
+  ].join('');
+
+  // Resultado principal de cada etapa, que nao e o mesmo em todas
+  const resultado = {
+    aquecimento: f => `${num(f.totais.video_p75)} views 75%`,
+    live:        f => `${num(f.totais.cliques)} cliques`,
+    captura:     () => `${num(leads)} leads`,
+    vendas:      f => `${num(f.totais.compras)} compras \u00b7 ${brl(f.totais.receita)}`,
+  };
+
+  const linhas = chaves.map(k => {
+    const f = fases[k], t = f.totais;
+    return {
+      chave: k, label: f.label, custo: t.custo || 0, ads: t.ads || 0,
+      impressoes: t.impressoes || 0, cliques: t.cliques || 0, cpm: t.cpm,
+      resultado: (resultado[k] || (() => '\u2014'))(f),
+    };
+  });
+  if (semFase.totais.custo) {
+    linhas.push({chave: 'sem', label: 'Fora das fases', custo: semFase.totais.custo,
+      ads: semFase.totais.ads || 0, impressoes: semFase.totais.impressoes || 0,
+      cliques: semFase.totais.cliques || 0, cpm: semFase.totais.cpm,
+      resultado: 'sem tag de etapa no nome'});
+  }
+
+  document.getElementById('ger-info').textContent = brl(investido);
+  document.getElementById('ger-tbody').innerHTML = linhas.map(l => `<tr>
+    <td class="ad-nome">${GER_ICONE[l.chave] || '\u2022'} ${esc(l.label)}</td>
+    <td>${brl(l.custo)}</td>
+    <td>${investido ? pct(l.custo / investido * 100, 1) : '\u2014'}</td>
+    <td>${num(l.ads)}</td><td>${num(l.impressoes)}</td>
+    <td>${num(l.cliques)}</td><td>${brl(l.cpm)}</td>
+    <td>${esc(l.resultado)}</td></tr>`).join('');
+
+  renderGraficoGer(linhas);
+
+  document.getElementById('ger-nota').innerHTML =
+    'O ROAS e o CAC desta aba usam o investimento do lan\u00e7amento inteiro. ' +
+    'Na aba de Vendas eles consideram s\u00f3 a campanha de vendas, por isso saem bem maiores l\u00e1.';
+}
+
+function renderGraficoGer(linhas) {
+  document.getElementById('ger-chart-info').textContent = `${linhas.length} etapa(s)`;
+  if (graficoGer) graficoGer.destroy();
+  graficoGer = new Chart(document.getElementById('ger-grafico').getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels: linhas.map(l => l.label),
+      datasets: [{
+        label: 'Investido', data: linhas.map(l => l.custo), borderRadius: 4,
+        backgroundColor: ['#8B93F8', '#F55E7A', '#F5C84E', '#3DD68C', '#5A5A8E'],
+      }],
+    },
+    options: {
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: {display: false},
+        tooltip: {callbacks: {label: c => brl(c.raw)}},
+      },
+      scales: {
+        x: {beginAtZero: true, ticks: {color: '#9AA0C7'},
+            grid: {color: 'rgba(42,42,94,.5)'}},
+        y: {ticks: {color: '#9AA0C7'}, grid: {display: false}},
       },
     },
   });
