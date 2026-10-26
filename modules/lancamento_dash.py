@@ -749,18 +749,7 @@ def _fetch_por_anuncio(cfg, since, until):
                       if a.get('action_type') == tipo)
             if lpv:
                 break
-        # Compras do Pixel. Nunca somar tipos que se sobrepõem: pega o
-        # primeiro que existir, na ordem de confiança.
-        compras, receita = 0, 0.0
-        valores = r.get('action_values') or []
-        for tipo in ('purchase', 'omni_purchase',
-                     'offsite_conversion.fb_pixel_purchase'):
-            compras = sum(int(float(a.get('value', 0) or 0)) for a in acoes
-                          if a.get('action_type') == tipo)
-            if compras:
-                receita = sum(float(a.get('value', 0) or 0) for a in valores
-                              if a.get('action_type') == tipo)
-                break
+        compras, receita = _compras_de(acoes, r.get('action_values'))
 
         saida.append({
             'compras':     compras,
@@ -988,12 +977,31 @@ def _fetch_leads(fase_cfg, cfg, since, until, ids_campanha, fase_por_campanha=No
     return {'linhas': saida}
 
 
+def _compras_de(acoes, valores):
+    """Compras do Pixel e o valor delas.
+
+    Nunca soma tipos que se sobrepõem: pega o primeiro que existir, na ordem
+    de confiança, senão a mesma venda conta duas ou três vezes.
+    """
+    acoes = acoes or []
+    valores = valores or []
+    for tipo in ('purchase', 'omni_purchase',
+                 'offsite_conversion.fb_pixel_purchase'):
+        compras = sum(int(float(a.get('value', 0) or 0)) for a in acoes
+                      if a.get('action_type') == tipo)
+        if compras:
+            receita = sum(float(a.get('value', 0) or 0) for a in valores
+                          if a.get('action_type') == tipo)
+            return compras, receita
+    return 0, 0.0
+
+
 def _fetch_diario_por_fase(cfg, since, until, token):
     """Investimento e entrega por dia, separados por fase do lançamento."""
     linhas = _fetch_insights_nivel(
         cfg, since, until, 'campaign',
-        'campaign_name,spend,impressions,inline_link_clicks', token,
-        time_increment=1)
+        'campaign_name,spend,impressions,inline_link_clicks,actions,action_values',
+        token, time_increment=1)
     saida = {}
     for r in linhas:
         d = r.get('date_start')
@@ -1001,10 +1009,14 @@ def _fetch_diario_por_fase(cfg, since, until, token):
         if not d or not fase:
             continue
         e = saida.setdefault(fase, {}).setdefault(
-            d, {'custo': 0.0, 'impressoes': 0, 'cliques': 0})
+            d, {'custo': 0.0, 'impressoes': 0, 'cliques': 0,
+                'compras': 0, 'receita': 0.0})
         e['custo'] += float(r.get('spend', 0) or 0) * (1 + META_TAX_RATE)
         e['impressoes'] += int(r.get('impressions', 0) or 0)
         e['cliques'] += int(r.get('inline_link_clicks', 0) or 0)
+        compras, receita = _compras_de(r.get('actions'), r.get('action_values'))
+        e['compras'] += compras
+        e['receita'] += receita
     return {f: [{'data': k, **{kk: (round(vv, 2) if isinstance(vv, float) else vv)
                                for kk, vv in v.items()}}
                 for k, v in sorted(dias.items())]

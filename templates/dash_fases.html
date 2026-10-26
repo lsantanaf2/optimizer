@@ -527,7 +527,7 @@
       </div>
 
       <div class="card" id="ven-chart-card" style="display:none;margin-top:14px">
-        <div class="card-t"><span>Cliques e investimento por dia</span>
+        <div class="card-t"><span>Compras e investimento por dia</span>
           <span class="dim" id="ven-chart-info"></span></div>
         <div class="chart-wrap"><canvas id="ven-grafico"></canvas></div>
       </div>
@@ -551,7 +551,7 @@
         <div class="tbl-wrap" style="max-height:340px">
           <table class="ads-tbl"><thead><tr>
             <th class="ad-nome">Dia</th><th>Investido</th><th>Impressões</th>
-            <th>Cliques</th>
+            <th>Cliques</th><th>Compras</th><th>Receita</th><th>CPA</th>
           </tr></thead><tbody id="ven-dia"></tbody></table>
         </div>
       </div>
@@ -1599,9 +1599,14 @@ function renderVendas() {
 
 function renderDiaVen(serie) {
   document.getElementById('ven-dia-info').textContent = `${serie.length} dia(s)`;
-  document.getElementById('ven-dia').innerHTML = serie.map(d => `<tr>
-    <td class="ad-nome">${dataBR(d.data)}</td><td>${brl(d.custo)}</td>
-    <td>${num(d.impressoes)}</td><td>${num(d.cliques)}</td></tr>`).join('');
+  document.getElementById('ven-dia').innerHTML = serie.map(d => {
+    const cpa = d.compras ? d.custo / d.compras : null;
+    return `<tr>
+      <td class="ad-nome">${dataBR(d.data)}</td><td>${brl(d.custo)}</td>
+      <td>${num(d.impressoes)}</td><td>${num(d.cliques)}</td>
+      <td>${num(d.compras)}</td><td>${d.receita ? brl(d.receita) : '\u2014'}</td>
+      <td>${brl(cpa)}</td></tr>`;
+  }).join('');
 }
 
 function renderGraficoVen(serie) {
@@ -1613,7 +1618,7 @@ function renderGraficoVen(serie) {
     data: {
       labels: serie.map(d => dataBR(d.data)),
       datasets: [
-        {type: 'bar', label: 'Cliques no link', data: serie.map(d => d.cliques),
+        {type: 'bar', label: 'Compras', data: serie.map(d => d.compras),
          backgroundColor: 'rgba(139,147,248,.9)', borderRadius: 4, yAxisID: 'y'},
         {type: 'line', label: 'Investido (R$)', data: serie.map(d => d.custo),
          borderColor: '#F5C84E', backgroundColor: '#F5C84E', tension: .3,
@@ -1626,7 +1631,7 @@ function renderGraficoVen(serie) {
       plugins: {
         legend: {labels: {color: '#9AA0C7', boxWidth: 12}},
         tooltip: {callbacks: {label: c => c.datasetIndex === 1
-          ? `Investido: ${brl(c.raw)}` : `Cliques: ${num(c.raw)}`}},
+          ? `Investido: ${brl(c.raw)}` : `Compras: ${num(c.raw)}`}},
       },
       scales: {
         x: {ticks: {color: '#9AA0C7'}, grid: {color: 'rgba(42,42,94,.5)'}},
