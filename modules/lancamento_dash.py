@@ -43,9 +43,10 @@ LANCAMENTOS = {
         'expert': 'Edu — Sorveteiro Raiz',
         'edicao': 'BLACK 2026',
         'ad_account_id': '741348911043132',
-        # Duas grafias em uso na conta: o aquecimento subiu como [BLACK 2026] e
-        # a captura como [BLACK26]. Aceita as duas.
-        'campaign_patterns': ['[BLACK 2026]', '[BLACK26]'],
+        # Três grafias em uso na conta: aquecimento como [BLACK 2026], captura
+        # como [BLACK26] e vendas como BLACK26 sem colchete nenhum. O padrão
+        # sem colchete cobre as duas últimas.
+        'campaign_patterns': ['[BLACK 2026]', 'BLACK26'],
         'duas_fases': True,
         'fases': {
             'aquecimento': {
@@ -69,6 +70,28 @@ LANCAMENTOS = {
                     'aba': 'BLACK26',
                     'coluna_data': 'DATA',
                     'coluna_campanha': 'UTM_CAMPAIGN',
+                },
+            },
+            'vendas': {
+                'label': 'Vendas',
+                'patterns': ['VENDAS'],
+                # Mesma planilha do LP11 — é a conta Hotmart do expert.
+                # O que separa esta edição é a lista de produtos abaixo.
+                'planilha': {
+                    'spreadsheet_id': '1ADWoRJg4MSTgf7mWZfRybFRvwNwwv9aNobjLHd_OqTY',
+                    'gid': '0',
+                    'principal': 'BLACK RAIZ 2026 - VITALÍCIA',
+                    # Bumps e upsells vendidos junto. Casa por prefixo, em
+                    # minúsculas, porque o nome na planilha vem truncado.
+                    'produtos': [
+                        'BLACK RAIZ 2026 - VITALÍCIA',
+                        'Time Sorveteiro Raiz',
+                        'Comece Certo',
+                        'Combo: 4 Ebooks',
+                        'Ebook - A CIÊNCIA DO SABOR',
+                        'Ebook - Comprar Pronto ou Criar o Seu',
+                        'Profissão Sorveteiro',
+                    ],
                 },
             },
         },
@@ -962,6 +985,123 @@ def _fetch_leads(fase_cfg, cfg, since, until, ids_campanha, fase_por_campanha=No
     return {'linhas': saida}
 
 
+def _fetch_diario_por_fase(cfg, since, until, token):
+    """Investimento e entrega por dia, separados por fase do lançamento."""
+    linhas = _fetch_insights_nivel(
+        cfg, since, until, 'campaign',
+        'campaign_name,spend,impressions,inline_link_clicks', token,
+        time_increment=1)
+    saida = {}
+    for r in linhas:
+        d = r.get('date_start')
+        fase = _fase_de(r.get('campaign_name'), cfg)
+        if not d or not fase:
+            continue
+        e = saida.setdefault(fase, {}).setdefault(
+            d, {'custo': 0.0, 'impressoes': 0, 'cliques': 0})
+        e['custo'] += float(r.get('spend', 0) or 0) * (1 + META_TAX_RATE)
+        e['impressoes'] += int(r.get('impressions', 0) or 0)
+        e['cliques'] += int(r.get('inline_link_clicks', 0) or 0)
+    return {f: [{'data': k, **{kk: (round(vv, 2) if isinstance(vv, float) else vv)
+                               for kk, vv in v.items()}}
+                for k, v in sorted(dias.items())]
+            for f, dias in saida.items()}
+
+
+def _fetch_vendas_fase(fase_cfg, since, until):
+    """Vendas da planilha da plataforma, agregadas por dia e por produto.
+
+    Devolve só o que é desta edição: a planilha é a conta inteira do expert e
+    tem venda de lançamento antigo misturada. O recorte é a lista de produtos
+    da config mais a janela de datas da tela.
+    """
+    pcfg = fase_cfg.get('planilha') or {}
+    sid = pcfg.get('spreadsheet_id')
+    if not sid:
+        return {'configurada': False}
+
+    url = (f'https://docs.google.com/spreadsheets/d/{sid}'
+           f'/gviz/tq?tqx=out:csv&gid={pcfg.get("gid", "0")}')
+    resp = requests.get(url, timeout=25)
+    resp.raise_for_status()
+    if resp.text.lstrip().startswith('<'):
+        raise RuntimeError('retornou HTML (planilha não é pública)')
+    linhas = list(csv.DictReader(io.StringIO(resp.text)))
+
+    alvo = [p.lower()[:24] for p in (pcfg.get('produtos') or [])]
+    principal = (pcfg.get('principal') or '').lower()[:24]
+    since_d = datetime.strptime(since, '%Y-%m-%d').date()
+    until_d = datetime.strptime(until, '%Y-%m-%d').date()
+
+    por_dia, por_produto = {}, {}
+    tot = {'vendas': 0, 'faturamento': 0.0, 'comissao': 0.0,
+           'reembolsos': 0, 'reembolso_valor': 0.0, 'principal': 0}
+    for r in linhas:
+        if not (r.get('TRANSAÇÃO') or '').strip():
+            continue
+        nome = (r.get('PRODUTO') or '').strip()
+        chave = nome.lower()[:24]
+        if alvo and chave not in alvo:
+            continue
+        d = _parse_data_br(r.get('DATA'))
+        if not d or d < since_d or d > until_d:
+            continue
+
+        evento = (r.get('EVENTO') or '').strip().upper()
+        fat = _parse_brl(r.get('FATURAMENTO'))
+        com = _parse_brl(r.get('COMISSÃO'))
+        dia = por_dia.setdefault(d.isoformat(), {
+            'vendas': 0, 'faturamento': 0.0, 'comissao': 0.0, 'reembolsos': 0})
+        prod = por_produto.setdefault(nome, {
+            'vendas': 0, 'faturamento': 0.0, 'comissao': 0.0, 'reembolsos': 0,
+            'principal': chave == principal})
+
+        if 'REFUND' in evento or 'CHARGEBACK' in evento:
+            dia['reembolsos'] += 1
+            prod['reembolsos'] += 1
+            tot['reembolsos'] += 1
+            tot['reembolso_valor'] += com
+            continue
+
+        dia['vendas'] += 1
+        dia['faturamento'] += fat
+        dia['comissao'] += com
+        prod['vendas'] += 1
+        prod['faturamento'] += fat
+        prod['comissao'] += com
+        tot['vendas'] += 1
+        tot['faturamento'] += fat
+        tot['comissao'] += com
+        if chave == principal:
+            tot['principal'] += 1
+
+    return {
+        'configurada': True,
+        'principal': pcfg.get('principal'),
+        'totais': {k: (round(v, 2) if isinstance(v, float) else v)
+                   for k, v in tot.items()},
+        'por_dia': [{'data': k, **{kk: (round(vv, 2) if isinstance(vv, float) else vv)
+                                   for kk, vv in v.items()}}
+                    for k, v in sorted(por_dia.items())],
+        'por_produto': sorted(
+            [{'produto': k, **{kk: (round(vv, 2) if isinstance(vv, float) else vv)
+                               for kk, vv in v.items()}}
+             for k, v in por_produto.items()],
+            key=lambda x: -x['faturamento']),
+    }
+
+
+def _parse_data_br(valor):
+    """Data da planilha (dd/mm/aaaa, com ou sem hora) → date."""
+    txt = (valor or '').strip()
+    for f in ('%d/%m/%Y %H:%M:%S', '%d/%m/%Y %H:%M', '%d/%m/%Y', '%Y-%m-%d'):
+        try:
+            return datetime.strptime(txt, f).date()
+        except ValueError:
+            continue
+    return None
+
+
 def _fetch_diario(cfg, since, until, token):
     """Investimento e entrega por dia, do lançamento inteiro E só da captura.
 
@@ -1318,6 +1458,28 @@ def lancamento_fases(slug):
     except Exception as e:
         avisos.append(f'Série diária indisponível: {e}')
         logger.warning(f'[lancamento:{slug}] série diária falhou: {e}')
+
+    # Série diária por fase: a aba de vendas cruza venda com investimento
+    try:
+        diario_fase = get_or_fetch((f'lancamento:{slug}', 'diario-fase', since, until),
+                                   CACHE_TTL,
+                                   lambda: _fetch_diario_por_fase(cfg, since, until, token))
+        for chave, dias in diario_fase.items():
+            if chave in saida:
+                saida[chave]['diario'] = dias
+    except Exception as e:
+        logger.warning(f'[lancamento:{slug}] série diária por fase falhou: {e}')
+
+    # Vendas da planilha, na aba de vendas
+    vfase = fases_cfg.get('vendas') or {}
+    if 'vendas' in saida and (vfase.get('planilha') or {}).get('spreadsheet_id'):
+        try:
+            saida['vendas']['planilha'] = get_or_fetch(
+                (f'lancamento:{slug}', 'vendas-planilha', since, until), CACHE_TTL,
+                lambda: _fetch_vendas_fase(vfase, since, until))
+        except Exception as e:
+            logger.warning(f'[lancamento:{slug}] planilha de vendas falhou: {e}')
+            saida['vendas']['planilha'] = {'configurada': True, 'erro': str(e)}
 
     geral = _totais_fase(ads)          # lançamento inteiro
     if 'captura' in saida:
