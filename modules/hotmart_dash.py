@@ -11,9 +11,8 @@ Rotas:
   GET /api/dash/faturamento/data     — JSON agregado (?since=&until=&refresh=1)
 
 Regras de negócio (ver docstring de _aggregate):
-  - 7 produtos TOPO FUNIL definem os funis (EMA em 6 idiomas + SSM)
-  - SFD e SFD Radar só definem funil quando são a venda de entrada, e a chave
-    inclui o nome do produto porque IDs foram reaproveitados (FUNIS_SO_ENTRADA)
+  - A baia é o IDIOMA do funil (PT/ES/EN/FR/IT/DE), não o produto
+  - Quem define o funil é o produto de ENTRADA (ver PRODUTO_IDIOMA)
   - Bumps/upsells herdam o funil da transação mãe (coluna E, cadeia recursiva)
   - Sem mãe/DE-PARA → bucket "Sem atribuição" (exibido para auditoria)
   - Valores SEMPRE da coluna 'Comissão BRL'
@@ -39,42 +38,64 @@ SHEET_ID = '1X4vizNmoOCPDIrB8Gle9xWkj53Ep_igIRy5lPz6mihM'
 SHEET_TAB = 'VENDAS HOTMART'
 CACHE_TTL = 600  # 10 min
 
-# DE-PARA: produto TOPO FUNIL → funil (confirmado com o cliente em 28/07/2026)
-FUNIS = {
-    '2301254': 'EMA-PT',   # Emissões Avançadas
-    '5096685': 'EMA-ES',   # Emisiones Avanzadas
-    '7084722': 'EMA-EN',   # EMA Assistant 🇺🇸
-    '7527383': 'EMA-FR',   # EMA Assistant 🇫🇷
-    '8298713': 'EMA-IT',   # EMA Assistant 🇮🇹 — vendas desde 12/09/2026
-    '8299099': 'EMA-DE',   # EMA Assistant 🇩🇪 — vendas desde 12/09/2026
-    '8126548': 'SSM',      # Segundo Salário com Milhas
-}
-# Produtos que só definem funil quando são a ENTRADA (venda sem transação mãe).
-# Ancorar pelo ID, como os produtos de topo, levaria os upsells antigos destes
-# mesmos produtos para fora dos funis de EMA (~R$ 170 mil no caso do SFD).
+# DE-PARA: produto → IDIOMA do funil.
 #
-# A chave inclui o NOME do produto porque a Hotmart reaproveitou dois IDs na
-# troca de 08-09/10/2026, e o nome é o que separa as duas eras na planilha:
-#   7763423  'Secret Flight Deals' (até 08/10 21:26) → 'SFD Radar' (de 08/10 22:17)
-#   4956764  'Alerta da Milhas Lucrativas' (até 08/10 15:50) → 'Secret Flight
-#            Deals' (de 09/10 00:28), o novo front do funil português, que
-#            substituiu o Emissões Avançadas (última entrada em volume 08/10 21:15)
-# Datar por nome e não por calendário mantém o histórico intacto: as entradas
-# que o 4956764 teve como Alerta da Milhas (jul-set) seguem fora do SFD.
-FUNIS_SO_ENTRADA = {
-    ('7763423', 'Secret Flight Deals'): 'SFD',        # front antigo do SFD
-    ('4956764', 'Secret Flight Deals'): 'SFD',        # front novo (ex-Alerta da Milhas)
-    ('7763423', 'SFD Radar'):           'SFD-RADAR',  # upsell dos EMAs internacionais
+# A baia é o idioma, não o produto: os funis trocaram de produto de entrada
+# duas vezes (08-09/10/2026 e 20-23/10/2026) e o que interessa é o mercado.
+# Desde 20/10 os produtos novos trazem a bandeira no nome, o que torna o
+# idioma legível direto na planilha.
+#
+# Quem define o funil é o produto de ENTRADA (venda sem transação mãe). Todo
+# o resto da cadeia — order bump, upsell, downsell — herda pela mãe. É por
+# isso que ancorar sempre pelo ID estaria errado: o mesmo produto é vendido
+# como upsell dentro de funis de outros idiomas, e ancorar levaria essa
+# receita para a baia errada.
+PRODUTO_IDIOMA = {
+    # ── Português ──
+    '2301254': 'PT',   # Emissões Avançadas (front até 08/10/2026)
+    '4956764': 'PT',   # Alerta da Milhas Lucrativas → Secret Flight Deals (09/10)
+    '5818264': 'PT',   # Assistente EMA
+    '4839597': 'PT',   # Manual dos cartões lucrativos
+    '6018059': 'PT',   # Alerta de Boletos Secretos
+    '8662943': 'PT',   # Comunidade AML
+    # ── Espanhol ──
+    '5096685': 'ES',   # Emisiones Avanzadas
+    '8772302': 'ES',   # SFD Radar 🇪🇸 (front desde 20/10/2026)
+    '8772565': 'ES',   # Asistente IA 🇪🇸
+    # ── Inglês ──
+    '7084722': 'EN',   # EMA Assistant 🇺🇸
+    '8773526': 'EN',   # SFD Radar 🇺🇸 (front desde 21/10/2026)
+    '8773580': 'EN',   # AI Assistant 🇺🇸
+    # ── Francês ──
+    '7527383': 'FR',   # EMA Assistant 🇫🇷
+    '8776426': 'FR',   # SFD Radar 🇫🇷 (front desde 21/10/2026)
+    '8776434': 'FR',   # Assistant IA 🇫🇷
+    # ── Italiano ──
+    '8298713': 'IT',   # EMA Assistant 🇮🇹
+    '8778600': 'IT',   # SFD Radar 🇮🇹 (front desde 22/10/2026)
+    '8778629': 'IT',   # Assistente IA 🇮🇹
+    # ── Alemão ──
+    '8299099': 'DE',   # EMA Assistant 🇩🇪
+    '8780971': 'DE',   # SFD Radar 🇩🇪 (front desde 23/10/2026)
+    '8781014': 'DE',   # KI-Assistent 🇩🇪
+    # ── Linha à parte, não é EMA ──
+    '8126548': 'SSM',  # Segundo Salário com Milhas
+    #
+    # FORA DE PROPÓSITO:
+    #   7763423  'Secret Flight Deals' → 'SFD Radar' (08/10). Sem bandeira no
+    #            nome porque é vendido como upsell nos funis de TODOS os
+    #            idiomas — ES 377, EN 203, FR 83, DE 24, IT 23. Quem decide o
+    #            funil dele é a transação mãe.
+    #   7086112  'Exclusive Flight Alerts'. 19 vendas de entrada, nome em
+    #            inglês mas sem bandeira e sem funil identificável. Fica em
+    #            "sem atribuição" até o cliente dizer de qual idioma é.
 }
-FUNIL_ORDER = ['EMA-PT', 'EMA-ES', 'EMA-EN', 'EMA-FR', 'EMA-IT', 'EMA-DE', 'SSM',
-               'SFD', 'SFD-RADAR']
-EMA_KEYS = ['EMA-PT', 'EMA-ES', 'EMA-EN', 'EMA-FR', 'EMA-IT', 'EMA-DE']
+FUNIL_ORDER = ['PT', 'ES', 'EN', 'FR', 'IT', 'DE', 'SSM']
+FUNIL_LABEL = {'PT': 'Português', 'ES': 'Espanhol', 'EN': 'Inglês',
+               'FR': 'Francês', 'IT': 'Italiano', 'DE': 'Alemão',
+               'SSM': 'Segundo Salário com Milhas'}
+EMA_KEYS = ['PT', 'ES', 'EN', 'FR', 'IT', 'DE']
 TIPOS = ['TOPO FUNIL', 'ORDER BUMP', 'UPSELL']
-
-def _funil_so_entrada(row):
-    """Funil que este produto ancora SE for a venda de entrada (ou None)."""
-    return FUNIS_SO_ENTRADA.get(((row.get('Product ID') or '').strip(),
-                                 (row.get('Produto') or '').strip()))
 
 
 # ── Leitura da planilha ───────────────────────────────────────────────────────
@@ -219,7 +240,7 @@ def renovacoes_de(rows, resolve_funil):
         n = r.get('_linha')
         if not tx or not n or tx in vistos:
             continue
-        if FUNIS.get((r.get('Product ID') or '').strip()) or resolve_funil(tx):
+        if resolve_funil(tx):
             continue
         vistos.add(tx)
         alvo.append((n, tx))
@@ -256,11 +277,9 @@ def _resolver(rows):
         # Transação que aponta para si mesma como mãe é ruído do webhook
         if par and par != tx:
             parents[tx] = par
-        so_entrada = _funil_so_entrada(r)
-        if pid in FUNIS:
-            anchors[tx] = FUNIS[pid]
-        elif so_entrada:
-            candidatas_entrada[tx] = so_entrada
+        idioma = PRODUTO_IDIOMA.get(pid)
+        if idioma:
+            candidatas_entrada[tx] = idioma
         if (r.get('Status') or '').strip().upper() == 'APPROVED':
             aprovadas.add(tx)
             d = _parse_date(r.get('Recebido em'))
@@ -358,7 +377,12 @@ def _aggregate(rows, since_d=None, until_d=None, renovacoes=None):
         pid = (r.get('Product ID') or '').strip()
         tx = (r.get('Transaction') or '').strip()
 
-        funil_key = FUNIS.get(pid) or resolve_funil(tx)
+        # 1) O funil vem da venda de ENTRADA, seguindo a cadeia de mães: é
+        #    assim que um upsell vendido dentro do funil de outro idioma fica
+        #    no idioma certo. 2) Se a cadeia morre — acontece com upsell cuja
+        #    venda mãe é anterior à planilha —, cai no idioma do próprio
+        #    produto, que para os produtos com bandeira no nome é certeiro.
+        funil_key = resolve_funil(tx) or PRODUTO_IDIOMA.get(pid)
         if funil_key:
             bucket = funis[funil_key]
         elif tx in renovacoes:
@@ -421,7 +445,8 @@ def _aggregate(rows, since_d=None, until_d=None, renovacoes=None):
         'reembolsos_sem_data_fora': reembolsos_sem_data_fora,
         'ema_global': _finalize(ema),
         'renovacoes': _finalize(renov),
-        'funis': [{'key': k, **_finalize(funis[k])} for k in FUNIL_ORDER],
+        'funis': [{'key': k, 'label': FUNIL_LABEL.get(k, k), **_finalize(funis[k])}
+                  for k in FUNIL_ORDER],
         'sem_atribuicao': {
             **_finalize(sem_atrib),
             'produtos': [
