@@ -75,6 +75,17 @@ LANCAMENTOS = {
             'vendas': {
                 'label': 'Vendas',
                 'patterns': ['VENDAS'],
+                # Reenvio de eventos da Hotmart em 30/10/2026: ~70 eventos
+                # disparados de uma vez, 46 deles atribuídos às campanhas no
+                # dia. As vendas são reais e foram mesmo marcadas na campanha,
+                # mas aconteceram em outros dias — somá-las a 30/10 inventa um
+                # pico que não existiu e derruba o CPA do dia. Descontadas do
+                # dia e do total, e declaradas na tela.
+                'ajustes': [
+                    {'data': '2026-10-30', 'compras': 46,
+                     'motivo': 'Reenvio de eventos da Hotmart — vendas reais '
+                               'de outros dias, marcadas nas campanhas hoje.'},
+                ],
             },
         },
         'datas': {
@@ -996,6 +1007,56 @@ def _compras_de(acoes, valores):
     return 0, 0.0
 
 
+def _aplicar_ajustes(fase, fase_cfg):
+    """Desconta compras declaradas na config, sem apagar o que aconteceu.
+
+    Serve para evento reenviado pela plataforma: a venda é real e foi mesmo
+    atribuída à campanha, mas caiu toda num dia só. Somá-la ali inventa um
+    pico e derruba o CPA daquele dia. O desconto fica registrado no payload
+    para a tela mostrar, em vez de sumir com o número.
+
+    A receita sai na mesma proporção das compras do dia: a Meta não diz qual
+    valor pertence a qual evento, e o rateio mantém o ticket médio do dia.
+    """
+    ajustes = fase_cfg.get('ajustes') or []
+    if not ajustes:
+        return
+
+    por_dia = {d['data']: d for d in (fase.get('diario') or [])}
+    aplicados = []
+    for aj in ajustes:
+        dia = por_dia.get(aj['data'])
+        if not dia:
+            continue   # fora do período filtrado: nada a descontar
+        qtd = min(int(aj.get('compras') or 0), dia.get('compras') or 0)
+        if not qtd:
+            continue
+        receita = aj.get('receita')
+        if receita is None:
+            receita = (dia.get('receita') or 0) * qtd / dia['compras']
+        receita = round(receita, 2)
+
+        dia['compras'] -= qtd
+        dia['receita'] = round((dia.get('receita') or 0) - receita, 2)
+        dia['ajustado'] = True
+        aplicados.append({'data': aj['data'], 'compras': qtd,
+                          'receita': receita, 'motivo': aj.get('motivo', '')})
+
+    if not aplicados:
+        return
+
+    t = fase.get('totais') or {}
+    t['compras_brutas'] = t.get('compras') or 0
+    t['receita_bruta'] = t.get('receita') or 0
+    t['compras'] = t['compras_brutas'] - sum(a['compras'] for a in aplicados)
+    t['receita'] = round(t['receita_bruta'] - sum(a['receita'] for a in aplicados), 2)
+    custo = t.get('custo') or 0
+    t['cpa'] = round(custo / t['compras'], 2) if t['compras'] else None
+    t['roas'] = round(t['receita'] / custo, 2) if custo and t['receita'] else None
+    t['ticket'] = round(t['receita'] / t['compras'], 2) if t['compras'] else None
+    fase['ajustes'] = aplicados
+
+
 def _fetch_diario_por_fase(cfg, since, until, token):
     """Investimento e entrega por dia, separados por fase do lançamento."""
     linhas = _fetch_insights_nivel(
@@ -1484,6 +1545,12 @@ def lancamento_fases(slug):
                 saida[chave]['diario'] = dias
     except Exception as e:
         logger.warning(f'[lancamento:{slug}] série diária por fase falhou: {e}')
+
+    # Ajustes declarados (ex.: reenvio de eventos da plataforma). Depois da
+    # série diária porque o desconto sai do dia e sobe para os totais.
+    for chave, fcfg in fases_cfg.items():
+        if chave in saida:
+            _aplicar_ajustes(saida[chave], fcfg)
 
     geral = _totais_fase(ads)          # lançamento inteiro
     if 'captura' in saida:
