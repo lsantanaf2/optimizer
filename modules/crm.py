@@ -434,6 +434,22 @@ def _get_form_por_slug(slug):
 
 
 def _render_lp(form):
+    # Template por convenção: crm_lp_<slug>.html quando existir, senão a LP
+    # padrão. Uma oferta nova com copy própria só precisa do arquivo — sem
+    # coluna nova no banco e sem if por slug espalhado no código.
+    from jinja2 import TemplateNotFound
+    slug = (form.get('slug') or '').strip().lower()
+
+    # O slug vem do banco e vira nome de arquivo: aceita só o que casa com o
+    # formato esperado, para não virar caminho relativo.
+    if slug and re.fullmatch(r'[a-z0-9_-]{1,64}', slug):
+        try:
+            return render_template(f'crm_lp_{slug}.html', form=form,
+                                   honeypot_field=HONEYPOT_FIELD,
+                                   pixel_id=meta_capi.PIXEL_ID)
+        except TemplateNotFound:
+            pass
+
     # O pixel vem do mesmo lugar que a CAPI usa, para os dois caminhos nunca
     # apontarem para pixels diferentes.
     return render_template('crm_lp.html', form=form, honeypot_field=HONEYPOT_FIELD,
