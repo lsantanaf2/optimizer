@@ -75,6 +75,14 @@
                     <span class="nav-label">CRM</span>
                 </a>
 
+                <!-- Visitor API própria -->
+                <a href="{{ url_for('visitor_api.visitor_page') }}"
+                    class="nav-item {% if 'visitor_api' in (request.endpoint or '') %}active{% endif %}"
+                    title="Visitor API — uso por domínio">
+                    <span class="nav-icon">🌎</span>
+                    <span class="nav-label">Visitor API</span>
+                </a>
+
                 <!-- Google Ads (teste) -->
                 <a href="{{ url_for('google_ads_test_page') }}"
                     class="nav-item {% if request.endpoint == 'google_ads_test_page' %}active{% endif %}"

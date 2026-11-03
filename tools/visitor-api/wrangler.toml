@@ -1,0 +1,18 @@
+# Visitor API propria — substitui a visitorapi.com (US$ 7/mes).
+# Deploy: cd tools/visitor-api && npx wrangler deploy
+name = "visitor"
+main = "worker.js"
+compatibility_date = "2026-11-03"
+workers_dev = true
+
+[vars]
+# Para onde o Worker reporta cada hit (painel /visitor do optimizer).
+REPORT_URL = "https://optimizer.xn--trfego-qta.com/api/visitor/hit"
+
+# VISITOR_API_SECRET nao fica aqui: e um secret do Worker
+# (npx wrangler secret put VISITOR_API_SECRET), fora do git.
+
+# Trancar a API para os dominios das LPs so DEPOIS de testar com curl:
+# com a lista preenchida, request sem header Origin (curl) volta 403.
+# [vars]
+# ALLOWED_ORIGINS = "https://optimizer.xn--trfego-qta.com"

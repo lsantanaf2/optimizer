@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+
+{% block title %}Visitor API{% endblock %}
+{% block breadcrumb %}<span>Ferramentas</span> / <strong>Visitor API</strong>{% endblock %}
+
+{% block content %}
+<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:18px;">
+    <h1 style="font-size:19px;font-weight:600;">🌎 Visitor API — uso por domínio</h1>
+    <select id="periodo" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border,#333);background:transparent;color:inherit;">
+        <option value="7">Últimos 7 dias</option>
+        <option value="30" selected>Últimos 30 dias</option>
+        <option value="90">Últimos 90 dias</option>
+    </select>
+    <span style="flex:1;"></span>
+    <span style="font-size:12px;color:var(--text-secondary,#888);">
+        Teto do plano grátis: {{ '{:,}'.format(teto_diario).replace(',', '.') }} req/dia
+    </span>
+</div>
+
+<div id="conteudo"><p style="color:var(--text-secondary,#888);">Carregando...</p></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var conteudo = document.getElementById('conteudo');
+  var periodo = document.getElementById('periodo');
+
+  function num(n) { return (n || 0).toLocaleString('pt-BR'); }
+  function esc(s) {
+    return String(s === null || s === undefined ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function render(d) {
+    var html = '';
+
+    // Consumo de hoje contra o teto — a única métrica que vira problema
+    // operacional se ninguém olhar.
+    var pct = Math.min(d.pct_teto, 100);
+    var cor = d.pct_teto >= 80 ? '#e5484d' : (d.pct_teto >= 50 ? '#f5a524' : '#30a46c');
+    html += '<div style="margin-bottom:22px;">'
+          + '<div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;">'
+          + '<strong>Hoje: ' + num(d.total_hoje) + ' requisições</strong>'
+          + '<span style="color:var(--text-secondary,#888);">' + d.pct_teto + '% do teto diário</span>'
+          + '</div>'
+          + '<div style="height:8px;border-radius:4px;background:rgba(128,128,128,.2);overflow:hidden;">'
+          + '<div style="height:100%;width:' + pct + '%;background:' + cor + ';"></div>'
+          + '</div></div>';
+
+    if (!d.por_dominio.length) {
+      html += '<p style="color:var(--text-secondary,#888);">Nenhum hit registrado nesse período.</p>';
+      conteudo.innerHTML = html;
+      return;
+    }
+
+    html += '<h2 style="font-size:15px;font-weight:600;margin:0 0 10px;">Por domínio</h2>'
+          + '<table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:28px;">'
+          + '<thead><tr style="text-align:left;color:var(--text-secondary,#888);">'
+          + '<th style="padding:8px 6px;">Domínio</th>'
+          + '<th style="padding:8px 6px;text-align:right;">Requisições</th>'
+          + '<th style="padding:8px 6px;text-align:right;">Dias ativos</th>'
+          + '<th style="padding:8px 6px;text-align:right;">Último dia</th>'
+          + '</tr></thead><tbody>';
+
+    d.por_dominio.forEach(function (r) {
+      html += '<tr style="border-top:1px solid rgba(128,128,128,.2);">'
+           +  '<td style="padding:8px 6px;font-family:ui-monospace,monospace;">' + esc(r.dominio) + '</td>'
+           +  '<td style="padding:8px 6px;text-align:right;">' + num(r.total) + '</td>'
+           +  '<td style="padding:8px 6px;text-align:right;">' + num(r.dias_ativos) + '</td>'
+           +  '<td style="padding:8px 6px;text-align:right;color:var(--text-secondary,#888);">' + esc(r.ultimo_dia) + '</td>'
+           +  '</tr>';
+    });
+    html += '</tbody></table>';
+
+    // Por dia, agrupando os domínios de cada data.
+    var dias = {};
+    d.por_dia.forEach(function (r) { (dias[r.dia] = dias[r.dia] || []).push(r); });
+
+    html += '<h2 style="font-size:15px;font-weight:600;margin:0 0 10px;">Por dia</h2>'
+          + '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
+          + '<thead><tr style="text-align:left;color:var(--text-secondary,#888);">'
+          + '<th style="padding:8px 6px;">Dia</th>'
+          + '<th style="padding:8px 6px;text-align:right;">Total</th>'
+          + '<th style="padding:8px 6px;">Domínios</th>'
+          + '</tr></thead><tbody>';
+
+    Object.keys(dias).sort().reverse().forEach(function (dia) {
+      var linhas = dias[dia];
+      var total = linhas.reduce(function (a, r) { return a + r.hits; }, 0);
+      var detalhe = linhas.map(function (r) { return esc(r.dominio) + ' (' + num(r.hits) + ')'; }).join(', ');
+      html += '<tr style="border-top:1px solid rgba(128,128,128,.2);">'
+           +  '<td style="padding:8px 6px;white-space:nowrap;">' + esc(dia) + '</td>'
+           +  '<td style="padding:8px 6px;text-align:right;">' + num(total) + '</td>'
+           +  '<td style="padding:8px 6px;color:var(--text-secondary,#888);">' + detalhe + '</td>'
+           +  '</tr>';
+    });
+    html += '</tbody></table>';
+
+    conteudo.innerHTML = html;
+  }
+
+  function carregar() {
+    conteudo.innerHTML = '<p style="color:var(--text-secondary,#888);">Carregando...</p>';
+    fetch('/api/visitor/stats?dias=' + periodo.value, { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.erro) throw new Error(d.erro);
+        render(d);
+      })
+      .catch(function (e) {
+        conteudo.innerHTML = '<p style="color:#e5484d;">Erro ao carregar: ' + esc(e.message) + '</p>';
+      });
+  }
+
+  periodo.addEventListener('change', carregar);
+  carregar();
+})();
+</script>
+{% endblock %}
