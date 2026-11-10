@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{ form.name }} — SK Marketing</title>
-  <meta name="description" content="Gestão de tráfego pago para imobiliárias e construtoras, com relatório de resultado real.">
+  <meta name="description" content="Captação digital para imobiliárias e construtoras: oportunidades qualificadas para os seus corretores, com relatório de resultado real.">
   <meta name="robots" content="noindex">
   <link rel="icon" href="{{ url_for('static', filename='sk-logo.png') }}">
   <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -303,7 +303,7 @@
 <div class="hero-faixa">
   <div class="hero-topo">
     <img src="{{ url_for('static', filename='sk-logo.png') }}" alt="SK Marketing">
-    <span class="selo">Tráfego pago para imobiliárias e construtoras</span>
+    <span class="selo">Captação digital para imobiliárias e construtoras</span>
   </div>
 
   <div class="hero-card">
@@ -311,23 +311,23 @@
       <!-- Coluna esquerda: headline + os pontos que a sustentam. -->
       <div>
         <h1>
-          Mais compradores qualificados
-          <span class="destaque">falando com o seu corretor</span>
+          Apareça para o comprador certo
+          <span class="destaque">no momento em que ele decide</span>
         </h1>
 
         <!-- Sem foto e sem vídeo: não temos material deste nicho, e
              material inventado não entra. -->
         <ul class="hero-pontos">
-          <li><strong>Anúncio por empreendimento</strong> — cada imóvel com a sua própria campanha, verba e público.</li>
-          <li><strong>Lead que chega no corretor</strong> — o contato cai direto no WhatsApp de quem atende.</li>
-          <li><strong>Custo por lead à vista</strong> — você vê quanto custou cada contato antes de ele virar visita.</li>
+          <li><strong>A busca começa antes do corretor</strong> — o cliente pesquisa, compara empreendimento e avalia oportunidade muito antes de falar com alguém.</li>
+          <li><strong>Oportunidade toda semana</strong> — operação de captação que gera contato de forma contínua, e não só no pico do lançamento.</li>
+          <li><strong>Previsibilidade na venda</strong> — visita agendada e funil cheio em vez de depender da indicação do mês.</li>
         </ul>
       </div>
 
       <!-- Formulário -->
       <div class="form-card" id="formulario">
-        <h2>Quero mais compradores</h2>
-        <p class="sub">Preencha e um especialista da SK entrará em contato.</p>
+        <h2>Receba sua análise estratégica</h2>
+        <p class="sub">Preencha e a SK devolve uma análise do cenário atual da sua empresa.</p>
 
         <form id="lead-form" novalidate>
           <div>
@@ -398,7 +398,7 @@
             <input id="{{ honeypot_field }}" name="{{ honeypot_field }}" tabindex="-1" autocomplete="off">
           </div>
 
-          <button type="submit" class="btn" id="btn-enviar">Quero mais compradores</button>
+          <button type="submit" class="btn" id="btn-enviar">Quero minha análise</button>
           <div class="erro" id="erro-geral" style="text-align:center"></div>
           <p class="aviso">Seus dados são usados apenas para este contato comercial.</p>
         </form>
@@ -411,9 +411,9 @@
 <section class="secao branca">
   <div class="container">
     <div class="rotulo">O que você recebe</div>
-    <h2 class="secao-titulo">Não é só "impulsionar post".<br>É a operação inteira da sua mídia.</h2>
+    <h2 class="secao-titulo">Não é só "anunciar imóvel".<br>É uma operação de captação digital.</h2>
     <p class="secao-texto">
-      Do criativo ao relatório, cada real investido na sua carteira de imóveis passa pela equipe da SK.
+      Do primeiro anúncio à visita agendada, cada real investido na captação da sua carteira passa pela equipe da SK.
     </p>
 
     <div class="grade">
@@ -422,32 +422,37 @@
           <!-- alvo: estratégia -->
           <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.4"/></svg>
         </div>
-        <h3>Estratégia e gestão</h3>
-        <p>Campanha montada por empreendimento, por faixa de preço e pela região que você realmente atende — não um anúncio só para a carteira inteira.</p>
+        <h3>O público certo, no momento certo</h3>
+        <p>Campanha montada por empreendimento, por faixa de preço e pela região que você
+           realmente atende — para aparecer justamente para quem está pesquisando
+           imóvel assim agora.</p>
       </div>
       <div class="bloco">
         <div class="icone" aria-hidden="true">
           <!-- megafone: ecoa o próprio logo da SK -->
           <svg viewBox="0 0 24 24"><path d="M3 11v2a1 1 0 0 0 1 1h2.5L13 18.5v-13L6.5 10H4a1 1 0 0 0-1 1Z"/><path d="M7 14.5V19a1.5 1.5 0 0 0 3 0v-3"/><path d="M17 9.5a3.5 3.5 0 0 1 0 5"/><path d="M19.5 7a7 7 0 0 1 0 10"/></svg>
         </div>
-        <h3>Mídia paga</h3>
-        <p>Meta e Google Ads criados, acompanhados e otimizados pela equipe, com rotina de teste de criativo em imagem e ajuste de verba por imóvel.</p>
+        <h3>Mídia paga em Meta e Google</h3>
+        <p>Anúncios criados, acompanhados e otimizados pela equipe, com rotina de teste
+           de criativo em imagem e ajuste de verba por empreendimento.</p>
       </div>
       <div class="bloco">
         <div class="icone" aria-hidden="true">
           <!-- barras subindo: painel -->
           <svg viewBox="0 0 24 24"><path d="M4 20h16"/><path d="M6.5 20v-6"/><path d="M12 20V7"/><path d="M17.5 20v-9"/></svg>
         </div>
-        <h3>Painel de resultado</h3>
-        <p>Dashboard próprio da SK com investimento, contatos recebidos e custo por lead do período, atualizado — sem esperar relatório no fim do mês.</p>
+        <h3>Previsibilidade nas vendas</h3>
+        <p>Dashboard próprio da SK com investimento, oportunidades geradas e custo por
+           lead do período, para você saber quanto custa chegar na próxima venda.</p>
       </div>
       <div class="bloco">
         <div class="icone" aria-hidden="true">
           <!-- balões de conversa: canal direto -->
           <svg viewBox="0 0 24 24"><path d="M15 11.5a5.5 5.5 0 0 1-5.5 5.5H7l-3 2.5V11.5A5.5 5.5 0 0 1 9.5 6h0A5.5 5.5 0 0 1 15 11.5Z"/><path d="M17.5 14.5h.5l2.5 2V9.5A4 4 0 0 0 16.5 5.5H13"/></svg>
         </div>
-        <h3>Acompanhamento</h3>
-        <p>Canal direto com quem mexe na conta e leitura dos números junto com você, para a decisão sair do dado e não do achismo.</p>
+        <h3>Oportunidade no WhatsApp do corretor</h3>
+        <p>O contato cai direto em quem atende, com o empreendimento que ele pediu,
+           enquanto o interesse ainda está quente — lead de imóvel esfria em horas.</p>
       </div>
     </div>
   </div>
@@ -504,15 +509,15 @@
 <!-- ===================== CTA FINAL ===================== -->
 <section class="secao branca cta">
   <div class="container">
-    <h2 class="secao-titulo">Vamos encher o funil dos seus corretores?</h2>
+    <h2 class="secao-titulo">Vamos ver o cenário atual da sua empresa?</h2>
     <!-- Mesma frase do card do formulário, de propósito: as duas chamadas da
          página usam as mesmas palavras. -->
     <p class="secao-texto">
-      Preencha e um especialista da SK entrará em contato.
+      Preencha e a SK devolve uma análise do cenário atual da sua empresa.
     </p>
     <!-- O botão repete o título do card para onde ele leva. -->
     <button class="btn" onclick="document.getElementById('formulario').scrollIntoView({behavior:'smooth',block:'center'});setTimeout(()=>document.getElementById('nome').focus(),420)">
-      Quero mais compradores
+      Quero minha análise
     </button>
   </div>
 </section>
