@@ -874,7 +874,17 @@ def registrar_call_realizada(lead_id, autor_id=None, observacao=None):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def leads_desde(since_iso):
-    """Leads e recadastros ocorridos depois de `since_iso`. Base do alerta."""
+    """Leads e recadastros ocorridos depois de `since_iso`. Base do alerta.
+
+    `lead_completado` está aqui, e não pode sair: desde a captura de abandono
+    (v2.45.0), quem digita o WhatsApp e só depois envia já tem card criado pelo
+    parcial, então o envio NÃO emite 'lead_criado' — emite 'lead_completado'.
+    Esse virou o caminho da maioria dos leads reais, e enquanto ele ficou de
+    fora o alerta simplesmente não tocou para eles.
+
+    'lead_parcial' continua fora de propósito: é quem abandonou o formulário,
+    não um lead para abordar na hora.
+    """
     return fetch_all(
         """
         SELECT
@@ -892,7 +902,7 @@ def leads_desde(since_iso):
             SELECT utm_source, utm_campaign FROM crm_lead_submissions
             WHERE lead_id = l.id ORDER BY created_at DESC LIMIT 1
         ) s ON TRUE
-        WHERE e.tipo IN ('lead_criado', 'recadastro')
+        WHERE e.tipo IN ('lead_criado', 'recadastro', 'lead_completado')
           AND e.created_at > %s
         ORDER BY e.created_at ASC
         LIMIT 50

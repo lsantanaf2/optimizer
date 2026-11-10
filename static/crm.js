@@ -344,6 +344,7 @@ const CRM = (() => {
         // Histórico de eventos
         const LABEL_EVENTO = {
             lead_criado: '🆕 Lead criado', recadastro: '🔁 Cadastrou de novo',
+            lead_parcial: '✏️ Começou a preencher', lead_completado: '🆕 Completou o cadastro',
             etapa_mudou: '➡️ Mudou de etapa', status_mudou: '🏷️ Mudou de status',
             contato_tentado: '📞 Tentativa de contato', contato_efetivo: '✅ Contato efetivo',
             call_agendada: '📅 Call agendada', no_show: '🚫 No-show',
@@ -362,7 +363,7 @@ const CRM = (() => {
             const p = e.payload || {};
             const extras = [p.canal, p.resultado, p.motivo, p.observacao, p.preview]
                 .filter(Boolean).join(' · ');
-            const destaque = ['lead_criado', 'recadastro', 'ganho', 'perdido'].includes(e.tipo);
+            const destaque = ['lead_criado', 'lead_completado', 'recadastro', 'ganho', 'perdido'].includes(e.tipo);
             return `
             <li class="${destaque ? 'destaque' : ''}">
                 <div class="quando">${fmtData(e.created_at)}${e.autor_email ? ' · ' + esc(e.autor_email) : ''}</div>
