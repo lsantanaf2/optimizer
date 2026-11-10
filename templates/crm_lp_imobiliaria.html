@@ -377,18 +377,17 @@
 
           <div>
             <!-- O value É o rótulo. Nada de converter faixa em número: o
-                 lead escolheu "Até 20 mil", é isso que fica guardado e é isso
+                 lead escolheu "&lt;4Mi", é isso que fica guardado e é isso
                  que a ficha mostra. O campo numérico do CRM existe para o que
                  o operador apurar na call, não para um chute derivado daqui. -->
-            <label for="faturamento">Faturamento mensal da empresa *</label>
+            <label for="faturamento">VGV mensal da empresa *</label>
             <select id="faturamento" name="faturamento">
-              <option value="">Selecionar faturamento</option>
-              <option>Até 20 mil</option>
-              <option>20 mil até 40 mil</option>
-              <option>40 mil até 70 mil</option>
-              <option>70 mil até 100 mil</option>
-              <option>100 mil até 200 mil</option>
-              <option>Mais de 200 mil</option>
+              <option value="">Selecionar VGV</option>
+              <option>VGV &lt;500k</option>
+              <option>&lt;1Mi</option>
+              <option>&lt;4Mi</option>
+              <option>&lt;10Mi/mês</option>
+              <option>Mais de 10Mi/mês</option>
             </select>
             <div class="erro" id="erro-faturamento"></div>
           </div>
@@ -689,10 +688,10 @@
       erro('email', 'E-mail inválido.'); return;
     }
 
-    // Faturamento é obrigatório: sem ele não dá para priorizar quem atender.
+    // VGV é obrigatório: sem ele não dá para priorizar quem atender.
     const faixaEl = document.getElementById('faturamento');
     if (!faixaEl.value) {
-      erro('faturamento', 'Selecione o faturamento da empresa.');
+      erro('faturamento', 'Selecione o VGV mensal.');
       faixaEl.focus();
       return;
     }
