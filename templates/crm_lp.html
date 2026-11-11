@@ -339,12 +339,6 @@
           </div>
 
           <div>
-            <label for="email">E-mail</label>
-            <input id="email" name="email" type="email" autocomplete="email" maxlength="160" placeholder="seu@email.com">
-            <div class="erro" id="erro-email"></div>
-          </div>
-
-          <div>
             <label for="tel">WhatsApp (DDI + DDD + número) *</label>
             <div class="tel-linha">
               <select id="ddi" aria-label="Código do país">
@@ -648,7 +642,6 @@
       form_key: FORM_KEY,
       whatsapp: tel.e164,
       nome: document.getElementById('nome').value.trim() || null,
-      email: document.getElementById('email').value.trim() || null,
       motivo: motivo,
       {{ honeypot_field }}: document.getElementById({{ honeypot_field | tojson }}).value,
     }, atribuicao()));
@@ -678,18 +671,13 @@
   /* ---------- Envio ---------- */
   document.getElementById('lead-form').addEventListener('submit', async (ev) => {
     ev.preventDefault();
-    ['nome', 'tel', 'email', 'faturamento', 'geral'].forEach(c => erro(c, ''));
+    ['nome', 'tel', 'faturamento', 'geral'].forEach(c => erro(c, ''));
 
     const nome = document.getElementById('nome').value.trim();
     if (nome.length < 2) { erro('nome', 'Informe seu nome.'); document.getElementById('nome').focus(); return; }
 
     const tel = montarTelefone();
     if (tel.erro) { erro('tel', tel.erro); telEl.focus(); return; }
-
-    const email = document.getElementById('email').value.trim();
-    if (email && !/^[^@\s]+@[^@\s.]+\.[^@\s]{2,}$/.test(email)) {
-      erro('email', 'E-mail inválido.'); return;
-    }
 
     // Faturamento é obrigatório: sem ele não dá para priorizar quem atender.
     const faixaEl = document.getElementById('faturamento');
@@ -709,7 +697,6 @@
       form_key: FORM_KEY,
       nome: nome,
       whatsapp: tel.e164,
-      email: email || null,
       empresa_segmento: [document.getElementById('empresa').value.trim(),
                          document.getElementById('segmento').value]
                          .filter(Boolean).join(' · ') || null,
