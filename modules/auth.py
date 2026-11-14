@@ -7,6 +7,7 @@ import os
 import hashlib
 import secrets
 import logging
+import time
 from datetime import datetime, timedelta
 from functools import wraps
 from flask import Blueprint, request, redirect, session, url_for, render_template
@@ -23,6 +24,42 @@ auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
 APP_ID = os.getenv('APP_ID')
 APP_SECRET = os.getenv('APP_SECRET')
 REDIRECT_URI = os.getenv('REDIRECT_URI', 'http://localhost:5000/callback')
+
+# Cadastro público fechado. Estava aberto e qualquer conta criada ali entrava
+# no CRM com leitura de todos os leads. Para abrir de novo: ALLOW_REGISTER=1
+# no deploy.sh — e mesmo assim a conta nova nasce sem acesso (ver abaixo).
+REGISTRO_ABERTO = os.getenv('ALLOW_REGISTER') == '1'
+MSG_REGISTRO_FECHADO = 'Cadastro fechado. Peça acesso ao administrador.'
+
+
+# --- Autorização ---
+
+_acesso_cache = {}          # user_id -> (liberado, monotonic de quando checou)
+_ACESSO_TTL = 60
+
+
+def acesso_liberado(user_id):
+    """True só para usuário que existe E tem app_users.acesso_liberado.
+
+    Estar logado não basta: o cookie de sessão sobrevive à exclusão da conta,
+    então a checagem é contra o banco, com cache curto por worker. Erro de
+    banco nega (fail closed) — sem banco a aplicação não funciona mesmo.
+    """
+    if not user_id:
+        return False
+    chave = str(user_id)
+    agora = time.monotonic()
+    hit = _acesso_cache.get(chave)
+    if hit and agora - hit[1] < _ACESSO_TTL:
+        return hit[0]
+    try:
+        row = fetch_one("SELECT acesso_liberado FROM app_users WHERE id = %s", (chave,))
+        ok = bool(row and row.get('acesso_liberado'))
+    except Exception as e:
+        logger.error(f"Falha ao checar acesso de {chave}: {e}")
+        return False
+    _acesso_cache[chave] = (ok, agora)
+    return ok
 
 
 # --- Helpers de senha ---
@@ -89,6 +126,11 @@ def login_submit():
     if not user or not verify_password(password, user['password_hash']):
         return render_template('auth/login.html', error='Email ou senha incorretos.')
 
+    if not acesso_liberado(user['id']):
+        logger.warning(f"Login recusado: conta sem acesso liberado ({user['id']}).")
+        return render_template('auth/login.html',
+                               error='Acesso ainda não liberado. Fale com o administrador.'), 403
+
     # Login OK — setar sessão
     session['user_id'] = str(user['id'])
     session['user_email'] = user['email']
@@ -142,11 +184,16 @@ def login_submit():
 def register_page():
     if session.get('user_id'):
         return redirect(url_for('index'))
+    if not REGISTRO_ABERTO:
+        return render_template('auth/register.html', error=MSG_REGISTRO_FECHADO), 403
     return render_template('auth/register.html')
 
 
 @auth_bp.route('/register', methods=['POST'])
 def register_submit():
+    if not REGISTRO_ABERTO:
+        return render_template('auth/register.html', error=MSG_REGISTRO_FECHADO), 403
+
     email = request.form.get('email', '').strip().lower()
     password = request.form.get('password', '')
     password_confirm = request.form.get('password_confirm', '')
@@ -171,12 +218,9 @@ def register_submit():
         (email, hash_password(password))
     )
 
-    # Login automático após registro
-    session['user_id'] = str(new_user['id'])
-    session['user_email'] = new_user['email']
-
-    # Redirecionar para conectar Meta
-    return redirect(url_for('auth.connect_meta_page'))
+    # Sem login automático: conta nova nasce com acesso_liberado = false.
+    return render_template('auth/login.html',
+                           error='Conta criada. O acesso precisa ser liberado pelo administrador.')
 
 
 # --- Conectar Meta (OAuth) ---

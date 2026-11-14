@@ -61,7 +61,7 @@ app.register_blueprint(anuncios_bp)
 from modules.instagram_downloader import instagram_dl_bp
 app.register_blueprint(instagram_dl_bp)
 
-from modules.auth import auth_bp, login_required, meta_required
+from modules.auth import auth_bp, login_required, meta_required, acesso_liberado
 app.register_blueprint(auth_bp)
 
 from modules.meta_compliance import compliance_bp
@@ -89,7 +89,7 @@ from modules.account_settings import (
 import atexit
 atexit.register(close_db)
 
-VERSION = "v2.59.0"
+VERSION = "v2.60.0"
 
 # ======================== STAGING DE UPLOAD (v2.11.0) ========================
 # Desacoplamento: o Service Worker sobe cada arquivo UMA vez para a VPS (staging),
@@ -185,6 +185,19 @@ def ensure_db():
             except Exception as e:
                 print(f"⚠️ Sweep '{label}' falhou (não-fatal): {e}")
 
+@app.before_request
+def barrar_sessao_sem_acesso():
+    """Sessão de conta sem acesso liberado (ou excluída) vira anônima.
+
+    Os decorators de login só olham session['user_id']; o cookie é assinado
+    pelo FLASK_SECRET_KEY e não expira sozinho. Sem isto, quem se cadastrou
+    enquanto o registro estava aberto continuaria entrando no CRM.
+    Registrado depois de ensure_db: precisa do pool.
+    """
+    uid = session.get('user_id')
+    if uid and not acesso_liberado(uid):
+        session.clear()
+
 @app.context_processor
 def inject_version():
     return dict(version=VERSION)
@@ -266,8 +279,36 @@ def _token_from_db():
         print(f"⚠️ [obter_token] fallback do banco falhou: {e}")
     return None
 
+# Rotas que um visitante SEM login pode abrir usando o token Meta da agência:
+# as dashboards de cliente (que validam ?t= ou são públicas por desenho) e o
+# legado /cruzamento/vinci. Fora daqui, sem login não há token.
+#
+# Antes o fallback valia para qualquer rota: anônimo listava as contas de
+# anúncio de todos os clientes, abria o /dash admin com os links de todos e
+# podia pausar campanha ou mudar orçamento via /api/account/<id>/entity/*.
+_PREFIXOS_PUBLICOS_COM_TOKEN = ('/dash/', '/api/dash/', '/api/cruzamento/')
+_ROTAS_PUBLICAS_COM_TOKEN = {'/cruzamento/vinci'}
+
+
+def _rota_publica_com_token():
+    p = request.path
+    return p in _ROTAS_PUBLICAS_COM_TOKEN or p.startswith(_PREFIXOS_PUBLICOS_COM_TOKEN)
+
+
 def obter_token():
-    """Retorna o token da sessão, do arquivo persistido, ou do banco (fallback)."""
+    """Token Meta para o request atual.
+
+    Logado: o da sessão, senão o do arquivo, senão o do banco.
+    Anônimo: só nas rotas públicas acima, e nunca gravado na sessão — o cookie
+    do Flask é assinado, não cifrado; quem recebe consegue ler o token.
+    """
+    if not session.get('user_id'):
+        if 'access_token' in session:      # cookie antigo com token vazado
+            session.pop('access_token')
+        if not _rota_publica_com_token():
+            return None
+        return carregar_token() or _token_from_db()
+
     token = session.get('access_token')
     if not token:
         token = carregar_token()
