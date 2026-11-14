@@ -11,6 +11,8 @@ creatives_bp = Blueprint('creatives', __name__)
 
 @creatives_bp.route('/api/drive/list')
 def api_drive_list_folder():
+    if not session.get('user_id'):
+        return jsonify({"error": "não autenticado"}), 401
     folder_url = request.args.get('folder_url')
     if not folder_url:
         return jsonify({"error": "Parâmetro folder_url ausente"}), 400
@@ -64,7 +66,7 @@ def api_drive_list_folder():
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Falha ao listar a pasta do Drive."}), 500
 
 
 @creatives_bp.route('/historico/<campaign_id>')

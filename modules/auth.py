@@ -5,6 +5,7 @@ Fluxo: Login/Registro → Conectar Meta (se primeiro acesso) → Dashboard
 
 import os
 import hashlib
+import hmac
 import secrets
 import logging
 import time
@@ -12,6 +13,7 @@ from datetime import datetime, timedelta
 from functools import wraps
 from flask import Blueprint, request, redirect, session, url_for, render_template
 from urllib.parse import quote
+from werkzeug.security import generate_password_hash, check_password_hash
 
 from modules.meta_client import GRAPH_BASE, GRAPH_API_VERSION
 from modules.database import fetch_one, execute_returning, execute
@@ -64,20 +66,35 @@ def acesso_liberado(user_id):
 
 # --- Helpers de senha ---
 
+# PBKDF2 com 600 mil iterações (recomendação OWASP para SHA-256). O formato
+# antigo era "salt:sha256(salt+senha)" — uma rodada só, quebrável em GPU se o
+# banco vazar. Hash antigo continua aceito e é regravado no próximo login.
+_METODO_HASH = 'pbkdf2:sha256:600000'
+
+
+def _hash_legado(stored_hash):
+    return not stored_hash.startswith(('pbkdf2:', 'scrypt:'))
+
+
 def hash_password(password):
-    """Hash com salt usando SHA-256. Simples e sem dependência extra."""
-    salt = secrets.token_hex(16)
-    hashed = hashlib.sha256(f"{salt}{password}".encode()).hexdigest()
-    return f"{salt}:{hashed}"
+    return generate_password_hash(password, method=_METODO_HASH)
 
 
 def verify_password(password, stored_hash):
-    """Verifica senha contra hash armazenado.
-    Defensivo: hash NULL/malformado (sem ':') retorna False em vez de crashar."""
-    if not stored_hash or ':' not in stored_hash:
+    """Verifica senha contra hash armazenado (formato novo ou legado).
+    Defensivo: hash NULL/malformado retorna False em vez de crashar."""
+    if not stored_hash:
+        return False
+    if not _hash_legado(stored_hash):
+        try:
+            return check_password_hash(stored_hash, password)
+        except ValueError:
+            return False
+    if ':' not in stored_hash:
         return False
     salt, hashed = stored_hash.split(':', 1)
-    return hashlib.sha256(f"{salt}{password}".encode()).hexdigest() == hashed
+    calc = hashlib.sha256(f"{salt}{password}".encode()).hexdigest()
+    return hmac.compare_digest(calc, hashed)
 
 
 # --- Decorator de autenticação ---
@@ -121,10 +138,26 @@ def login_submit():
     if not email or not password:
         return render_template('auth/login.html', error='Preencha todos os campos.')
 
+    # Força bruta: 10 tentativas / 5 min por IP e 20 / hora por e-mail
+    # (o segundo pega ataque distribuído contra uma conta só).
+    from modules.rate_limiter import _client_ip, is_allowed
+    if not (is_allowed(f'login-ip|{_client_ip()}', 10, 300)
+            and is_allowed(f'login-email|{email}', 20, 3600)):
+        logger.warning(f"Login: limite de tentativas atingido (ip={_client_ip()}).")
+        return render_template('auth/login.html',
+                               error='Muitas tentativas. Aguarde alguns minutos.'), 429
+
     user = fetch_one("SELECT id, email, password_hash FROM app_users WHERE email = %s", (email,))
 
     if not user or not verify_password(password, user['password_hash']):
         return render_template('auth/login.html', error='Email ou senha incorretos.')
+
+    if _hash_legado(user['password_hash']):
+        try:
+            execute("UPDATE app_users SET password_hash = %s WHERE id = %s",
+                    (hash_password(password), user['id']))
+        except Exception as e:
+            logger.warning(f"Falha ao regravar hash legado: {e}")
 
     if not acesso_liberado(user['id']):
         logger.warning(f"Login recusado: conta sem acesso liberado ({user['id']}).")

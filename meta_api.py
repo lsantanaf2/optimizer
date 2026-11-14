@@ -17,6 +17,7 @@ import tempfile
 import requests
 import re
 import shutil
+import logging
 from facebook_business.api import FacebookAdsApi
 from facebook_business.adobjects.adaccount import AdAccount
 from facebook_business.adobjects.adimage import AdImage
@@ -126,12 +127,17 @@ def list_drive_folder(folder_url):
         elif 'id=' in folder_url:
             folder_id = folder_url.split('id=')[1].split('&')[0]
         
-        if not folder_id:
+        # O servidor só busca no Drive, numa URL montada aqui a partir do ID.
+        # Antes buscava a URL do usuário como veio: dava para apontar para
+        # http://127.0.0.1/... ou rede interna (SSRF), e sem timeout.
+        if not folder_id or not re.fullmatch(r'[A-Za-z0-9_-]{10,100}', folder_id):
             return {'error': 'ID da pasta não encontrado na URL.'}
+        url_segura = f'https://drive.google.com/drive/folders/{folder_id}'
 
         # URL para pegar o JSON da pasta (hack público)
         # Nota: Este método pode ser instável se o Google mudar a estrutura.
-        resp = requests.get(folder_url, headers={'User-Agent': 'Mozilla/5.0'}).text
+        resp = requests.get(url_segura, headers={'User-Agent': 'Mozilla/5.0'},
+                            timeout=15).text
         
         # Regex para encontrar o JSON que contém os nomes e IDs dos arquivos
         # O Google Drive injeta os dados na variável 'AF_initDataCallback' ou similar
@@ -149,7 +155,8 @@ def list_drive_folder(folder_url):
         
         return {'files': files}
     except Exception as e:
-        return {'error': str(e)}
+        logging.getLogger(__name__).warning(f'[drive] listagem falhou: {e}')
+        return {'error': 'Não foi possível ler a pasta do Drive.'}
 
 
 class MetaUploader:

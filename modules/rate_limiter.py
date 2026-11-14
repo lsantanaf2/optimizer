@@ -34,10 +34,20 @@ _hits = {}  # key -> deque[timestamps monotonic]
 
 
 def _client_ip():
-    """IP real do cliente, considerando proxy reverso (nginx)."""
+    """IP real do cliente atrás do nginx.
+
+    Usa o ÚLTIMO valor do X-Forwarded-For: é o que o nginx acrescenta
+    ($proxy_add_x_forwarded_for) com o IP que ele de fato viu. Os valores
+    anteriores vêm do próprio cliente e são forjáveis — usar o primeiro
+    (como antes) deixava qualquer um trocar de "IP" a cada request e
+    contornar todo rate limit, inclusive o da captura de lead.
+    Pressupõe uma única camada de proxy e a porta 5000 fechada para fora.
+    """
     fwd = request.headers.get('X-Forwarded-For', '')
     if fwd:
-        return fwd.split(',')[0].strip()
+        ultimo = fwd.split(',')[-1].strip()
+        if ultimo:
+            return ultimo
     return request.remote_addr or 'unknown'
 
 

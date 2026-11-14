@@ -89,7 +89,7 @@ from modules.account_settings import (
 import atexit
 atexit.register(close_db)
 
-VERSION = "v2.60.0"
+VERSION = "v2.61.0"
 
 # ======================== STAGING DE UPLOAD (v2.11.0) ========================
 # Desacoplamento: o Service Worker sobe cada arquivo UMA vez para a VPS (staging),
@@ -1359,7 +1359,9 @@ def api_cruzamento_consolidado():
 def api_drive_list_folder():
     """Lista arquivos de uma pasta do Drive e faz o pareamento automático."""
     from meta_api import list_drive_folder
-    data = request.json
+    if not session.get('user_id'):
+        return jsonify({'error': 'não autenticado'}), 401
+    data = request.get_json(silent=True) or {}
     folder_url = data.get('url')
     if not folder_url:
         return jsonify({'error': 'URL da pasta não fornecida'}), 400
