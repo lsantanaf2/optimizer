@@ -691,10 +691,16 @@ def dash_list():
          'url': f'/dash/lancamento/{slug}'}
         for slug, cfg in LANCAMENTOS.items()
     ]
+    # Link com ?t= para poder copiar e mandar ao cliente direto daqui.
+    try:
+        from modules.hotmart_dash import _token_faturamento
+        tok_fat = _token_faturamento()
+    except Exception:
+        tok_fat = None
     fixas = [
         {'nome': 'Faturamento (Hotmart)',
          'desc': 'Funis de EMA, SSM, SFD e renovações — Iuri Castro',
-         'url': '/dash/faturamento'},
+         'url': f'/dash/faturamento?t={tok_fat}' if tok_fat else '/dash/faturamento'},
     ]
     return render_template('dash_list.html', clients=list_clients(),
                            lancamentos=lancamentos, fixas=fixas)

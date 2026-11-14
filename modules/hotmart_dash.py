@@ -7,8 +7,9 @@ fallback para o export CSV público enquanto a planilha não for compartilhada
 com o SA (sklucas@dash-teste-458004.iam.gserviceaccount.com).
 
 Rotas:
-  GET /dash/faturamento              — página (aberta, sem token — decisão do produto)
-  GET /api/dash/faturamento/data     — JSON agregado (?since=&until=&refresh=1)
+  GET /dash/faturamento              — página (?t=<token> ou login do sistema)
+  GET /api/dash/faturamento/data     — JSON agregado (?t=&since=&until=&refresh=1)
+  Token em dash_links_publicos (nome='faturamento'); era aberta até v2.61.
 
 Regras de negócio (ver docstring de _aggregate):
   - A baia é o IDIOMA do funil (PT/ES/EN/FR/IT/DE), não o produto
@@ -20,14 +21,16 @@ Regras de negócio (ver docstring de _aggregate):
 """
 
 import csv
+import hmac
 import io
 import json
 import logging
+import time
 from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
 
 import requests
-from flask import Blueprint, jsonify, render_template, request
+from flask import Blueprint, abort, jsonify, render_template, request, session
 
 logger = logging.getLogger(__name__)
 _BR_TZ = ZoneInfo('America/Sao_Paulo')
@@ -571,10 +574,40 @@ def _aggregate(rows, since_d=None, until_d=None, renovacoes=None, gasto=None):
 
 # ── Rotas ─────────────────────────────────────────────────────────────────────
 
+_token_cache = {'token': None, 'at': 0.0}
+
+
+def _token_faturamento():
+    """Token do link público (tabela dash_links_publicos), cache de 60s."""
+    agora = time.monotonic()
+    if _token_cache['token'] and agora - _token_cache['at'] < 60:
+        return _token_cache['token']
+    from modules.database import fetch_one
+    row = fetch_one("SELECT token FROM dash_links_publicos WHERE nome = 'faturamento'")
+    _token_cache['token'] = row['token'] if row else None
+    _token_cache['at'] = agora
+    return _token_cache['token']
+
+
+def _acesso_faturamento():
+    """Logado no sistema OU ?t= certo. Era aberta: qualquer um via o financeiro."""
+    if session.get('user_id'):
+        return True
+    t = request.args.get('t', '').strip()
+    try:
+        esperado = _token_faturamento()
+    except Exception as e:
+        logger.error(f'[faturamento] falha ao ler token: {e}')
+        return False
+    return bool(t and esperado and hmac.compare_digest(t, esperado))
+
+
 @hotmart_dash_bp.route('/dash/faturamento')
 def faturamento_page():
     from modules.rate_limiter import check_rate_limit
     check_rate_limit('faturamento-page')
+    if not _acesso_faturamento():
+        abort(403, 'Link inválido ou expirado. Peça um novo link. [FAT-403]')
     return render_template('dash_faturamento.html')
 
 
@@ -582,6 +615,8 @@ def faturamento_page():
 def faturamento_data():
     from modules.rate_limiter import check_rate_limit
     check_rate_limit('faturamento-api')
+    if not _acesso_faturamento():
+        return jsonify({'success': False, 'error': 'Link inválido ou expirado.'}), 403
 
     from modules.meta_cache import get_or_fetch, invalidate
 

@@ -281,6 +281,8 @@ async function load(forceRefresh) {
   const since = document.getElementById('date-since').value;
   const until = document.getElementById('date-until').value;
   const params = new URLSearchParams();
+  const tok = new URLSearchParams(location.search).get('t');
+  if (tok) params.set('t', tok);
   if (since) params.set('since', since);
   if (until) params.set('until', until);
   if (forceRefresh) params.set('refresh', '1');
