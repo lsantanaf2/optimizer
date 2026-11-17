@@ -681,6 +681,8 @@ def dash_list():
     if not token:
         return redirect(url_for('pagina_login'))
 
+    # Links já com ?t=, para copiar e mandar ao cliente direto daqui.
+    from modules.dash_links import url_com_token
     from modules.lancamento_dash import LANCAMENTOS
     lancamentos = [
         {'slug': slug,
@@ -688,19 +690,13 @@ def dash_list():
          'expert': cfg.get('expert', ''),
          'edicao': cfg.get('edicao', ''),
          'fases': bool(cfg.get('duas_fases')),
-         'url': f'/dash/lancamento/{slug}'}
+         'url': url_com_token(f'/dash/lancamento/{slug}', f'lancamento:{slug}')}
         for slug, cfg in LANCAMENTOS.items()
     ]
-    # Link com ?t= para poder copiar e mandar ao cliente direto daqui.
-    try:
-        from modules.hotmart_dash import _token_faturamento
-        tok_fat = _token_faturamento()
-    except Exception:
-        tok_fat = None
     fixas = [
         {'nome': 'Faturamento (Hotmart)',
          'desc': 'Funis de EMA, SSM, SFD e renovações — Iuri Castro',
-         'url': f'/dash/faturamento?t={tok_fat}' if tok_fat else '/dash/faturamento'},
+         'url': url_com_token('/dash/faturamento', 'faturamento')},
     ]
     return render_template('dash_list.html', clients=list_clients(),
                            lancamentos=lancamentos, fixas=fixas)

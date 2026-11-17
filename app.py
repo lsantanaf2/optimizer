@@ -89,7 +89,7 @@ from modules.account_settings import (
 import atexit
 atexit.register(close_db)
 
-VERSION = "v2.62.0"
+VERSION = "v2.63.0"
 
 # ======================== STAGING DE UPLOAD (v2.11.0) ========================
 # Desacoplamento: o Service Worker sobe cada arquivo UMA vez para a VPS (staging),
@@ -752,11 +752,15 @@ def api_google_ads_status():
 def google_ads_auth():
     """Redireciona para consent screen do Google para conectar Google Ads."""
     from modules.google_ads import get_google_ads_auth_url, is_google_ads_configured
+    from modules.auth import oauth_state
+    if not session.get('user_id'):
+        return redirect(url_for('auth.login_page'))
     if not is_google_ads_configured():
         return jsonify({'error': 'Google Ads não configurado no servidor'}), 400
     # Guarda de onde veio (opcional): /auth/google-ads?from=test → volta para /google-ads/test
     session['ga_return_to'] = request.args.get('from', '')
-    url = get_google_ads_auth_url(state=session.get('account_id', ''))
+    # state = nonce anti-CSRF + account_id (que já viajava no state antes)
+    url = get_google_ads_auth_url(state=oauth_state('google', session.get('account_id', '')))
     if not url:
         return jsonify({'error': 'Erro ao gerar URL de autenticação'}), 500
     return redirect(url)
@@ -770,14 +774,19 @@ def google_ads_callback():
         save_google_ads_config
     )
 
+    from modules.auth import oauth_state_confere
     code = request.args.get('code')
     error = request.args.get('error')
-    state_account_id = request.args.get('state', '')
 
     if error:
-        return f"Erro na autorização Google: {error}", 400
+        return "Erro na autorização Google.", 400
     if not code:
         return "Código de autorização não recebido", 400
+    if not session.get('user_id'):
+        return "Sessão expirada — faça login novamente", 401
+    state_account_id = oauth_state_confere('google', request.args.get('state', ''))
+    if state_account_id is None:
+        return "Autorização expirada ou inválida. Tente conectar de novo.", 400
 
     tokens = exchange_google_ads_code(code)
     if not tokens:

@@ -450,6 +450,18 @@
 
 <script>
 const SLUG = {{ slug|tojson }};
+// O link do cliente traz ?t=; toda chamada à API do lançamento repassa o token.
+(function () {
+  const tok = new URLSearchParams(location.search).get('t');
+  if (!tok) return;
+  const original = window.fetch;
+  window.fetch = function (url, opts) {
+    if (typeof url === 'string' && url.startsWith('/api/dash/lancamento/')) {
+      url += (url.includes('?') ? '&' : '?') + 't=' + encodeURIComponent(tok);
+    }
+    return original.call(this, url, opts);
+  };
+})();
 let modo = 'operacao', chart = null, DATA = null;
 
 const brl = (v,d=2) => v==null ? '—' : 'R$ ' + Number(v).toLocaleString('pt-BR',{minimumFractionDigits:d,maximumFractionDigits:d});

@@ -97,6 +97,35 @@ def verify_password(password, stored_hash):
     return hmac.compare_digest(calc, hashed)
 
 
+# --- State do OAuth (anti-CSRF) ---
+#
+# Sem state, um site de terceiro podia mandar o navegador de um usuário logado
+# para /callback com um `code` do ATACANTE — a conta Meta/Google do atacante
+# ficava ligada ao usuário (login CSRF). O state é aleatório por sessão e o
+# callback só aceita o que bate.
+
+def oauth_state(provedor, extra=''):
+    """State para a URL de autorização. Reusa o da sessão (várias abas ok)."""
+    chave = f'oauth_state_{provedor}'
+    nonce = session.get(chave)
+    if not nonce:
+        nonce = secrets.token_urlsafe(24)
+        session[chave] = nonce
+    return f'{nonce}.{extra}' if extra else nonce
+
+
+def oauth_state_confere(provedor, recebido):
+    """Confere e consome. Retorna o `extra` ('' se não houver) ou None."""
+    esperado = session.get(f'oauth_state_{provedor}')
+    if not esperado or not recebido:
+        return None
+    nonce, _, extra = recebido.partition('.')
+    if not hmac.compare_digest(nonce, esperado):
+        return None
+    session.pop(f'oauth_state_{provedor}', None)
+    return extra
+
+
 # --- Decorator de autenticação ---
 
 def login_required(f):
@@ -266,6 +295,7 @@ def connect_meta_page():
     auth_url = (
         f"https://www.facebook.com/{GRAPH_API_VERSION}/dialog/oauth?"
         f"client_id={APP_ID}&redirect_uri={encoded_uri}&scope={scopes}"
+        f"&state={oauth_state('meta')}"
     )
     return render_template('auth/connect_meta.html', auth_url=auth_url)
 
@@ -282,6 +312,10 @@ def meta_callback():
     user_id = session.get('user_id')
     if not user_id:
         return redirect(url_for('auth.login_page'))
+
+    if oauth_state_confere('meta', request.args.get('state')) is None:
+        logger.warning(f"Callback Meta com state inválido (user {user_id}).")
+        return "Erro: autorização expirada ou inválida. Tente conectar de novo.", 400
 
     encoded_uri = quote(REDIRECT_URI)
     token_url = (
@@ -414,7 +448,7 @@ def account_profile():
     reauth_url = (
         f"https://www.facebook.com/{GRAPH_API_VERSION}/dialog/oauth?"
         f"client_id={APP_ID}&redirect_uri={encoded_uri}&scope={scopes}"
-        f"&auth_type=reauthorize"
+        f"&auth_type=reauthorize&state={oauth_state('meta')}"
     )
 
     created_str = user['created_at'].strftime('%d/%m/%Y') if user.get('created_at') else '—'

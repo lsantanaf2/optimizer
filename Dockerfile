@@ -14,8 +14,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Usuário sem privilégio. Antes o gunicorn rodava como root: uma falha de
+# execução de código (ex.: dependência comprometida, yt-dlp/ffmpeg) virava
+# root no container. /app precisa ser dele: o app grava token.json e
+# cruzamento_filters.json ali; o HOME é cache do yt-dlp.
+RUN useradd --create-home --uid 1000 app && chown app:app /app
+
 # Copiar o resto do código
-COPY . .
+COPY --chown=app:app . .
+USER app
 
 # Expor a porta 5000
 EXPOSE 5000

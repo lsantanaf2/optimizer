@@ -1263,6 +1263,25 @@ def _fetch_ads_ativos(cfg, token):
 
 # ── Rotas ────────────────────────────────────────────────────────────────────
 
+@lancamento_bp.before_request
+def _exigir_link():
+    """Toda rota do blueprint exige login ou ?t= do lançamento.
+
+    Antes bastava saber o slug (black2026, lp11 — fáceis de chutar) para ver
+    gasto, leads e criativos do cliente. O token fica em dash_links_publicos
+    com nome 'lancamento:<slug>'; o /dash admin mostra o link pronto.
+    """
+    from modules.dash_links import acesso_por_link
+    slug = (request.view_args or {}).get('slug', '')
+    if acesso_por_link(f'lancamento:{slug}'):
+        return None
+    if request.path.startswith('/api/'):
+        return jsonify({'success': False, 'error': 'Link inválido ou expirado.'}), 403
+    return render_template('dash_error.html',
+                           message='Link inválido ou expirado. Peça um novo link.',
+                           code='DSH-403'), 403
+
+
 @lancamento_bp.route('/dash/lancamento/<slug>')
 def lancamento_page(slug):
     from modules.rate_limiter import check_rate_limit

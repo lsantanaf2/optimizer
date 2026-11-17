@@ -21,16 +21,14 @@ Regras de negócio (ver docstring de _aggregate):
 """
 
 import csv
-import hmac
 import io
 import json
 import logging
-import time
 from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
 
 import requests
-from flask import Blueprint, abort, jsonify, render_template, request, session
+from flask import Blueprint, abort, jsonify, render_template, request
 
 logger = logging.getLogger(__name__)
 _BR_TZ = ZoneInfo('America/Sao_Paulo')
@@ -574,32 +572,10 @@ def _aggregate(rows, since_d=None, until_d=None, renovacoes=None, gasto=None):
 
 # ── Rotas ─────────────────────────────────────────────────────────────────────
 
-_token_cache = {'token': None, 'at': 0.0}
-
-
-def _token_faturamento():
-    """Token do link público (tabela dash_links_publicos), cache de 60s."""
-    agora = time.monotonic()
-    if _token_cache['token'] and agora - _token_cache['at'] < 60:
-        return _token_cache['token']
-    from modules.database import fetch_one
-    row = fetch_one("SELECT token FROM dash_links_publicos WHERE nome = 'faturamento'")
-    _token_cache['token'] = row['token'] if row else None
-    _token_cache['at'] = agora
-    return _token_cache['token']
-
-
 def _acesso_faturamento():
     """Logado no sistema OU ?t= certo. Era aberta: qualquer um via o financeiro."""
-    if session.get('user_id'):
-        return True
-    t = request.args.get('t', '').strip()
-    try:
-        esperado = _token_faturamento()
-    except Exception as e:
-        logger.error(f'[faturamento] falha ao ler token: {e}')
-        return False
-    return bool(t and esperado and hmac.compare_digest(t, esperado))
+    from modules.dash_links import acesso_por_link
+    return acesso_por_link('faturamento')
 
 
 @hotmart_dash_bp.route('/dash/faturamento')
