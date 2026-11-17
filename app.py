@@ -49,9 +49,6 @@ app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
 from modules.optimization import optimization_bp
 app.register_blueprint(optimization_bp)
 
-from modules.cruzamento import cruzamento_bp
-app.register_blueprint(cruzamento_bp)
-
 from modules.dash import dash_bp
 app.register_blueprint(dash_bp)
 
@@ -89,7 +86,7 @@ from modules.account_settings import (
 import atexit
 atexit.register(close_db)
 
-VERSION = "v2.63.0"
+VERSION = "v2.64.0"
 
 # ======================== STAGING DE UPLOAD (v2.11.0) ========================
 # Desacoplamento: o Service Worker sobe cada arquivo UMA vez para a VPS (staging),
@@ -280,19 +277,16 @@ def _token_from_db():
     return None
 
 # Rotas que um visitante SEM login pode abrir usando o token Meta da agência:
-# as dashboards de cliente (que validam ?t= ou são públicas por desenho) e o
-# legado /cruzamento/vinci. Fora daqui, sem login não há token.
+# as dashboards de cliente, que validam ?t=. Fora daqui, sem login não há token.
 #
 # Antes o fallback valia para qualquer rota: anônimo listava as contas de
 # anúncio de todos os clientes, abria o /dash admin com os links de todos e
 # podia pausar campanha ou mudar orçamento via /api/account/<id>/entity/*.
-_PREFIXOS_PUBLICOS_COM_TOKEN = ('/dash/', '/api/dash/', '/api/cruzamento/')
-_ROTAS_PUBLICAS_COM_TOKEN = {'/cruzamento/vinci'}
+_PREFIXOS_PUBLICOS_COM_TOKEN = ('/dash/', '/api/dash/')
 
 
 def _rota_publica_com_token():
-    p = request.path
-    return p in _ROTAS_PUBLICAS_COM_TOKEN or p.startswith(_PREFIXOS_PUBLICOS_COM_TOKEN)
+    return request.path.startswith(_PREFIXOS_PUBLICOS_COM_TOKEN)
 
 
 def obter_token():
@@ -798,7 +792,7 @@ def google_ads_callback():
                 f"<p><b>Resposta do Google:</b></p>"
                 f"<pre style='background:#f4f4f4;padding:12px;border-radius:6px;'>"
                 f"{tokens.get('body')}</pre>"
-                f"<p><a href='/cruzamento'>← voltar</a></p>"), 500
+                f"<p><a href='/auth/account/profile'>← voltar</a></p>"), 500
 
     # Listar contas acessíveis para auto-selecionar
     customers = list_accessible_customers(tokens['access_token'])
@@ -820,13 +814,11 @@ def google_ads_callback():
     }
     save_google_ads_config(user_id, account_id, config)
 
-    # Redirecionar conforme origem (test page, profile ou cruzamento)
+    # Redirecionar conforme origem (test page ou perfil — o /cruzamento saiu)
     return_to = session.pop('ga_return_to', '') or ''
     if return_to == 'test':
         return redirect('/google-ads/test')
-    if return_to == 'profile':
-        return redirect('/auth/account/profile')
-    return redirect('/cruzamento')
+    return redirect('/auth/account/profile')
 
 
 @app.route('/api/google-ads/disconnect', methods=['POST'])
@@ -1064,302 +1056,6 @@ def _fetch_vinci_sheet(since_dt=None, until_dt=None):
         },
         'error': None,
     }
-
-
-@app.route('/api/cruzamento/google-ads-sheets')
-def api_google_ads_sheets():
-    """
-    Busca dados do Google Ads via Google Sheets público (fallback sem API OAuth).
-    Filtra campanhas que contenham 'VINCI' no nome.
-
-    Enriquece cada campanha com MQLs/NC da planilha de MQLs (utm_source in {adwords,google}),
-    matching por utm_campaign (normalizado) == campaign_name (normalizado).
-
-    Retorna também 'daily': lista ordenada por data com spend+clicks (Vinci Sheet)
-    mesclado com mqls/nc/track (planilha de MQLs) para gráficos de evolução.
-
-    Query params: since=YYYY-MM-DD, until=YYYY-MM-DD
-    """
-    from datetime import datetime
-    from modules.cruzamento import (
-        SPREADSHEET_ID, fetch_sheets_data, filter_rows_by_date,
-        _norm, _is_produto_a, fetch_vinci_daily, _parse_date_br,
-    )
-
-    since_str = request.args.get('since', '')
-    until_str = request.args.get('until', '')
-    try:
-        since_dt = datetime.strptime(since_str, '%Y-%m-%d').date() if since_str else None
-        until_dt = datetime.strptime(until_str, '%Y-%m-%d').date() if until_str else None
-    except ValueError:
-        since_dt = until_dt = None
-
-    data = _fetch_vinci_sheet(since_dt, until_dt)
-    if data.get('error'):
-        return jsonify({'error': data['error']}), 500
-
-    # ── Enriquecer com MQLs/NC da planilha (utm_source = adwords/google) ──
-    mqls_by_campaign = {}   # norm(utm_campaign) → {'mqls': n, 'nc': n}
-    mqls_by_day      = {}   # 'YYYY-MM-DD' → {'mqls': n, 'nc': n, 'track': n}
-    total_mqls = 0
-    total_nc   = 0
-    total_track = 0
-    try:
-        mqls_all, _wons = fetch_sheets_data(SPREADSHEET_ID)
-        mqls_filtered = filter_rows_by_date(mqls_all, 'Data do preenchimento', since_dt, until_dt)
-        GOOGLE_SRC = {'adwords', 'google'}
-        for r in mqls_filtered:
-            if _norm(r.get('utm_source', '')) not in GOOGLE_SRC:
-                continue
-
-            # Por campanha
-            key = _norm(r.get('utm_campaign', ''))
-            if key:
-                bucket = mqls_by_campaign.setdefault(key, {'mqls': 0, 'nc': 0})
-                bucket['mqls'] += 1
-
-            # Por dia
-            d_obj = _parse_date_br(r.get('Data do preenchimento', ''))
-            if d_obj:
-                day_key = d_obj.strftime('%Y-%m-%d')
-                dbucket = mqls_by_day.setdefault(day_key, {'mqls': 0, 'nc': 0, 'track': 0})
-                dbucket['mqls'] += 1
-
-            is_nc = _is_produto_a(r.get('Produto indicado', ''))
-            total_mqls += 1
-            if is_nc:
-                total_nc += 1
-                if key:
-                    mqls_by_campaign[key]['nc'] = mqls_by_campaign[key].get('nc', 0) + 1
-                if d_obj:
-                    mqls_by_day[day_key]['nc'] += 1
-            else:
-                total_track += 1
-                if d_obj:
-                    mqls_by_day[day_key]['track'] += 1
-
-    except Exception as e:
-        # Não falha o endpoint se o sheet de MQLs der erro — apenas zera enrichment
-        import traceback; traceback.print_exc()
-
-    # Mescla MQLs/NC em cada campanha do Vinci
-    for c in data['campaigns']:
-        key = _norm(c.get('campaign_name', ''))
-        bucket = mqls_by_campaign.get(key, {'mqls': 0, 'nc': 0})
-        mqls = bucket['mqls']
-        nc   = bucket['nc']
-        spend = c.get('spend', 0.0) or 0.0
-        c['mqls']     = mqls
-        c['nc']       = nc
-        c['pct_nc']   = round((nc / mqls * 100), 1) if mqls > 0 else 0.0
-        c['cpa']      = round(spend / mqls, 2) if mqls > 0 else 0.0   # Custo/MQL
-        c['custo_nc'] = round(spend / nc,   2) if nc   > 0 else 0.0
-
-    # Atualiza totais
-    data['totals']['mqls']    = total_mqls
-    data['totals']['nc']      = total_nc
-    data['totals']['track']   = total_track
-    data['totals']['pct_nc']  = round((total_nc / total_mqls * 100), 1) if total_mqls > 0 else 0.0
-
-    # ── Dados diários: mescla spend/clicks (Vinci Sheet) + mqls/nc/track (planilha MQLs) ──
-    try:
-        vinci_daily = fetch_vinci_daily(since_dt, until_dt)
-    except Exception:
-        vinci_daily = {}
-
-    # União de todas as datas com dados
-    all_dates = set(mqls_by_day.keys()) | set(vinci_daily.keys())
-    daily_list = []
-    for day_key in sorted(all_dates):
-        mq = mqls_by_day.get(day_key, {'mqls': 0, 'nc': 0, 'track': 0})
-        vd = vinci_daily.get(day_key, {'spend': 0.0, 'clicks': 0})
-        sp = round(vd.get('spend', 0.0), 2)
-        mq_n = mq['mqls']
-        nc_n = mq['nc']
-        tr_n = mq['track']
-        daily_list.append({
-            'date':    day_key,
-            'mqls':    mq_n,
-            'nc':      nc_n,
-            'track':   tr_n,
-            'spend':   sp,
-            'clicks':  vd.get('clicks', 0),
-            'pct_nc':  round(nc_n / mq_n * 100, 1) if mq_n > 0 else 0.0,
-            'cpl':     round(sp / mq_n, 2)          if mq_n > 0 else 0.0,
-        })
-
-    return jsonify({
-        'campaigns': data['campaigns'],
-        'totals':    data['totals'],
-        'count':     len(data['campaigns']),
-        'filter':    'VINCI',
-        'daily':     daily_list,
-    })
-
-
-@app.route('/api/cruzamento/consolidado')
-def api_cruzamento_consolidado():
-    """
-    Aba Consolidado: une gastos Facebook Ads + Google Ads (VINCI Sheet) + MQLs/Wons da planilha.
-
-    Regra de atribuição (crítica — evita double counting):
-      - Fonte única de MQLs e receita: planilha de MQLs/Wons
-      - Segregação por utm_source (normalizado lowercase):
-          'facebook'              → Facebook
-          'adwords' | 'google'    → Google
-          qualquer outro/vazio    → Outros
-      - Spend por fonte:
-          Facebook: soma de 'spend' dos fb_ads (respeita filtros de campanhas excluídas)
-          Google:   soma de 'Cost' na planilha VINCI (apenas campanhas com VINCI no nome)
-
-    Query params: date_preset=last_7_days|this_month|..., since=YYYY-MM-DD, until=YYYY-MM-DD
-    """
-    import concurrent.futures
-    from datetime import datetime as _dt
-    from modules.cruzamento import (
-        AD_ACCOUNT_ID, SPREADSHEET_ID,
-        fetch_fb_insights, fetch_sheets_data,
-        filter_rows_by_date, preset_to_dates,
-        load_excluded_patterns, _matches_excluded, _is_instagram_post,
-        _norm, _parse_valor,
-    )
-
-    token = obter_token()
-    if not token:
-        return jsonify({'success': False, 'error': 'Não autenticado'}), 401
-
-    date_preset = request.args.get('date_preset', 'last_7_days')
-    since       = request.args.get('since')
-    until       = request.args.get('until')
-
-    since_d, until_d = preset_to_dates(date_preset, since, until)
-
-    # Fetch paralelo — 3 fontes independentes
-    try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as ex:
-            fb_fut     = ex.submit(fetch_fb_insights, AD_ACCOUNT_ID, token, date_preset, since, until)
-            sheets_fut = ex.submit(fetch_sheets_data, SPREADSHEET_ID)
-            vinci_fut  = ex.submit(_fetch_vinci_sheet, since_d, until_d)
-
-            fb_ads = fb_fut.result()
-            mqls_all, wons_all = sheets_fut.result()
-            vinci = vinci_fut.result()
-    except Exception as e:
-        import traceback; traceback.print_exc()
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-    # ── 1. Facebook spend (respeita filtro global de campanhas excluídas) ──
-    excluded = load_excluded_patterns()
-    fb_spend = 0.0
-    for ad in fb_ads:
-        cn = ad.get('campaign_name', '')
-        if _matches_excluded(cn, excluded):
-            continue
-        if _is_instagram_post(cn):
-            continue
-        fb_spend += float(ad.get('spend', 0) or 0)
-
-    # ── 2. Google spend (VINCI sheet) ──
-    google_spend = float(vinci['totals']['spend'])
-    google_conversions_sheet = float(vinci['totals']['conversions'])  # apenas exibição, não é MQL
-
-    # ── 3. MQLs/Wons do período ──
-    mqls_rows = filter_rows_by_date(mqls_all, 'Data do preenchimento', since_d, until_d)
-    wons_rows = filter_rows_by_date(wons_all, 'Data de fechamento', since_d, until_d)
-
-    # Index Wons por Deal ID (para join com MQL)
-    wons_idx = {}
-    for row in wons_rows:
-        deal_id = _norm(row.get('Deal ID', ''))
-        if deal_id:
-            wons_idx[deal_id] = {'valor': _parse_valor(row.get('Valor', 0))}
-
-    # Buckets por utm_source
-    def _bucket(utm_src):
-        s = (utm_src or '').strip().lower()
-        if s == 'facebook':
-            return 'facebook'
-        if s in ('adwords', 'google'):
-            return 'google'
-        return 'outros'
-
-    def _empty():
-        return {'mqls': 0, 'wons': 0, 'receita': 0.0}
-
-    buckets = {'facebook': _empty(), 'google': _empty(), 'outros': _empty()}
-
-    # MQLs do período → contagem por bucket
-    for row in mqls_rows:
-        b = _bucket(row.get('utm_source', ''))
-        buckets[b]['mqls'] += 1
-
-    # Wons do período → atribuição pelo utm_source do MQL original (fonte única de verdade).
-    # Se o MQL não estiver na planilha completa (raro), bucket = 'outros'.
-    mqls_all_by_deal = {
-        _norm(row.get('Deal ID', '')): row
-        for row in mqls_all
-        if _norm(row.get('Deal ID', ''))
-    }
-    for row in wons_rows:
-        deal_id = _norm(row.get('Deal ID', ''))
-        valor = _parse_valor(row.get('Valor', 0))
-        mql_row = mqls_all_by_deal.get(deal_id)
-        utm_src = mql_row.get('utm_source', '') if mql_row else ''
-        b = _bucket(utm_src)
-        buckets[b]['wons']    += 1
-        buckets[b]['receita'] += valor
-
-    # ── 4. Métricas derivadas ──
-    def _metrics(bucket, spend):
-        mqls    = bucket['mqls']
-        wons    = bucket['wons']
-        receita = bucket['receita']
-        return {
-            'spend':       round(spend, 2),
-            'mqls':        mqls,
-            'wons':        wons,
-            'receita':     round(receita, 2),
-            'cpm':         round(spend / mqls, 2)   if mqls > 0   else 0.0,   # custo por MQL
-            'cpa':         round(spend / wons, 2)   if wons > 0   else 0.0,   # custo por venda
-            'ticket':      round(receita / wons, 2) if wons > 0   else 0.0,
-            'conv_rate':   round(100 * wons / mqls, 2) if mqls > 0 else 0.0,
-            'roas':        round(receita / spend, 2) if spend > 0 else 0.0,
-        }
-
-    # Outros: spend = 0 (não há canal pago rastreável aqui — orgânico, direct, indicação)
-    per_source = {
-        'facebook': _metrics(buckets['facebook'], fb_spend),
-        'google':   _metrics(buckets['google'],   google_spend),
-        'outros':   _metrics(buckets['outros'],   0.0),
-    }
-
-    total_spend   = fb_spend + google_spend
-    total_mqls    = sum(b['mqls'] for b in buckets.values())
-    total_wons    = sum(b['wons'] for b in buckets.values())
-    total_receita = sum(b['receita'] for b in buckets.values())
-
-    consolidado = {
-        'spend':     round(total_spend, 2),
-        'mqls':      total_mqls,
-        'wons':      total_wons,
-        'receita':   round(total_receita, 2),
-        'cpm':       round(total_spend / total_mqls, 2)     if total_mqls > 0 else 0.0,
-        'cpa':       round(total_spend / total_wons, 2)     if total_wons > 0 else 0.0,
-        'ticket':    round(total_receita / total_wons, 2)   if total_wons > 0 else 0.0,
-        'conv_rate': round(100 * total_wons / total_mqls, 2) if total_mqls > 0 else 0.0,
-        'roas':      round(total_receita / total_spend, 2)  if total_spend > 0 else 0.0,
-    }
-
-    return jsonify({
-        'success':     True,
-        'period':      {'since': str(since_d) if since_d else None,
-                        'until': str(until_d) if until_d else None,
-                        'preset': date_preset},
-        'consolidado': consolidado,
-        'por_fonte':   per_source,
-        'google_conversions_sheet': round(google_conversions_sheet, 2),  # referência (não usado p/ custo/MQL)
-        'vinci_error': vinci.get('error'),
-    })
 
 
 # ======================== GOOGLE DRIVE ========================

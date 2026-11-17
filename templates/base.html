@@ -43,12 +43,12 @@
                     <span class="nav-label">Turbinada</span>
                 </a>
 
-                <!-- Cruzamento FB × Sheets -->
-                <a href="{{ url_for('cruzamento.cruzamento_page') }}"
-                    class="nav-item {% if 'cruzamento' in (request.endpoint or '') %}active{% endif %}"
-                    title="FB Ads × Google Sheets">
-                    <span class="nav-icon">🔀</span>
-                    <span class="nav-label">Cruzamento</span>
+                <!-- Dashes: índice de todas as dashboards (clientes, lançamentos, faturamento) -->
+                <a href="{{ url_for('dash.dash_list') }}"
+                    class="nav-item {% if request.endpoint == 'dash.dash_list' %}active{% endif %}"
+                    title="Dashes">
+                    <span class="nav-icon">📈</span>
+                    <span class="nav-label">Dashes</span>
                 </a>
 
                 <!-- Anúncios -->
