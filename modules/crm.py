@@ -337,6 +337,23 @@ def captura_lead():
     })
 
 
+# Respostas de qualificação que o lead de abandono também guarda. Na LP de
+# empresas o telefone fica no FIM do formulário: quem desiste ali já respondeu
+# sobre a empresa, e essa resposta é o que diz se vale correr atrás.
+# Lista fechada (e não "tudo que vier"), porque o parcial é chamado por beacon,
+# sem validação nenhuma do lado do visitante.
+RESPOSTAS_PARCIAL = ('instagram', 'ja_vende', 'faturamento_faixa', 'verba_anuncios')
+
+
+def _payload_parcial(dados):
+    payload = {'motivo': core.limpar_texto(dados.get('motivo'), 40)}
+    for chave in RESPOSTAS_PARCIAL:
+        valor = core.limpar_texto(dados.get(chave), 120)
+        if valor:
+            payload[chave] = valor
+    return payload
+
+
 @crm_bp.route('/api/crm/lead/parcial', methods=['POST', 'OPTIONS'])
 def captura_parcial():
     """Salva quem digitou o telefone e abandonou o formulário.
@@ -407,7 +424,7 @@ def captura_parcial():
                 'ip': _client_ip(),
                 'user_agent': request.headers.get('User-Agent'),
             },
-            payload={'motivo': core.limpar_texto(dados.get('motivo'), 40)},
+            payload=_payload_parcial(dados),
         )
         if res:
             logger.info("CRM: lead PARCIAL %s via %s", res['lead_id'],

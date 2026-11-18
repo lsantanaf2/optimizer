@@ -31,6 +31,21 @@ const CRM = (() => {
     const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g,
         c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+    // Respostas que a pessoa marcou no formulário, como ela marcou. Ficam no
+    // payload da submissão; sem isto, pergunta nova na LP gravava e não
+    // aparecia em lugar nenhum. `linha` já escapa o valor.
+    const RESPOSTAS_FORM = [
+        ['instagram', 'Instagram'],
+        ['ja_vende', 'Já vende?'],
+        ['faturamento_faixa', 'Faturamento declarado'],
+        ['verba_anuncios', 'Tem R$ 1,5 mil/mês p/ anúncio?'],
+        ['segmento', 'Segmento'],
+    ];
+    function respostasDoForm(payload, linha) {
+        const p = payload || {};
+        return RESPOSTAS_FORM.map(([chave, rotulo]) => linha(rotulo, p[chave])).join('');
+    }
+
     function fmtData(iso, comHora = true) {
         if (!iso) return '—';
         const d = new Date(iso);
@@ -325,6 +340,7 @@ const CRM = (() => {
                     <span class="crm-sub-when">${fmtData(s.created_at)}</span>
                 </div>
                 <div class="crm-sub-grid">
+                    ${respostasDoForm(s.payload, linha)}
                     ${linha('source', s.utm_source || 'direto')}
                     ${linha('medium', s.utm_medium)}
                     ${linha('campaign', s.utm_campaign)}
