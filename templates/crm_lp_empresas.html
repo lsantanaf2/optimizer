@@ -142,9 +142,12 @@
 
     form { display: flex; flex-direction: column; gap: 10px; }
 
+    /* Pergunta e resposta no mesmo tamanho: a pergunta se destaca pelo peso e
+       pela cor escura, a opção fica em tom mais leve. Antes a pergunta tinha
+       12px cinza e a opção 15px — a resposta gritava mais que a pergunta. */
     label {
-      display: block; font-size: 12px; font-weight: 500;
-      color: var(--tinta-suave); margin-bottom: 6px;
+      display: block; font-size: 14.5px; line-height: 1.4; font-weight: 600;
+      color: var(--tinta); margin-bottom: 8px;
     }
     input, select {
       width: 100%; padding: 12px 14px; height: 46px;
@@ -298,9 +301,10 @@
       background: var(--campo);
     }
     fieldset { border: none; }
+    .form-secao form { gap: 16px; }
     legend {
-      display: block; font-size: 12px; font-weight: 500;
-      color: var(--tinta-suave); margin-bottom: 6px; padding: 0;
+      display: block; font-size: 14.5px; line-height: 1.4; font-weight: 600;
+      color: var(--tinta); margin-bottom: 8px; padding: 0;
     }
     .opcoes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     .opcao { position: relative; margin: 0; }
@@ -311,11 +315,12 @@
       display: flex; align-items: center; justify-content: center; text-align: center;
       height: 46px; padding: 0 12px; border-radius: 12px;
       background: var(--branco); border: 1px solid var(--linha);
-      font-size: 15px; font-weight: 500; color: var(--tinta); cursor: pointer;
+      font-size: 14.5px; font-weight: 500; color: var(--tinta-suave); cursor: pointer;
       transition: border-color .15s, box-shadow .15s, background .15s;
     }
     .opcao input:focus-visible + span { box-shadow: 0 0 0 3px rgba(96,144,192,.25); }
     .opcao input:checked + span {
+      color: var(--tinta); font-weight: 600;
       border-color: var(--sk-azul); background: #eef3fa;
       box-shadow: 0 0 0 1px var(--sk-azul) inset;
     }
