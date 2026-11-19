@@ -306,14 +306,29 @@
     .secao.escura .rotulo { color: var(--sk-ciano); }
     .secao.escura .secao-texto { color: rgba(255,255,255,.78); }
     .secao.escura strong { color: #fff; font-weight: 700; }
+    /* O número é o argumento da seção, então ele é o mais pesado da frase.
+       O gradiente antigo começava no azul #6090c0, escuro demais contra o
+       fundo: o "R$" sumia e o número parecia mais leve que o texto em volta.
+       Agora vai de ciano a quase branco, em 800. A cor sólida fica como
+       reserva: sem background-clip, text-fill transparente apagaria o texto. */
     .destaque-claro {
-      background: linear-gradient(100deg, var(--sk-azul), var(--sk-ciano));
-      -webkit-background-clip: text; background-clip: text;
-      -webkit-text-fill-color: transparent;
+      font-weight: 800;
+      font-size: 1.24em;
+      letter-spacing: -.015em;
+      color: #7fe3f5;
+      white-space: nowrap;
+    }
+    @supports ((-webkit-background-clip: text) or (background-clip: text)) {
+      .destaque-claro {
+        background: linear-gradient(100deg, var(--sk-ciano) 10%, #b6f2ff 90%);
+        -webkit-background-clip: text; background-clip: text;
+        -webkit-text-fill-color: transparent;
+      }
     }
     .inteligencia {
-      font-size: 22px; line-height: 1.5; font-weight: 500;
-      max-width: 700px; margin: 34px auto 0; color: #fff;
+      font-size: 22px; line-height: 1.55; font-weight: 500;
+      max-width: 700px; margin: 34px auto 0;
+      color: rgba(255,255,255,.88);   /* recua para o número aparecer */
     }
 
     /* ---------- Prova: número real ---------- */
