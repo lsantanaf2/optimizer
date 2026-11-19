@@ -599,16 +599,38 @@
   }
 
   const telEl = document.getElementById('tel');
-  telEl.addEventListener('input', () => {
-    if (document.getElementById('ddi').value !== '55') return;
-    let d = telEl.value.replace(/\D/g, '').slice(0, 11);
+  /* Preenchimento automático (navegador, gerenciador de senha, teclado do
+     celular) costuma entregar o número com o código do país: "+55 13 98165-6907"
+     ou "5513981656907". A máscara cortava em 11 dígitos e o 55 virava DDD.
+     Aqui o DDI é reconhecido e tirado — e, se for de outro país das opções,
+     o seletor muda sozinho. DDD 55 (RS) continua valendo: só tira o 55
+     quando sobra dígito demais para um número brasileiro. */
+  function limparTelefoneBR(bruto) {
+    let d = String(bruto || '').replace(/\D/g, '');
+    if (d.length > 11 && d.startsWith('55')) d = d.slice(2);        // +55 colado
+    else if (d.length === 12 && d.startsWith('0')) d = d.slice(1);  // 0 de longa distância
+    return d.slice(0, 11);
+  }
+  function mascararTelefone() {
+    const ddiEl = document.getElementById('ddi');
+    const bruto = telEl.value;
+    const digitos = bruto.replace(/\D/g, '');
+    if (bruto.trim().startsWith('+') && !digitos.startsWith('55')) {
+      const outro = ['351', '1'].find(c => digitos.startsWith(c));
+      if (outro) { ddiEl.value = outro; telEl.value = digitos.slice(outro.length); return; }
+    }
+    if (ddiEl.value !== '55') return;
+    const d = limparTelefoneBR(bruto);
     if (d.length > 6) {
       const meio = d.length === 11 ? 5 : 4;
       telEl.value = `(${d.slice(0, 2)}) ${d.slice(2, 2 + meio)}-${d.slice(2 + meio)}`;
     } else if (d.length > 2) {
       telEl.value = `(${d.slice(0, 2)}) ${d.slice(2)}`;
     } else { telEl.value = d; }
-  });
+  }
+  // 'change' cobre preenchimento automático que não dispara 'input'.
+  telEl.addEventListener('input', mascararTelefone);
+  telEl.addEventListener('change', mascararTelefone);
   document.getElementById('ddi').addEventListener('change', () => { telEl.value = ''; });
 
   function erro(campo, msg) {
