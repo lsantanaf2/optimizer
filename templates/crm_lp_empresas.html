@@ -78,15 +78,15 @@
     /* ---------- Faixa do hero: a cor fica SÓ aqui ---------- */
     .hero-faixa {
       background: var(--sk-gradiente);
-      padding: 36px 16px 60px;
+      padding: 29px 16px 60px;
     }
 
     .hero-topo {
       max-width: var(--container);
-      margin: 0 auto 26px;
+      margin: 0 auto 19px;
       display: flex; align-items: center; justify-content: space-between; gap: 16px;
     }
-    .hero-topo img { height: 54px; width: auto; display: block;
+    .hero-topo img { height: 68px; width: auto; display: block;
                      filter: brightness(0) invert(1); }
     .hero-topo .selo {
       font-size: 13px; font-weight: 500; color: rgba(255,255,255,.88);
@@ -350,6 +350,11 @@
     details p { font-size: 15.5px; line-height: 1.68; color: var(--tinta-suave);
                 padding-bottom: 22px; max-width: 760px; }
 
+    /* Botão de volta ao formulário, depois do FAQ */
+    .faq-cta { margin-top: 40px; text-align: center; }
+    .faq-cta p { font-size: 16.5px; color: var(--tinta-suave); margin-bottom: 18px; }
+    .faq-cta .btn { max-width: 340px; margin: 0 auto; }
+
     /* CTA final */
     .cta { text-align: center; }
     .cta h2.secao-titulo { margin: 0 auto; }
@@ -375,11 +380,12 @@
       :root { --respiro: 56px; }
     }
     @media (max-width: 620px) {
-      .hero-faixa { padding: 22px 12px 40px; }
+      .hero-faixa { padding: 12px 12px 40px; }
       .hero-card { border-radius: 24px; padding: 24px 18px; }
       /* No celular o selo some, então o logo fica sozinho — centralizado. */
-      .hero-topo { margin-bottom: 20px; justify-content: center; }
+      .hero-topo { margin-bottom: 10px; justify-content: center; }
       .hero-topo .selo { display: none; }
+      .hero-topo img { height: 76px; }
       h1 { font-size: 30px; line-height: 36px; }
       .hero-sub { font-size: 18px; line-height: 25px; }
       .hero-card .btn { max-width: none; }
@@ -658,6 +664,11 @@
         <p>Não. A SK opera a mídia de ponta a ponta. Se você já tiver quem cuide
            das redes, a gente trabalha junto, dividindo o que é conteúdo e o que é mídia.</p>
       </details>
+    </div>
+
+    <div class="faq-cta">
+      <p>Respondidas as dúvidas, é só preencher.</p>
+      <button class="btn" type="button" onclick="document.getElementById('formulario').scrollIntoView({behavior:'smooth',block:'start'});setTimeout(()=>document.getElementById('instagram').focus({preventScroll:true}),520)">Quero crescer ainda em 2026</button>
     </div>
   </div>
 </section>
