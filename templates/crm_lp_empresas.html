@@ -240,6 +240,7 @@
        terminaria sozinho. Navegador que não entende quebra como antes — por
        isso nada de &nbsp; no texto, que estouraria em tela estreita. */
     h1, h2, h3, summary, .pergunta, .hero-sub, label, legend { text-wrap: balance; }
+    .secao-titulo .frase { display: block; text-wrap: balance; }
     p, .bloco p, .hero-pontos span, details p { text-wrap: pretty; }
     .secao-texto { font-size: 16.5px; line-height: 1.62; color: var(--tinta-suave);
                    margin-top: 16px; max-width: 640px; }
@@ -547,7 +548,12 @@
 <section class="secao branca">
   <div class="container">
     <div class="rotulo">O que você recebe</div>
-    <h2 class="secao-titulo">Não é só "impulsionar post".<br>É a operação inteira da sua mídia.</h2>
+    <h2 class="secao-titulo">
+      <!-- Cada frase num bloco: com <br> o navegador desiste de
+           equilibrar as linhas e sobrava "mídia." sozinha em 414px. -->
+      <span class="frase">Não é só "impulsionar post".</span>
+      <span class="frase">É a operação inteira da sua mídia.</span>
+    </h2>
     <p class="secao-texto">
       Do criativo ao relatório, cada real investido na sua empresa passa pela equipe da SK.
     </p>
