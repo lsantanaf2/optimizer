@@ -328,11 +328,16 @@
       max-width: 560px; margin: 40px auto 0; text-align: left;
       background: var(--campo);
     }
-    fieldset { border: none; }
+    /* Grupo de opções: div comum, e não fieldset. Fieldset e legend têm
+       layout próprio de cada navegador (o Safari do iPhone reserva espaço em
+       volta), e a folga saía diferente da dos campos de texto. */
+    .grupo > .pergunta { display: block; }
     .form-secao form { gap: 16px; }
-    legend {
+    /* Mesma aparência de <label>, para pergunta de opção e campo de texto
+       terem exatamente o mesmo ritmo. */
+    .pergunta {
       display: block; font-size: 14.5px; line-height: 1.4; font-weight: 600;
-      color: var(--tinta); margin-bottom: 8px; padding: 0;
+      color: var(--tinta); margin-bottom: 8px;
     }
     .opcoes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     .opcao { position: relative; margin: 0; }
@@ -352,7 +357,7 @@
       border-color: var(--sk-azul); background: #eef3fa;
       box-shadow: 0 0 0 1px var(--sk-azul) inset;
     }
-    fieldset[aria-invalid="true"] .opcao span { border-color: var(--erro); }
+    .grupo[aria-invalid="true"] .opcao span { border-color: var(--erro); }
     .opcional { font-weight: 400; color: #a7a5bd; }
     /* fundo off-white dos campos não pode apagar o destaque da opção marcada */
     .secao.off .opcao input:checked + span { background: #eef3fa; }
@@ -581,34 +586,34 @@
           <div class="ig-status" id="ig-status" aria-live="polite"></div>
         </div>
 
-        <fieldset id="ja_vende">
-          <legend>Você já vende hoje ou vai começar? *</legend>
+        <div class="grupo" id="ja_vende" role="radiogroup" aria-labelledby="rot-ja_vende">
+          <span class="pergunta" id="rot-ja_vende">Você já vende hoje ou vai começar? *</span>
           <div class="opcoes">
             <label class="opcao"><input type="radio" name="ja_vende" value="Já vendo"><span>Já vendo</span></label>
             <label class="opcao"><input type="radio" name="ja_vende" value="Vou começar"><span>Vou começar</span></label>
           </div>
           <div class="erro" id="erro-ja_vende"></div>
-        </fieldset>
+        </div>
 
         <!-- O value vira faturamento_faixa, o mesmo campo que a ficha e o card
              do CRM já mostram — por isso o texto e não "Sim/Não". -->
-        <fieldset id="faturamento">
-          <legend>Sua empresa fatura acima de R$ 50 mil por mês? *</legend>
+        <div class="grupo" id="faturamento" role="radiogroup" aria-labelledby="rot-faturamento">
+          <span class="pergunta" id="rot-faturamento">Sua empresa fatura acima de R$ 50 mil por mês? *</span>
           <div class="opcoes">
             <label class="opcao"><input type="radio" name="faturamento" value="Acima de R$ 50 mil/mês"><span>Sim</span></label>
             <label class="opcao"><input type="radio" name="faturamento" value="Até R$ 50 mil/mês"><span>Não</span></label>
           </div>
           <div class="erro" id="erro-faturamento"></div>
-        </fieldset>
+        </div>
 
-        <fieldset id="verba">
-          <legend>Você tem pelo menos R$ 1.500 por mês para investir em anúncios, além do serviço da agência? *</legend>
+        <div class="grupo" id="verba" role="radiogroup" aria-labelledby="rot-verba">
+          <span class="pergunta" id="rot-verba">Você tem pelo menos R$ 1.500 por mês para investir em anúncios, além do serviço da agência? *</span>
           <div class="opcoes">
             <label class="opcao"><input type="radio" name="verba" value="Sim"><span>Sim</span></label>
             <label class="opcao"><input type="radio" name="verba" value="Não"><span>Não</span></label>
           </div>
           <div class="erro" id="erro-verba"></div>
-        </fieldset>
+        </div>
 
         <div>
           <label for="nome">Seu nome *</label>
