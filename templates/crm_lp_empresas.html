@@ -116,11 +116,10 @@
       56%       { stroke-dashoffset:  0; }  /* segura */
       78%, 100% { stroke-dashoffset: -1; }  /* some na mesma direção, e pausa */
     }
-    /* Quem desligou animações vê o logo completo e parado — nunca sem os
-       riscos (a lição do vídeo do hero: fallback não pode esconder conteúdo). */
-    @media (prefers-reduced-motion: reduce) {
-      .sk-ondas line { animation: none; stroke-dashoffset: 0; }
-    }
+    /* Sem regra de prefers-reduced-motion, de propósito: é a mesma decisão
+       da v2.42.2 com o vídeo do hero. "Efeitos de animação" desligado é comum
+       no Windows, e a regra deixava a marca sem os riscos — parecia defeito.
+       A regra vale para parallax, flash e auto-scroll, não para um laço lento. */
 
     .hero-card {
       background: var(--branco);
