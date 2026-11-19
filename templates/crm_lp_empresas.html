@@ -232,6 +232,15 @@
       font-size: 43px; line-height: 50px; font-weight: 700; letter-spacing: -.02em;
       max-width: 820px;
     }
+
+    /* ---------- Linha órfã ----------
+       No celular várias frases terminavam com uma palavra sozinha ("mídia.",
+       "você.", "achismo."). `balance` reparte os títulos em linhas de tamanho
+       parecido; `pretty` puxa uma palavra da linha anterior quando o parágrafo
+       terminaria sozinho. Navegador que não entende quebra como antes — por
+       isso nada de &nbsp; no texto, que estouraria em tela estreita. */
+    h1, h2, h3, summary, .pergunta, .hero-sub, label, legend { text-wrap: balance; }
+    p, .bloco p, .hero-pontos span, details p { text-wrap: pretty; }
     .secao-texto { font-size: 16.5px; line-height: 1.62; color: var(--tinta-suave);
                    margin-top: 16px; max-width: 640px; }
 
