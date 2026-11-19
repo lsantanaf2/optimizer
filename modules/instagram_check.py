@@ -93,6 +93,26 @@ def _conta_ig(token):
     return ig
 
 
+# Perfil comercial que sabidamente existe. Se nem ele é encontrado, a consulta
+# não está funcionando (app sem acesso, conta IG errada) e "não encontrado"
+# não quer dizer nada — aí a checagem se desliga sozinha, em vez de mostrar
+# aviso para TODO lead. Medido em 2026-11-19: com o app atual, @natura voltava
+# "não encontrado". Quando o acesso for liberado, volta a valer sem deploy.
+_SONDA = 'instagram'
+_sonda = {'ok': None, 'at': 0.0}
+
+
+def _consulta_confiavel():
+    agora = time.monotonic()
+    if _sonda['ok'] is not None and agora - _sonda['at'] < _CACHE_TTL:
+        return _sonda['ok']
+    ok = _consultar(_SONDA) == 'ok'
+    _sonda.update(ok=ok, at=agora)
+    if not ok:
+        logger.warning('[ig-check] sonda @%s não encontrada — checagem desligada por 6h', _SONDA)
+    return ok
+
+
 def checar(usuario):
     usuario = (usuario or '').strip().lstrip('@').lower()
     if not usuario_valido(usuario):
@@ -103,6 +123,24 @@ def checar(usuario):
     if hit and agora - hit[1] < _CACHE_TTL:
         return hit[0]
 
+    try:
+        if not _consulta_confiavel():
+            return 'indeterminado'
+    except Exception as e:
+        logger.warning('[ig-check] sonda falhou: %s', e)
+        return 'indeterminado'
+
+    status = _consultar(usuario)
+    if status == 'indeterminado':
+        return status                 # não guarda em cache: tenta de novo depois
+    if len(_cache) >= _CACHE_MAX:
+        _cache.clear()
+    _cache[usuario] = (status, agora)
+    return status
+
+
+def _consultar(usuario):
+    """Uma consulta business_discovery. 'ok' | 'nao_encontrado' | 'indeterminado'."""
     status = 'indeterminado'
     try:
         token = _token()
@@ -126,9 +164,5 @@ def checar(usuario):
                                usuario, str(err)[:200])
     except Exception as e:
         logger.warning('[ig-check] falhou para @%s: %s', usuario, e)
-        return 'indeterminado'        # não guarda em cache: tenta de novo depois
-
-    if len(_cache) >= _CACHE_MAX:
-        _cache.clear()
-    _cache[usuario] = (status, agora)
+        return 'indeterminado'
     return status
