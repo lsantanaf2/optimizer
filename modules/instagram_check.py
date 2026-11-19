@@ -50,22 +50,47 @@ def _token():
 
 
 def _conta_ig(token):
-    """ID de uma conta IG comercial ligada ao token — é por ela que a consulta
-    é feita. Descoberto uma vez e guardado por 6h."""
+    """ID de uma conta IG comercial acessível pelo token — é por ela que a
+    consulta é feita. Descoberto uma vez e guardado por 6h.
+
+    Ordem: IG_DISCOVERY_USER_ID (env) → páginas do usuário do token → IG ligado
+    às contas de anúncio conhecidas (o mesmo caminho da dash de lançamento; o
+    token atual não tem página com IG ligado, verificado em 2026-11-19).
+    """
+    import os
     agora = time.monotonic()
     if _ig_conta['id'] and agora - _ig_conta['at'] < _CACHE_TTL:
         return _ig_conta['id']
-    url = f'{GRAPH_BASE}/me/accounts'
-    resp = requests.get(url, params={'fields': 'instagram_business_account', 'limit': 50,
-                                     'access_token': token}, timeout=8)
-    _log_api_call(url, resp.status_code, None)
-    resp.raise_for_status()
-    for pagina in resp.json().get('data', []):
-        ig = (pagina.get('instagram_business_account') or {}).get('id')
-        if ig:
-            _ig_conta.update(id=ig, at=agora)
-            return ig
-    raise RuntimeError('nenhuma conta IG comercial ligada ao token')
+
+    ig = os.getenv('IG_DISCOVERY_USER_ID')
+
+    if not ig:
+        url = f'{GRAPH_BASE}/me/accounts'
+        resp = requests.get(url, params={'fields': 'instagram_business_account', 'limit': 50,
+                                         'access_token': token}, timeout=8)
+        _log_api_call(url, resp.status_code, None)
+        if resp.ok:
+            for pagina in resp.json().get('data', []):
+                ig = (pagina.get('instagram_business_account') or {}).get('id')
+                if ig:
+                    break
+
+    if not ig:
+        from modules.lancamento_dash import LANCAMENTOS
+        contas = {c.get('ad_account_id') for c in LANCAMENTOS.values() if c.get('ad_account_id')}
+        for conta in sorted(contas):
+            url = f'{GRAPH_BASE}/act_{conta}/connected_instagram_accounts'
+            resp = requests.get(url, params={'fields': 'id', 'limit': 5,
+                                             'access_token': token}, timeout=8)
+            _log_api_call(url, resp.status_code, None)
+            if resp.ok and resp.json().get('data'):
+                ig = resp.json()['data'][0].get('id')
+                break
+
+    if not ig:
+        raise RuntimeError('nenhuma conta IG comercial acessível pelo token')
+    _ig_conta.update(id=ig, at=agora)
+    return ig
 
 
 def checar(usuario):
