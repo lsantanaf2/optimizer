@@ -6,7 +6,7 @@
   <title>{{ form.name }} — SK Marketing</title>
   <meta name="description" content="Gestão de tráfego pago para sorveteria e açaiteria, com relatório de resultado real.">
   <meta name="robots" content="noindex">
-  <link rel="icon" href="{{ url_for('static', filename='sk-logo.png') }}">
+  <link rel="icon" href="{{ url_for('static', filename='sk-logo-marca.png') }}">
   <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 
   {% if pixel_id %}
@@ -86,12 +86,42 @@
       margin: 0 auto 26px;
       display: flex; align-items: center; justify-content: space-between; gap: 16px;
     }
-    .hero-topo img { height: 42px; width: auto; display: block;
+    .hero-topo .sk-logo { height: 42px; width: auto; display: block;
                      filter: brightness(0) invert(1); }
     .hero-topo .selo {
       font-size: 13px; font-weight: 500; color: rgba(255,255,255,.88);
       border: 1px solid rgba(255,255,255,.34); border-radius: 999px; padding: 7px 15px;
     }
+
+    /* ---------- Logo com os riscos animados ----------
+       O PNG é o megafone sem os riscos; eles são traços SVG por cima
+       (templates/sk_logo.html), desenhados da esquerda para a direita.
+       A altura fica no seletor da página; aqui só a mecânica. */
+    .sk-logo { position: relative; display: inline-block; line-height: 0; }
+    .sk-logo img { height: 100%; width: auto; display: block; }
+    .sk-ondas {
+      position: absolute; inset: 0; width: 100%; height: 100%;
+      pointer-events: none;
+    }
+    .sk-ondas line {
+      stroke-dasharray: 1 1;
+      stroke-dashoffset: 1;                 /* começa escondido */
+      animation: sk-onda 3.2s ease-in-out infinite;
+    }
+    .sk-onda-2 { animation-delay: .13s; }
+    .sk-onda-3 { animation-delay: .26s; }
+    @keyframes sk-onda {
+      0%        { stroke-dashoffset:  1; }  /* escondido */
+      22%       { stroke-dashoffset:  0; }  /* desenhado, esquerda → direita */
+      56%       { stroke-dashoffset:  0; }  /* segura */
+      78%, 100% { stroke-dashoffset: -1; }  /* some na mesma direção, e pausa */
+    }
+    /* Quem desligou animações vê o logo completo e parado — nunca sem os
+       riscos (a lição do vídeo do hero: fallback não pode esconder conteúdo). */
+    @media (prefers-reduced-motion: reduce) {
+      .sk-ondas line { animation: none; stroke-dashoffset: 0; }
+    }
+
 
     .hero-card {
       background: var(--branco);
@@ -300,7 +330,7 @@
 <!-- ===================== HERO ===================== -->
 <div class="hero-faixa">
   <div class="hero-topo">
-    <img src="{{ url_for('static', filename='sk-logo.png') }}" alt="SK Marketing">
+    {% include 'sk_logo.html' %}
     <span class="selo">Tráfego pago para sorveteria e açaiteria</span>
   </div>
 

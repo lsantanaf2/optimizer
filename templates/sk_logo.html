@@ -1,0 +1,25 @@
+{#
+  Logo da SK com os três riscos animados.
+
+  O PNG é o megafone SEM os riscos (sk-logo-base.png); os riscos são traços
+  SVG por cima, nas posições medidas no arquivo original — por isso o viewBox
+  é o tamanho exato do PNG (360x243) e as coordenadas batem em qualquer
+  tamanho de exibição.
+
+  Os riscos são desenhados da esquerda para a direita, somem na mesma direção
+  e repetem. Truque: pathLength="1" normaliza o comprimento, então um
+  stroke-dashoffset de 1 esconde, 0 desenha e -1 apaga.
+
+  Uso:  {% set sk_logo_classe = 'logo' %}{% include 'sk_logo.html' %}
+  O CSS (.sk-logo / .sk-ondas) fica em cada página, junto do tamanho dela.
+#}
+<span class="sk-logo {{ sk_logo_classe | default('') }}" role="img" aria-label="SK Marketing">
+  <img src="{{ url_for('static', filename='sk-logo-base.png', v=version) }}" alt="" aria-hidden="true">
+  <svg class="sk-ondas" viewBox="0 0 360 243" fill="none" aria-hidden="true" focusable="false">
+    <g stroke="#4fc0dc" stroke-linecap="round" pathLength="1">
+      <line class="sk-onda-1" x1="292.6" y1="40.6"  x2="327.4" y2="22.4"  stroke-width="14.8"/>
+      <line class="sk-onda-2" x1="305.4" y1="86"    x2="348.6" y2="80.5"  stroke-width="14.9"/>
+      <line class="sk-onda-3" x1="304.8" y1="130.2" x2="347.2" y2="143.8" stroke-width="14.3"/>
+    </g>
+  </svg>
+</span>
