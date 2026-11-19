@@ -241,7 +241,9 @@
        isso nada de &nbsp; no texto, que estouraria em tela estreita. */
     h1, h2, h3, summary, .pergunta, .hero-sub, label, legend { text-wrap: balance; }
     .secao-titulo .frase { display: block; text-wrap: balance; }
-    p, .bloco p, .hero-pontos span, details p { text-wrap: pretty; }
+    /* text-wrap só vale em bloco: num <span> em linha ele é ignorado,
+       por isso a regra vai no div que contém o texto do ponto. */
+    p, .bloco p, .hero-pontos li > div, details p { text-wrap: pretty; }
     .secao-texto { font-size: 16.5px; line-height: 1.62; color: var(--tinta-suave);
                    margin-top: 16px; max-width: 640px; }
 
