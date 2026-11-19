@@ -86,7 +86,7 @@
       margin: 0 auto 26px;
       display: flex; align-items: center; justify-content: space-between; gap: 16px;
     }
-    .hero-topo img { height: 42px; width: auto; display: block;
+    .hero-topo img { height: 54px; width: auto; display: block;
                      filter: brightness(0) invert(1); }
     .hero-topo .selo {
       font-size: 13px; font-weight: 500; color: rgba(255,255,255,.88);
@@ -211,6 +211,8 @@
       border-radius: 20px; padding: 28px;
     }
     .secao.off .bloco { background: var(--branco); }
+    .secao.off .form-card { background: var(--branco); border: 1px solid var(--linha); }
+    .secao.off .opcao span, .secao.off input, .secao.off select { background: var(--off); }
     /* Ícones em SVG de traço, não emoji: emoji muda de desenho entre Windows,
        iPhone e Android, então a página nunca fica igual para duas pessoas. */
     .bloco .icone {
@@ -244,7 +246,7 @@
     .hero-pontos { list-style: none; display: flex; flex-direction: column; gap: 14px; }
     .hero-pontos li {
       background: var(--campo); border-radius: 18px; padding: 18px 20px;
-      display: flex; gap: 14px; align-items: flex-start;
+      display: flex; gap: 14px; align-items: center;
     }
     .hero-pontos .icone {
       flex: 0 0 40px; width: 40px; height: 40px; border-radius: 12px;
@@ -264,6 +266,23 @@
     .declaracao .secao-texto { margin-left: auto; margin-right: auto; }
     .pergunta-final {
       font-size: 20px; font-weight: 600; margin-top: 22px; color: var(--tinta);
+    }
+
+    /* ---------- Seção escura: "o que nós fazemos" ----------
+       Fica entre duas seções claras; fundo escuro marca a virada da página
+       do problema para a solução. */
+    .secao.escura { background: var(--tinta); color: #fff; }
+    .secao.escura .rotulo { color: var(--sk-ciano); }
+    .secao.escura .secao-texto { color: rgba(255,255,255,.78); }
+    .secao.escura strong { color: #fff; font-weight: 700; }
+    .destaque-claro {
+      background: linear-gradient(100deg, var(--sk-azul), var(--sk-ciano));
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .inteligencia {
+      font-size: 22px; line-height: 1.5; font-weight: 500;
+      max-width: 700px; margin: 34px auto 0; color: #fff;
     }
 
     /* ---------- Prova: número real ---------- */
@@ -302,6 +321,13 @@
     }
     fieldset[aria-invalid="true"] .opcao span { border-color: var(--erro); }
     .opcional { font-weight: 400; color: #a7a5bd; }
+    /* fundo off-white dos campos não pode apagar o destaque da opção marcada */
+    .secao.off .opcao input:checked + span { background: #eef3fa; }
+    .ig-status { font-size: 12.5px; margin-top: 6px; line-height: 1.45; display: none; }
+    .ig-status.show { display: block; }
+    .ig-status.ok { color: #1f8a5b; }
+    .ig-status.aviso { color: #a86a00; }
+    .ig-status.checando { color: var(--tinta-suave); }
 
     /* FAQ */
     .faq { margin-top: 44px; max-width: 860px; }
@@ -352,6 +378,13 @@
       h1 { font-size: 30px; line-height: 36px; }
       .hero-sub { font-size: 18px; line-height: 25px; }
       .hero-card .btn { max-width: none; }
+      /* Abaixo do botão o peso cai: os pontos são apoio, não protagonistas. */
+      .hero-pontos { gap: 10px; }
+      .hero-pontos li { padding: 13px 15px; gap: 12px; border-radius: 16px; }
+      .hero-pontos .icone { flex-basis: 34px; width: 34px; height: 34px; border-radius: 10px; }
+      .hero-pontos svg { width: 17px; height: 17px; }
+      .hero-pontos b { font-size: 14px; margin-bottom: 2px; }
+      .hero-pontos span { font-size: 12.5px; }
       h2.secao-titulo { font-size: 26px; line-height: 32px; }
       .secao { padding: var(--respiro) 14px; }
       .bloco { padding: 22px; }
@@ -426,24 +459,19 @@
   </div>
 </section>
 
-<!-- ===================== O QUE A SK FAZ ===================== -->
-<section class="secao branca declaracao">
+<!-- ===================== O QUE NÓS FAZEMOS ===================== -->
+<!-- Junta a proposta e o número real (R$ 17 mi): a seção de prova separada
+     falava de inteligência, não de quem confia. Depoimentos (Bandog e
+     Sorveteiro) entram numa seção própria logo abaixo, quando o texto chegar. -->
+<section class="secao escura declaracao">
   <div class="container">
-    <div class="rotulo">O que a SK faz</div>
+    <div class="rotulo">O que nós fazemos</div>
     <h2 class="secao-titulo">Levamos o cliente até você.</h2>
-    <p class="secao-texto">Sem sorte, sem depender de indicação. Com a estratégia certa.</p>
-  </div>
-</section>
-
-<!-- ===================== PROVA ===================== -->
-<!-- Só número real. Os depoimentos (Bandog e Sorveteiro) entram aqui quando
-     o texto e a autorização chegarem — nada de depoimento inventado. -->
-<section class="secao off declaracao">
-  <div class="container">
-    <div class="rotulo">Quem já confia na SK</div>
-    <h2 class="secao-titulo">Inteligência de milhões em anúncios aplicada no seu negócio.</h2>
-    <div class="numero"><span class="destaque">+R$ 17 milhões</span></div>
-    <p class="numero-legenda">investidos em anúncios gerenciados pela SK</p>
+    <p class="secao-texto">Sem sorte, sem depender de <strong>indicação</strong>.<br>Com a estratégia certa.</p>
+    <p class="inteligencia">
+      Nós temos a inteligência de <span class="destaque-claro">R$ 17 milhões</span>
+      já investidos em anúncios para aplicar no seu negócio.
+    </p>
   </div>
 </section>
 
@@ -493,53 +521,8 @@
   </div>
 </section>
 
-<!-- ===================== FAQ ===================== -->
-<section class="secao off">
-  <div class="container">
-    <div class="rotulo">Perguntas frequentes</div>
-    <h2 class="secao-titulo">Antes de falar com a gente</h2>
-
-    <div class="faq">
-      <details open>
-        <summary>Como funciona a gestão de tráfego da SK?</summary>
-        <p>A equipe cuida de estratégia, criativos em imagem, configuração das campanhas em
-           Meta e Google Ads e otimização contínua, usando os dados que chegam no
-           painel — e não só as métricas de clique da plataforma.</p>
-      </details>
-      <details>
-        <summary>Em quanto tempo eu vejo resultado?</summary>
-        <p>O prazo com que a SK trabalha é de cerca de 3 meses. É o tempo de testar
-           criativo, público e oferta até o custo por contato estabilizar — antes
-           disso o número ainda oscila demais para servir de base de decisão.</p>
-      </details>
-      <details>
-        <summary>Funciona para negócio local, que atende só a região?</summary>
-        <p>Sim — é justamente onde o anúncio bem configurado faz diferença, porque
-           a verba fica concentrada em quem está perto o bastante para comprar de você.</p>
-      </details>
-      <details>
-        <summary>Qual o investimento mínimo em anúncio?</summary>
-        <p>R$ 1.500 por mês em verba de anúncio, além do serviço da SK. É o piso para
-           a campanha ter dados suficientes para ser otimizada — abaixo disso o
-           ajuste vira chute.</p>
-      </details>
-      <details>
-        <summary>Vocês fazem os criativos?</summary>
-        <p>Sim, criativos em imagem — arte, oferta e texto do anúncio. Vídeo não
-           entra no escopo: se a sua campanha depender de vídeo, a produção fica
-           com você ou com alguém da sua confiança, e a gente cuida da mídia.</p>
-      </details>
-      <details>
-        <summary>Preciso ter alguém de marketing na empresa?</summary>
-        <p>Não. A SK opera a mídia de ponta a ponta. Se você já tiver quem cuide
-           das redes, a gente trabalha junto, dividindo o que é conteúdo e o que é mídia.</p>
-      </details>
-    </div>
-  </div>
-</section>
-
 <!-- ===================== FORMULÁRIO (só no fim) ===================== -->
-<section class="secao branca declaracao form-secao" id="formulario">
+<section class="secao off declaracao form-secao" id="formulario">
   <div class="container">
     <h2 class="secao-titulo">Não espere janeiro para começar a construir os resultados de 2027.</h2>
 
@@ -548,12 +531,15 @@
       <p class="sub">Responda em menos de 1 minuto. Um especialista da SK fala com você pelo WhatsApp.</p>
 
       <!-- Ordem do documento da mentoria: primeiro as perguntas sobre a
-           empresa, depois o contato. Nada elimina por enquanto — tudo vai
-           para o CRM, e as respostas aparecem na ficha do lead. -->
+           empresa, depois o contato. Tudo obrigatório. Nada elimina por
+           enquanto — tudo vai para o CRM, e as respostas aparecem na ficha. -->
       <form id="lead-form" novalidate>
         <div>
-          <label for="instagram">Instagram da sua empresa <span class="opcional">(opcional)</span></label>
-          <input id="instagram" name="instagram" maxlength="80" placeholder="@suaempresa" autocomplete="off">
+          <label for="instagram">Instagram da sua empresa *</label>
+          <input id="instagram" name="instagram" maxlength="80" placeholder="@suaempresa"
+                 autocomplete="off" autocapitalize="none" spellcheck="false">
+          <div class="erro" id="erro-instagram"></div>
+          <div class="ig-status" id="ig-status" aria-live="polite"></div>
         </div>
 
         <fieldset id="ja_vende">
@@ -607,7 +593,7 @@
         </div>
 
         <div>
-          <label for="email">E-mail <span class="opcional">(opcional)</span></label>
+          <label for="email">E-mail *</label>
           <input id="email" name="email" type="email" autocomplete="email" maxlength="160" placeholder="seu@email.com">
           <div class="erro" id="erro-email"></div>
         </div>
@@ -622,6 +608,51 @@
         <div class="erro" id="erro-geral" style="text-align:center"></div>
         <p class="aviso">Seus dados são usados apenas para este contato comercial.</p>
       </form>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== FAQ ===================== -->
+<section class="secao branca">
+  <div class="container">
+    <div class="rotulo">Perguntas frequentes</div>
+    <h2 class="secao-titulo">Antes de falar com a gente</h2>
+
+    <div class="faq">
+      <details open>
+        <summary>Como funciona a gestão de tráfego da SK?</summary>
+        <p>A equipe cuida de estratégia, criativos em imagem, configuração das campanhas em
+           Meta e Google Ads e otimização contínua, usando os dados que chegam no
+           painel — e não só as métricas de clique da plataforma.</p>
+      </details>
+      <details>
+        <summary>Em quanto tempo eu vejo resultado?</summary>
+        <p>O prazo com que a SK trabalha é de cerca de 3 meses. É o tempo de testar
+           criativo, público e oferta até o custo por contato estabilizar — antes
+           disso o número ainda oscila demais para servir de base de decisão.</p>
+      </details>
+      <details>
+        <summary>Funciona para negócio local, que atende só a região?</summary>
+        <p>Sim — é justamente onde o anúncio bem configurado faz diferença, porque
+           a verba fica concentrada em quem está perto o bastante para comprar de você.</p>
+      </details>
+      <details>
+        <summary>Qual o investimento mínimo em anúncio?</summary>
+        <p>R$ 1.500 por mês em verba de anúncio, além do serviço da SK. É o piso para
+           a campanha ter dados suficientes para ser otimizada — abaixo disso o
+           ajuste vira chute.</p>
+      </details>
+      <details>
+        <summary>Vocês fazem os criativos?</summary>
+        <p>Sim, criativos em imagem — arte, oferta e texto do anúncio. Vídeo não
+           entra no escopo: se a sua campanha depender de vídeo, a produção fica
+           com você ou com alguém da sua confiança, e a gente cuida da mídia.</p>
+      </details>
+      <details>
+        <summary>Preciso ter alguém de marketing na empresa?</summary>
+        <p>Não. A SK opera a mídia de ponta a ponta. Se você já tiver quem cuide
+           das redes, a gente trabalha junto, dividindo o que é conteúdo e o que é mídia.</p>
+      </details>
     </div>
   </div>
 </section>
@@ -741,15 +772,70 @@
     const el = document.querySelector('input[name="' + nome + '"]:checked');
     return el ? el.value : null;
   };
+  /* @ do Instagram: aceita "@loja", "loja" ou o link do perfil e guarda só
+     o usuário. Formato do Instagram: letras, números, ponto e _, até 30. */
+  function igUsuario() {
+    let v = document.getElementById('instagram').value.trim();
+    v = v.replace(/^https?:\/\/(www\.)?instagram\.com\//i, '').replace(/[/?#].*$/, '').replace(/^@+/, '');
+    return v.toLowerCase();
+  }
+  // Sem lookbehind (?<!): Safari antigo não entende e derrubaria o script todo.
+  const IG_FORMATO = { test: (u) => /^[a-z0-9._]{1,30}$/.test(u) && !u.includes('..')
+                                   && !u.startsWith('.') && !u.endsWith('.') };
+
   function respostas() {
-    const ig = document.getElementById('instagram').value.trim();
+    const ig = igUsuario();
     return {
-      instagram: ig || null,
+      instagram: ig ? '@' + ig : null,
       ja_vende: marcado('ja_vende'),
       faturamento_faixa: marcado('faturamento'),
       verba_anuncios: marcado('verba'),
     };
   }
+
+
+  /* ---------- Checagem do @ ----------
+     O servidor consulta a Meta (business_discovery). Ela só enxerga perfil
+     comercial ou de criador, então "não encontrado" pode ser @ pessoal: o
+     formulário avisa e deixa enviar na segunda tentativa, em vez de barrar
+     lead real. 'indeterminado' (Meta fora, limite) nunca bloqueia. */
+  const igEl = document.getElementById('instagram');
+  const igStatus = document.getElementById('ig-status');
+  let igChecado = { usuario: null, status: null };
+  let igConfirmado = null;          // @ que a pessoa confirmou mesmo sem achar
+
+  function mostrarIg(classe, texto) {
+    igStatus.className = 'ig-status' + (texto ? ' show ' + classe : '');
+    igStatus.textContent = texto || '';
+  }
+
+  async function checarIg() {
+    const u = igUsuario();
+    if (!u) { mostrarIg('', ''); return null; }
+    if (!IG_FORMATO.test(u)) {
+      erro('instagram', 'Use só letras, números, ponto e _ (ex.: @suaempresa).');
+      mostrarIg('', '');
+      return 'invalido';
+    }
+    erro('instagram', '');
+    if (igChecado.usuario === u) return igChecado.status;
+    mostrarIg('checando', 'Conferindo o perfil…');
+    let status = 'indeterminado';
+    try {
+      const r = await fetch('/api/crm/instagram?u=' + encodeURIComponent(u) +
+                            '&form_key=' + encodeURIComponent(FORM_KEY));
+      if (r.ok) status = (await r.json()).status || 'indeterminado';
+    } catch (e) { /* rede: não trava o lead */ }
+    if (igUsuario() !== u) return null;      // a pessoa já mudou o campo
+    igChecado = { usuario: u, status: status };
+    if (status === 'ok') mostrarIg('ok', '✓ Perfil @' + u + ' encontrado.');
+    else if (status === 'nao_encontrado') {
+      mostrarIg('aviso', 'Não encontramos @' + u + ' como perfil comercial. Confira se está certo.');
+    } else mostrarIg('', '');
+    return status;
+  }
+  igEl.addEventListener('blur', checarIg);
+  igEl.addEventListener('input', () => { igConfirmado = null; erro('instagram', ''); });
 
   /* ---------- Lead de abandono ----------
      Quem digita um WhatsApp válido e vai embora sem enviar é salvo mesmo
@@ -758,21 +844,28 @@
      sendBeacon (único jeito confiável de enviar durante o unload).
 
      Nunca dispara Pixel nem CAPI: abandono não é conversão. */
-  let parcialEnviado = false;
+  let ultimoParcial = null;
   let enviouDeVerdade = false;
 
   function salvarParcial(motivo) {
-    if (parcialEnviado || enviouDeVerdade) return;
+    if (enviouDeVerdade) return;
     const tel = montarTelefone();
     if (tel.erro) return;                       // sem telefone válido não há lead
 
-    parcialEnviado = true;                      // uma vez por visita, basta
-    const corpo = JSON.stringify(Object.assign({
-      form_key: FORM_KEY,
+    const emailVal = document.getElementById('email').value.trim();
+    const dadosAtuais = Object.assign({
       whatsapp: tel.e164,
       nome: document.getElementById('nome').value.trim() || null,
+      email: /^[^@\s]+@[^@\s.]+\.[^@\s]{2,}$/.test(emailVal) ? emailVal : null,
+    }, respostas());
+    const assinatura = JSON.stringify(dadosAtuais);
+    if (assinatura === ultimoParcial) return;  // nada mudou desde o último envio
+    ultimoParcial = assinatura;
+
+    const corpo = JSON.stringify(Object.assign({
+      form_key: FORM_KEY,
       motivo: motivo,
-    }, respostas(), {
+    }, dadosAtuais, {
       {{ honeypot_field }}: document.getElementById({{ honeypot_field | tojson }}).value,
     }, atribuicao()));
 
@@ -791,6 +884,10 @@
   }
 
   telEl.addEventListener('blur', () => salvarParcial('saiu_do_campo'));
+  ['nome', 'email', 'instagram'].forEach(id =>
+    document.getElementById(id).addEventListener('blur', () => salvarParcial('atualizou')));
+  document.querySelectorAll('.opcao input').forEach(inp =>
+    inp.addEventListener('change', () => salvarParcial('atualizou')));
   // pagehide cobre fechar aba, voltar e trocar de app no celular; o
   // beforeunload não dispara de forma confiável em mobile.
   window.addEventListener('pagehide', () => salvarParcial('fechou_a_pagina'));
@@ -807,7 +904,22 @@
 
   document.getElementById('lead-form').addEventListener('submit', async (ev) => {
     ev.preventDefault();
-    ['ja_vende', 'faturamento', 'verba', 'nome', 'tel', 'email', 'geral'].forEach(c => erro(c, ''));
+    ['instagram', 'ja_vende', 'faturamento', 'verba', 'nome', 'tel', 'email', 'geral'].forEach(c => erro(c, ''));
+
+    if (!igUsuario()) {
+      erro('instagram', 'Informe o Instagram da empresa.'); igEl.focus(); return;
+    }
+    const igStatusAtual = await checarIg();
+    if (igStatusAtual === 'invalido') { igEl.focus(); return; }
+    if (igStatusAtual === 'nao_encontrado' && igConfirmado !== igUsuario()) {
+      // Primeira tentativa: pede para conferir. Se enviar de novo sem mudar,
+      // vale o que a pessoa digitou (pode ser perfil pessoal).
+      igConfirmado = igUsuario();
+      mostrarIg('aviso', 'Não encontramos @' + igUsuario() +
+                ' como perfil comercial. Se estiver certo, toque em enviar de novo.');
+      igEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
 
     const r = respostas();
     const faltando = [
@@ -828,7 +940,8 @@
     if (tel.erro) { erro('tel', tel.erro); telEl.focus(); return; }
 
     const email = document.getElementById('email').value.trim();
-    if (email && !/^[^@\s]+@[^@\s.]+\.[^@\s]{2,}$/.test(email)) {
+    if (!email) { erro('email', 'Informe seu e-mail.'); document.getElementById('email').focus(); return; }
+    if (!/^[^@\s]+@[^@\s.]+\.[^@\s]{2,}$/.test(email)) {
       erro('email', 'E-mail inválido.'); document.getElementById('email').focus(); return;
     }
 
@@ -841,7 +954,7 @@
       form_key: FORM_KEY,
       nome: nome,
       whatsapp: tel.e164,
-      email: email || null,
+      email: email,
       // O @ do Instagram é o que identifica a empresa na ficha do lead.
       empresa_segmento: r.instagram,
       {{ honeypot_field }}: document.getElementById({{ honeypot_field | tojson }}).value,

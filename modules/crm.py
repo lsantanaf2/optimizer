@@ -337,6 +337,21 @@ def captura_lead():
     })
 
 
+@crm_bp.route('/api/crm/instagram')
+def checar_instagram():
+    """Confere o @ digitado na LP (ver modules/instagram_check.py).
+
+    Público, mas amarrado a um formulário ativo e com limite por IP: cada
+    chamada nova vira uma consulta à Meta com o token da agência.
+    """
+    from modules import instagram_check
+    if not _get_form((request.args.get('form_key') or '').strip()):
+        return jsonify({'status': 'indeterminado'}), 404
+    if not is_allowed(f'crm-ig|{_client_ip()}', 15, 300):
+        return jsonify({'status': 'indeterminado'}), 429
+    return jsonify({'status': instagram_check.checar(request.args.get('u'))})
+
+
 # Respostas de qualificação que o lead de abandono também guarda. Na LP de
 # empresas o telefone fica no FIM do formulário: quem desiste ali já respondeu
 # sobre a empresa, e essa resposta é o que diz se vale correr atrás.

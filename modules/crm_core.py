@@ -229,6 +229,45 @@ _SUB_CAMPOS = [
 ]
 
 
+def _atualizar_parcial(cur, whatsapp_e164, nome, email, form_key, payload):
+    """Completa um lead parcial que ainda não enviou. Lead enviado: intocado."""
+    import json
+
+    cur.execute(
+        """
+        UPDATE crm_leads
+           SET nome  = COALESCE(%s, nome),
+               email = COALESCE(%s, email),
+               updated_at = NOW()
+         WHERE whatsapp_e164 = %s
+           AND captura_parcial IS TRUE
+           AND submissions_count = 0
+        RETURNING id
+        """,
+        (nome, email, whatsapp_e164),
+    )
+    row = cur.fetchone()
+    if not row:
+        return
+    novos = {k: v for k, v in (payload or {}).items() if v not in (None, '')}
+    if not novos:
+        return
+    # Mescla na submissão parcial mais recente deste formulário: o JSON novo
+    # sobrepõe chave a chave, o que não veio fica como estava.
+    cur.execute(
+        """
+        UPDATE crm_lead_submissions
+           SET payload = payload || %s::jsonb
+         WHERE id = (
+             SELECT id FROM crm_lead_submissions
+              WHERE lead_id = %s AND form_key IS NOT DISTINCT FROM %s
+                AND payload->>'parcial' = 'true'
+              ORDER BY created_at DESC LIMIT 1)
+        """,
+        (json.dumps(novos, ensure_ascii=False), row['id'], form_key),
+    )
+
+
 def registrar_parcial(*, whatsapp_e164, pais, nome, email, form_key,
                       atribuicao, payload=None):
     """Grava quem digitou o telefone e foi embora sem enviar.
@@ -238,8 +277,13 @@ def registrar_parcial(*, whatsapp_e164, pais, nome, email, form_key,
     pessoa volta e envia de verdade, o upsert soma 1 e ela conta como primeiro
     cadastro, não como recadastro.
 
-    Se o telefone já existe (parcial anterior ou lead completo), NÃO mexe em
-    nada: um abandono não pode sobrescrever quem já se cadastrou direito.
+    Se o telefone já é de um lead que ENVIOU (submissions_count > 0), NÃO mexe
+    em nada: um abandono não pode sobrescrever quem já se cadastrou direito.
+
+    Se é um parcial que ainda não enviou, ATUALIZA: a LP salva assim que o
+    telefone fica válido e reenvia a cada campo preenchido depois (nome,
+    e-mail, respostas). Só preenche — campo vazio no reenvio não apaga o que
+    já veio — e não gera evento novo, para não poluir o histórico.
     """
     import json
 
@@ -259,7 +303,8 @@ def registrar_parcial(*, whatsapp_e164, pais, nome, email, form_key,
         )
         row = cur.fetchone()
         if not row:
-            return None          # já existia — nada a fazer
+            _atualizar_parcial(cur, whatsapp_e164, nome, email, form_key, payload)
+            return None
 
         lead_id = row['id']
 
