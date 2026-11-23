@@ -357,7 +357,8 @@ def checar_instagram():
 # sobre a empresa, e essa resposta é o que diz se vale correr atrás.
 # Lista fechada (e não "tudo que vier"), porque o parcial é chamado por beacon,
 # sem validação nenhuma do lado do visitante.
-RESPOSTAS_PARCIAL = ('instagram', 'ja_vende', 'faturamento_faixa', 'verba_anuncios')
+RESPOSTAS_PARCIAL = ('instagram', 'website', 'ja_vende', 'faturamento_faixa',
+                     'verba_anuncios', 'tipo_negocio', 'unidades', 'origem_leva')
 
 
 def _payload_parcial(dados):
