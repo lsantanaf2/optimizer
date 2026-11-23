@@ -566,6 +566,7 @@ def crm_page():
         etapas=ETAPAS,
         etapa_labels=ETAPA_LABELS,
         status_labels=STATUS_LABELS,
+        motivos_perda=core.MOTIVOS_PERDA,
         sla_meta_min=core.SLA_PRIMEIRO_CONTATO_MIN,
     )
 
@@ -589,6 +590,9 @@ def api_listar_leads():
     return jsonify({
         'periodo': periodo,
         'total': len(leads),
+        # "Hoje" tem que ser o dia do BANCO: o relógio da aplicação está atrás,
+        # e o painel do dia decide o que está vencido por esta data.
+        'agora_db': core.agora_db().isoformat(),
         'leads': [_lead_json(l) for l in leads],
     })
 
@@ -629,14 +633,19 @@ def api_mover_lead(lead_id):
     etapa = dados.get('etapa')
     status = dados.get('status')
     motivo = dados.get('motivo')
+    motivo_perda = dados.get('motivo_perda') or None
 
     # Sair do fluxo ativo exige motivo — senão a métrica de perda fica inútil.
     if status in ('perdido', 'timing_errado') and not (motivo or '').strip():
         return jsonify({'error': 'Informe o motivo.'}), 422
+    # Perdido exige a categoria: é dela que sai "por que a gente perde".
+    if status == 'perdido' and not motivo_perda:
+        return jsonify({'error': 'Escolha o motivo da perda.'}), 422
 
     try:
         lead = core.mover_lead(lead_id, etapa=etapa, status=status,
-                              motivo=motivo, autor_id=_autor())
+                              motivo=motivo, motivo_perda=motivo_perda,
+                              autor_id=_autor())
     except ValueError as e:
         return jsonify({'error': str(e)}), 422
     if not lead:
@@ -891,6 +900,7 @@ def _lead_json(lead):
     d['whatsapp_link'] = 'https://wa.me/' + (lead.get('whatsapp_e164') or '').lstrip('+')
     d['etapa_label'] = ETAPA_LABELS.get(lead.get('etapa'), lead.get('etapa'))
     d['status_label'] = STATUS_LABELS.get(lead.get('status'), lead.get('status'))
+    d['motivo_perda_label'] = core.MOTIVOS_PERDA.get(lead.get('motivo_perda'))
 
     # O card tem TRÊS estados, não dois. O erro anterior era ter só
     # "contatado" e "aguardando": quem mandava mensagem e não era respondido

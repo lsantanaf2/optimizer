@@ -32,6 +32,16 @@ ETAPA_LABELS = {
     'proposta': 'Proposta',
     'fechado': 'Fechado',
 }
+# Categoria da perda. Lista fechada porque é métrica: texto livre não soma.
+MOTIVOS_PERDA = {
+    'preco': 'Preço',
+    'timing': 'Timing',
+    'sumiu': 'Sumiu',
+    'concorrencia': 'Foi para a concorrência',
+    'fora_do_perfil': 'Fora do perfil',
+    'outro': 'Outro',
+}
+
 STATUS_LABELS = {
     'ativo': 'Ativo',
     'perdido': 'Perdido',
@@ -481,7 +491,11 @@ def listar_leads(*, dias=None, incluir_arquivados=False, status=None, owner_id=N
             SELECT utm_source, utm_medium, utm_campaign, utm_content,
                    -- rótulo que a pessoa marcou ("Até 20 mil"), não o número
                    -- estimado: é o que serve para qualificar de bate-pronto
-                   payload->>'faturamento_faixa' AS faturamento_faixa
+                   payload->>'faturamento_faixa' AS faturamento_faixa,
+                   -- Todas as respostas do formulário. A ficha mostra isto no
+                   -- topo: é o que o lead disse, e era o que ficava escondido
+                   -- numa aba que ninguém abria.
+                   payload AS respostas
             FROM crm_lead_submissions
             WHERE lead_id = l.id
             ORDER BY created_at DESC LIMIT 1
@@ -586,12 +600,19 @@ def registrar_evento(cur, lead_id, tipo, *, autor_id=None, de_etapa=None,
 _ETAPAS_QUE_IMPLICAM_CONTATO = {'contatado', 'call_agendada', 'proposta', 'fechado'}
 
 
-def mover_lead(lead_id, *, etapa=None, status=None, motivo=None, autor_id=None):
-    """Move de etapa e/ou status, gravando os eventos correspondentes."""
+def mover_lead(lead_id, *, etapa=None, status=None, motivo=None, motivo_perda=None,
+               autor_id=None):
+    """Move de etapa e/ou status, gravando os eventos correspondentes.
+
+    `motivo` é o relato escrito; `motivo_perda` é a categoria da lista fechada,
+    que é o que vira métrica de por que se perde negócio.
+    """
     if etapa and etapa not in ETAPAS:
         raise ValueError(f'Etapa inválida: {etapa}')
     if status and status not in STATUS_LABELS:
         raise ValueError(f'Status inválido: {status}')
+    if motivo_perda and motivo_perda not in MOTIVOS_PERDA:
+        raise ValueError(f'Motivo de perda inválido: {motivo_perda}')
 
     with get_cursor() as cur:
         cur.execute(
@@ -615,6 +636,10 @@ def mover_lead(lead_id, *, etapa=None, status=None, motivo=None, autor_id=None):
                 etapa               = %s,
                 status              = %s,
                 motivo_saida        = CASE WHEN %s <> 'ativo' THEN COALESCE(%s, motivo_saida) ELSE motivo_saida END,
+                -- Reativar limpa a categoria: lead de volta no fluxo não tem
+                -- motivo de perda, senão a métrica conta duas vezes.
+                motivo_perda        = CASE WHEN %s = 'ativo' THEN NULL
+                                           ELSE COALESCE(%s, motivo_perda) END,
                 primeiro_contato_em   = CASE WHEN %s THEN NOW() ELSE primeiro_contato_em END,
                 ultimo_contato_em     = CASE WHEN %s THEN NOW() ELSE ultimo_contato_em END,
                 -- Arrastar o card para Contatado ou adiante é, na prática,
@@ -625,7 +650,8 @@ def mover_lead(lead_id, *, etapa=None, status=None, motivo=None, autor_id=None):
                                            THEN NOW() ELSE data_fechamento END
             WHERE id = %s
             """,
-            (nova_etapa, novo_status, novo_status, motivo, marca_contato,
+            (nova_etapa, novo_status, novo_status, motivo,
+             novo_status, motivo_perda, marca_contato,
              marca_contato, nova_etapa in _ETAPAS_QUE_IMPLICAM_CONTATO,
              nova_etapa, lead_id),
         )
@@ -647,7 +673,9 @@ def mover_lead(lead_id, *, etapa=None, status=None, motivo=None, autor_id=None):
                              payload={'motivo': motivo} if motivo else None)
             if novo_status == 'perdido':
                 registrar_evento(cur, lead_id, 'perdido', autor_id=autor_id,
-                                 payload={'motivo': motivo} if motivo else None)
+                                 payload={'motivo': motivo,
+                                          'motivo_perda': motivo_perda}
+                                 if (motivo or motivo_perda) else None)
 
         if marca_contato:
             registrar_evento(cur, lead_id, 'contato_efetivo', autor_id=autor_id,
@@ -972,6 +1000,13 @@ def periodo_relativo(dias):
     return {'dias': int(dias)}
 
 
+def agora_db():
+    """NOW() do banco. O painel do dia decide o que venceu por esta hora, e não
+    pelo relógio da aplicação (que já esteve 102s atrás) nem pelo do navegador.
+    """
+    return fetch_one('SELECT NOW() AS agora')['agora']
+
+
 def periodo_fixo(desde, ate):
     """Janela com datas explícitas (filtro de calendário)."""
     return {'desde': desde, 'ate': ate}
@@ -1106,17 +1141,23 @@ def metricas(periodo, owner_id=None, incluir_parciais=False):
     )
 
     # ── Motivos de perda ──
+    # Agrupa pela CATEGORIA, não pelo texto livre: "achou caro", "caro demais"
+    # e "preço" eram três linhas de 1 que não respondiam nada.
     motivos_perda = fetch_all(
         f"""
-        SELECT COALESCE(NULLIF(l.motivo_saida, ''), '(não informado)') AS motivo,
-               COUNT(*) AS total
+        SELECT l.motivo_perda AS chave, COUNT(*) AS total
         FROM crm_leads l
         WHERE {sql_periodo}
           AND l.status = 'perdido' {filtro_owner}
-        GROUP BY 1 ORDER BY total DESC LIMIT 20
+        GROUP BY 1 ORDER BY total DESC
         """,
         p_periodo + p_owner,
     )
+    motivos_perda = [
+        {'motivo': MOTIVOS_PERDA.get(r['chave'], '(não informado)'),
+         'chave': r['chave'], 'total': int(r['total'])}
+        for r in motivos_perda
+    ]
 
     leads = int(funil.get('leads') or 0)
     abordados = int(funil.get('abordados') or 0)
@@ -1182,7 +1223,7 @@ def metricas(periodo, owner_id=None, incluir_parciais=False):
         'por_campanha': [_row(r) for r in por_campanha],
         'diario': [{'dia': str(r['dia']), 'leads': int(r['leads']),
                     'fechados': int(r['fechados'])} for r in diario],
-        'motivos_perda': [_row(r) for r in motivos_perda],
+        'motivos_perda': motivos_perda,
     }
 
 

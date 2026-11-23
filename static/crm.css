@@ -422,3 +422,94 @@ body.crm-lead-chegou { animation: crm-page-flash 1s ease-out 3; }
 @media (max-width: 1100px) {
     .kanban { grid-template-columns: repeat(5, 250px); }
 }
+
+/* ============================================================
+   Painel do dia, chegada do lead e ação por etapa (v2.69.0)
+
+   Antes a ficha era um grid de 11 campos iguais em qualquer etapa — 8 deles
+   ficavam vazios em quase todo lead — e o kanban abria sem dizer por onde
+   começar. Estas peças resolvem as duas coisas.
+   ============================================================ */
+
+/* ---- Painel "para hoje" ---- */
+.crm-hoje {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    margin: 0 0 16px;
+}
+.hoje-item {
+    display: flex; align-items: baseline; gap: 8px;
+    padding: 9px 14px; cursor: pointer;
+    background: var(--card-bg); color: inherit; font: inherit;
+    border: 1px solid var(--border-subtle); border-radius: var(--radius-sm);
+    transition: border-color .15s, background .15s;
+}
+.hoje-item:hover { border-color: var(--border-hover); background: var(--card-bg-hover); }
+.hoje-item.ativo { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-glow); }
+.hoje-item.vazio { opacity: .45; }
+.hoje-num { font-size: 20px; font-weight: 700; line-height: 1; }
+.hoje-rot { font-size: 12px; color: var(--text-secondary); }
+
+/* Abandono não é etapa do funil: fica visualmente de lado. */
+.kanban-col.abandono { border-style: dashed; opacity: .9; }
+
+/* ---- Como ele chegou ---- */
+.crm-chegada {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    padding: 12px 14px; margin-bottom: 14px;
+}
+.chegada-topo {
+    display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    font-size: 11.5px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .05em; color: var(--text-muted); margin-bottom: 10px;
+}
+.chegada-origem { text-transform: none; letter-spacing: 0; font-weight: 400; }
+.chegada-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chegada-chips .chip {
+    display: inline-flex; gap: 6px; align-items: baseline;
+    font-size: 12.5px; padding: 5px 10px;
+    background: var(--card-bg); border: 1px solid var(--border-subtle);
+    border-radius: 999px;
+}
+.chegada-chips .chip b { font-weight: 600; color: var(--text-muted); font-size: 11px; }
+.chegada-chips .chip.vazio { color: var(--text-muted); font-style: italic; }
+
+/* ---- Trilha de etapas ---- */
+.crm-trilha { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.trilha-passo {
+    font-size: 11.5px; padding: 4px 11px; border-radius: 999px;
+    background: var(--card-bg); border: 1px solid var(--border-subtle);
+    color: var(--text-muted);
+}
+.trilha-passo.feito { color: var(--text-secondary); border-color: var(--border); }
+.trilha-passo.atual {
+    background: var(--accent); border-color: var(--accent);
+    color: #05161a; font-weight: 600;
+}
+
+/* ---- O que fazer agora ---- */
+.crm-acao {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 16px 18px;
+}
+.acao-titulo { font-size: 15.5px; font-weight: 600; margin-bottom: 5px; }
+.acao-texto { font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
+.acao-botoes {
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 14px;
+}
+.crm-acao-extra {
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px;
+}
+
+/* ---- Correções de rota, recolhidas ---- */
+.crm-avancado { margin-top: 26px; border-top: 1px solid var(--border-subtle); padding-top: 14px; }
+.crm-avancado > summary {
+    cursor: pointer; font-size: 12.5px; color: var(--text-muted);
+    list-style: none;
+}
+.crm-avancado > summary::-webkit-details-marker { display: none; }
+.crm-avancado > summary::before { content: '▸ '; }
+.crm-avancado[open] > summary::before { content: '▾ '; }

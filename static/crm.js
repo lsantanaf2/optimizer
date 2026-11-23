@@ -16,6 +16,8 @@ const CRM = (() => {
     let leads = [];
     let leadAberto = null;
     let saidaPendente = null;      // { status, leadId }
+    let agoraDb = new Date();      // NOW() do banco, vindo da listagem
+    let foco = null;               // recorte do painel do dia
     let lastSeen = null;           // relógio do SERVIDOR, nunca do browser
     let pollTimer = null;
     let alertasAtivos = false;
@@ -84,11 +86,15 @@ const CRM = (() => {
         const periodo = $('#filtro-periodo').value;
         const status = $('#filtro-status').value;
         const arquivados = $('#filtro-arquivados').checked ? '1' : '0';
-        const parciais = $('#filtro-parciais').checked ? '1' : '0';
         try {
+            // Abandono vem SEMPRE: agora tem coluna própria. A caixa de seleção
+            // passou a só mostrar ou esconder essa coluna.
             const data = await api(`/api/crm/leads?periodo=${periodo}&status=${status}` +
-                                   `&arquivados=${arquivados}&parciais=${parciais}`);
+                                   `&arquivados=${arquivados}&parciais=1`);
             leads = data.leads || [];
+            // "Hoje" é o dia do BANCO. O relógio do navegador é do visitante e
+            // o da aplicação já esteve 102s atrás.
+            agoraDb = data.agora_db ? new Date(data.agora_db) : new Date();
             render();
         } catch (e) {
             mostrarToast('❌ ' + e.message);
@@ -176,15 +182,77 @@ const CRM = (() => {
         </div>`;
     }
 
+    // ───────────────────────────────────────────────────────────
+    // Painel do dia — responde "por onde eu começo?"
+    // ───────────────────────────────────────────────────────────
+    const umDia = 86400000;
+
+    function mesmoDia(a, b) {
+        return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth()
+            && a.getDate() === b.getDate();
+    }
+
+    // Um lead entra em cada recorte do painel. Abandono fica de fora de todos:
+    // não é fila de trabalho, é material para decidir se vale abordar.
+    const RECORTES = {
+        abordar: l => !l.captura_parcial && l.status === 'ativo'
+            && l.contato_estado === 'nao_abordado',
+        vencidos: l => !l.captura_parcial && l.proxima_tarefa_em
+            && new Date(l.proxima_tarefa_em) < agoraDb
+            && !mesmoDia(new Date(l.proxima_tarefa_em), agoraDb),
+        hoje: l => !l.captura_parcial && l.proxima_tarefa_em
+            && mesmoDia(new Date(l.proxima_tarefa_em), agoraDb),
+        // Proposta parada: enviada e sem retorno marcado. É o buraco que o
+        // Lucas apontou — "o que eu faço com quem recebeu proposta?".
+        proposta: l => !l.captura_parcial && l.status === 'ativo'
+            && l.etapa === 'proposta' && !l.proxima_tarefa_em,
+    };
+
+    function renderHoje() {
+        const painel = $('#crm-hoje');
+        let algum = false;
+        Object.keys(RECORTES).forEach(k => {
+            const n = leads.filter(RECORTES[k]).length;
+            $('#hoje-' + k).textContent = n;
+            const botao = painel.querySelector(`[data-hoje="${k}"]`);
+            botao.classList.toggle('vazio', n === 0);
+            botao.classList.toggle('ativo', foco === k);
+            if (n > 0) algum = true;
+        });
+        painel.hidden = !algum;
+        $('#hoje-limpar').style.display = foco ? 'inline-flex' : 'none';
+    }
+
+    function focar(tipo) {
+        foco = (foco === tipo) ? null : tipo;
+        render();
+    }
+
     function render() {
+        const filtro = foco ? RECORTES[foco] : null;
+        const visiveis = filtro ? leads.filter(filtro) : leads;
+
+        // Abandono em coluna própria: não é etapa do funil, é quem nem enviou.
+        const col = $('[data-etapa="abandono"]');
+        const mostrarAbandono = $('#filtro-parciais').checked && !foco;
+        col.hidden = !mostrarAbandono;
+        if (mostrarAbandono) {
+            const parciais = leads.filter(l => l.captura_parcial);
+            $('[data-count="abandono"]').textContent = parciais.length;
+            $('[data-body="abandono"]').innerHTML = parciais.length
+                ? parciais.map(cardHtml).join('')
+                : '<div class="kanban-empty">—</div>';
+        }
+
         ETAPAS.forEach(etapa => {
             const body = $(`[data-body="${etapa}"]`);
-            const doEtapa = leads.filter(l => l.etapa === etapa);
+            const doEtapa = visiveis.filter(l => l.etapa === etapa && !l.captura_parcial);
             $(`[data-count="${etapa}"]`).textContent = doEtapa.length;
             body.innerHTML = doEtapa.length
                 ? doEtapa.map(cardHtml).join('')
                 : '<div class="kanban-empty">—</div>';
         });
+        renderHoje();
         ligarDragDrop();
     }
 
@@ -284,8 +352,137 @@ const CRM = (() => {
         leadAberto = null;
     }
 
+    // O que a PESSOA respondeu no formulário, do jeito que respondeu.
+    // Ordem fixa para a leitura ser sempre a mesma.
+    const RESPOSTAS = [
+        ['instagram', 'Instagram'],
+        ['ja_vende', 'Situação'],
+        ['faturamento_faixa', 'Faturamento'],
+        ['verba_anuncios', 'Tem a verba'],
+        ['segmento', 'Segmento'],
+    ];
+
+    function renderChegada(data) {
+        const l = data.lead;
+        const sub = (data.submissions || [])[0] || {};
+        const p = sub.payload || {};
+        const chips = RESPOSTAS
+            .filter(([k]) => p[k])
+            .map(([k, rot]) => `<span class="chip"><b>${rot}</b>${esc(p[k])}</span>`);
+        if (!chips.length) {
+            chips.push('<span class="chip vazio">sem respostas de formulário</span>');
+        }
+        const origem = [sub.utm_source, sub.utm_campaign].filter(Boolean).join(' · ') || 'direto';
+        $('#ml-chegada').innerHTML = `
+            <div class="chegada-topo">
+                <span>Como ele chegou</span>
+                <span class="chegada-origem">📍 ${esc(origem)} · ${fmtData(l.created_at)}</span>
+            </div>
+            <div class="chegada-chips">${chips.join('')}</div>`;
+    }
+
+    function renderTrilha(l) {
+        const atual = CFG.etapas.indexOf(l.etapa);
+        $('#ml-trilha').innerHTML = CFG.etapas.map((e, i) => `
+            <span class="trilha-passo ${i < atual ? 'feito' : ''} ${i === atual ? 'atual' : ''}">
+                ${esc(CFG.etapaLabels[e] || e)}
+            </span>`).join('');
+    }
+
+    // O bloco de ação é o que muda por etapa. Cada etapa tem UMA pergunta.
+    function renderAcao(l) {
+        const caixa = $('#ml-acao');
+        const contato = $('#ml-contato-wrap');
+        contato.hidden = true;
+        if (l.status !== 'ativo') {
+            const porque = l.motivo_perda_label ? ` · ${esc(l.motivo_perda_label)}` : '';
+            caixa.innerHTML = `
+                <div class="acao-titulo">${esc(l.status_label)}${porque}</div>
+                <div class="acao-texto">${esc(l.motivo_saida || 'Sem anotação.')}</div>
+                <div class="acao-botoes">
+                    <button class="crm-btn" onclick="CRM.reativar()">↩ Trazer de volta</button>
+                </div>`;
+            return;
+        }
+
+        const botoesSaida = `
+            <span class="crm-spacer"></span>
+            <button class="crm-btn" onclick="CRM.abrirSaida('timing_errado')">⏳ Vai pensar</button>
+            <button class="crm-btn danger" onclick="CRM.abrirSaida('perdido')">✖ Não fechou</button>`;
+
+        if (l.etapa === 'novo') {
+            contato.hidden = false;
+            caixa.innerHTML = `
+                <div class="acao-titulo">Fale com ele</div>
+                <div class="acao-texto">
+                    ${l.contato_estado === 'nao_abordado'
+                        ? `Esperando há ${fmtDuracao(l.aguardando_min)}.`
+                        : 'Primeira mensagem já marcada.'}
+                </div>
+                <div class="acao-botoes">
+                    <button class="crm-btn primary" onclick="CRM.marcarMensagemEnviadaFicha()">📨 Marquei a 1ª mensagem</button>
+                    <button class="crm-btn" onclick="CRM.moverPara('contatado')">→ Contatado</button>
+                </div>`;
+            return;
+        }
+        if (l.etapa === 'contatado') {
+            contato.hidden = false;
+            caixa.innerHTML = `
+                <div class="acao-titulo">Agende a call</div>
+                <div class="acao-texto">
+                    ${l.contato_estado === 'sem_resposta'
+                        ? `Sem resposta há ${fmtDuracao(l.aguardando_resposta_min)}.`
+                        : 'Conversa iniciada.'}
+                </div>
+                <div class="acao-botoes">
+                    <button class="crm-btn primary" onclick="CRM.moverPara('call_agendada')">📅 Call agendada</button>
+                    ${botoesSaida}
+                </div>`;
+            return;
+        }
+        if (l.etapa === 'call_agendada') {
+            caixa.innerHTML = `
+                <div class="acao-titulo">A call aconteceu?</div>
+                <div class="acao-texto">${l.proxima_tarefa_em
+                    ? 'Marcada para ' + fmtData(l.proxima_tarefa_em) + '.'
+                    : 'Sem horário registrado — use Notas e tarefas para marcar.'}</div>
+                <div class="acao-botoes">
+                    <button class="crm-btn primary" onclick="CRM.marcarCallRealizada()">✅ Realizada</button>
+                    <button class="crm-btn danger" onclick="CRM.marcarNoShow()">🚫 No-show</button>
+                    ${botoesSaida}
+                </div>`;
+            return;
+        }
+        if (l.etapa === 'proposta') {
+            const esperando = l.proxima_tarefa_em
+                ? `Retorno marcado para ${fmtData(l.proxima_tarefa_em)}.`
+                : '⚠️ Sem retorno marcado — este lead some se você não marcar.';
+            caixa.innerHTML = `
+                <div class="acao-titulo">Proposta enviada. E agora?</div>
+                <div class="acao-texto">${esperando}</div>
+                <div class="acao-botoes">
+                    <button class="crm-btn primary" onclick="CRM.moverPara('fechado')">🏆 Fechou</button>
+                    ${botoesSaida}
+                </div>`;
+            return;
+        }
+        caixa.innerHTML = `
+            <div class="acao-titulo">Fechado 🏆</div>
+            <div class="acao-texto">${l.valor_fechado
+                ? fmtMoeda(l.valor_fechado) + (l.data_fechamento ? ' · ' + fmtData(l.data_fechamento) : '')
+                : 'Preencha o valor fechado abaixo: é ele que vira receita e CAC.'}</div>`;
+    }
+
     function preencherModal(data) {
         const l = data.lead;
+        renderChegada(data);
+        renderTrilha(l);
+        renderAcao(l);
+        // Campo só aparece quando já dá para preenchê-lo: apuração depois da
+        // call, dinheiro depois da proposta.
+        const i = CFG.etapas.indexOf(l.etapa);
+        $('#grupo-apuracao').hidden = i < CFG.etapas.indexOf('call_agendada');
+        $('#grupo-negocio').hidden = i < CFG.etapas.indexOf('proposta');
         $('#ml-nome').textContent = l.nome || 'Sem nome';
         $('#ml-sub').textContent =
             `${l.whatsapp_display || ''} · ${l.email || 'sem e-mail'} · ${l.etapa_label}` +
@@ -312,10 +509,11 @@ const CRM = (() => {
         const declarado = (data.submissions || [])
             .map(s => s.payload && s.payload.faturamento_faixa)
             .find(Boolean);
-        const dica = $('#f-faturamento-declarado');
+        const dica = $('#f-faturamento-declarado-hint');
         if (dica) {
-            dica.textContent = declarado || 'não informou';
-            dica.classList.toggle('vazio', !declarado);
+            dica.textContent = declarado
+                ? `No formulário ele marcou: ${declarado}`
+                : 'Ele não informou no formulário.';
         }
         $('#f-ja_fez_trafego').value = l.ja_fez_trafego == null ? '' : String(l.ja_fez_trafego);
         $('#f-qualificado').value = l.qualificado == null ? '' : String(l.qualificado);
@@ -603,6 +801,9 @@ const CRM = (() => {
             ? 'Agende o recontato para o lead não ser esquecido.'
             : 'O motivo alimenta o relatório de motivos de perda.';
         $('#ms-data-wrap').style.display = timing ? 'block' : 'none';
+        // "Vai pensar" não é perda: não pede categoria, pede data de retorno.
+        $('#ms-perda-wrap').style.display = timing ? 'none' : 'block';
+        $('#ms-perda').value = '';
         $('#ms-motivo').value = '';
         if (timing) {
             // Sugestão: 30 dias à frente, no mesmo horário.
@@ -618,6 +819,16 @@ const CRM = (() => {
         saidaPendente = null;
     }
 
+    // Atalho do bloco de ação: avança a etapa sem passar pelo select.
+    async function moverPara(etapa) {
+        if (!leadAberto) return;
+        try {
+            await mover(leadAberto.lead.id, { etapa });
+            await abrirLead(leadAberto.lead.id);
+            await carregar();
+        } catch (e) { /* mover já avisou */ }
+    }
+
     async function confirmarSaida() {
         if (!saidaPendente) return;
         const motivo = $('#ms-motivo').value.trim();
@@ -627,6 +838,10 @@ const CRM = (() => {
             const data = $('#ms-data').value;
             if (!data) { mostrarToast('Informe a data de recontato'); return; }
             payload.data_recontato = data;
+        } else {
+            const perda = $('#ms-perda').value;
+            if (!perda) { mostrarToast('Escolha o motivo da perda'); return; }
+            payload.motivo_perda = perda;
         }
         try {
             await mover(saidaPendente.leadId, payload);
@@ -962,7 +1177,8 @@ const CRM = (() => {
     return {
         carregar, abrirLead, fecharLead, salvarFicha, registrarContato,
         marcarMensagemEnviada, marcarMensagemEnviadaFicha,
-        marcarNoShow, marcarCallRealizada, moverPeloModal, reativar, arquivar,
+        marcarNoShow, marcarCallRealizada, moverPeloModal, moverPara, reativar, arquivar,
+        focar,
         salvarNota, criarTarefa, concluirTarefa,
         abrirSaida, fecharSaida, confirmarSaida,
         abrirExclusao, fecharExclusao, validarExclusao, confirmarExclusao,
