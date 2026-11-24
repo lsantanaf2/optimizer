@@ -36,16 +36,48 @@ const CRM = (() => {
     // Respostas que a pessoa marcou no formulário, como ela marcou. Ficam no
     // payload da submissão; sem isto, pergunta nova na LP gravava e não
     // aparecia em lugar nenhum. `linha` já escapa o valor.
+    // Rótulo bonito das respostas conhecidas. Esta lista só define a ORDEM e
+    // o nome: o que não estiver aqui continua aparecendo, com o rótulo
+    // derivado da própria chave. Antes a lista era um filtro, e cada campo
+    // novo de LP (tipo de negócio, unidades, leva) sumia da ficha.
     const RESPOSTAS_FORM = [
         ['instagram', 'Instagram'],
+        ['tipo_negocio', 'Tipo de negócio'],
+        ['unidades', 'Unidades'],
         ['ja_vende', 'Já vende?'],
         ['faturamento_faixa', 'Faturamento declarado'],
-        ['verba_anuncios', 'Tem R$ 1,5 mil/mês p/ anúncio?'],
+        ['verba_anuncios', 'Tem a verba de anúncio?'],
         ['segmento', 'Segmento'],
+        ['origem_leva', 'Leva'],
     ];
-    function respostasDoForm(payload, linha) {
+    // Controle interno da captura, não é resposta de ninguém.
+    const RESPOSTAS_OCULTAS = new Set([
+        'parcial', 'motivo', 'submission_id', 'form_key', 'vez', 'first_referrer',
+    ]);
+
+    function rotuloDaChave(k) {
+        const t = k.replace(/_/g, ' ');
+        return t.charAt(0).toUpperCase() + t.slice(1);
+    }
+
+    // [[rótulo, valor]] de TUDO que a pessoa respondeu, na ordem conhecida
+    // primeiro e o resto depois.
+    function paresDeRespostas(payload) {
         const p = payload || {};
-        return RESPOSTAS_FORM.map(([chave, rotulo]) => linha(rotulo, p[chave])).join('');
+        const vistos = new Set(RESPOSTAS_FORM.map(r => r[0]));
+        const pares = RESPOSTAS_FORM
+            .filter(([k]) => p[k] != null && p[k] !== '')
+            .map(([k, rot]) => [rot, p[k]]);
+        Object.keys(p).forEach(k => {
+            if (vistos.has(k) || RESPOSTAS_OCULTAS.has(k)) return;
+            if (p[k] == null || p[k] === '') return;
+            pares.push([rotuloDaChave(k), p[k]]);
+        });
+        return pares;
+    }
+
+    function respostasDoForm(payload, linha) {
+        return paresDeRespostas(payload).map(([rot, v]) => linha(rot, v)).join('');
     }
 
     function fmtData(iso, comHora = true) {
@@ -354,21 +386,11 @@ const CRM = (() => {
 
     // O que a PESSOA respondeu no formulário, do jeito que respondeu.
     // Ordem fixa para a leitura ser sempre a mesma.
-    const RESPOSTAS = [
-        ['instagram', 'Instagram'],
-        ['ja_vende', 'Situação'],
-        ['faturamento_faixa', 'Faturamento'],
-        ['verba_anuncios', 'Tem a verba'],
-        ['segmento', 'Segmento'],
-    ];
-
     function renderChegada(data) {
         const l = data.lead;
         const sub = (data.submissions || [])[0] || {};
-        const p = sub.payload || {};
-        const chips = RESPOSTAS
-            .filter(([k]) => p[k])
-            .map(([k, rot]) => `<span class="chip"><b>${rot}</b>${esc(p[k])}</span>`);
+        const chips = paresDeRespostas(sub.payload)
+            .map(([rot, v]) => `<span class="chip"><b>${esc(rot)}</b>${esc(v)}</span>`);
         if (!chips.length) {
             chips.push('<span class="chip vazio">sem respostas de formulário</span>');
         }
@@ -481,8 +503,15 @@ const CRM = (() => {
         // Campo só aparece quando já dá para preenchê-lo: apuração depois da
         // call, dinheiro depois da proposta.
         const i = CFG.etapas.indexOf(l.etapa);
-        $('#grupo-apuracao').hidden = i < CFG.etapas.indexOf('call_agendada');
-        $('#grupo-negocio').hidden = i < CFG.etapas.indexOf('proposta');
+        // Esconder campo VAZIO fora da etapa é o certo; esconder campo já
+        // PREENCHIDO é sumir com dado. Então, se tem valor, aparece sempre.
+        const temValor = (...campos) =>
+            campos.some(c => l[c] !== null && l[c] !== undefined && l[c] !== '');
+        $('#grupo-apuracao').hidden = i < CFG.etapas.indexOf('call_agendada')
+            && !temValor('faturamento_anual', 'investimento_midia', 'ja_fez_trafego',
+                         'urgencia', 'qualificado');
+        $('#grupo-negocio').hidden = i < CFG.etapas.indexOf('proposta')
+            && !temValor('valor_proposta', 'valor_fechado', 'data_fechamento');
         $('#ml-nome').textContent = l.nome || 'Sem nome';
         $('#ml-sub').textContent =
             `${l.whatsapp_display || ''} · ${l.email || 'sem e-mail'} · ${l.etapa_label}` +

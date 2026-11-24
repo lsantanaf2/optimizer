@@ -493,12 +493,6 @@
             <div class="erro" id="erro-verba"></div>
           </div>
 
-          <div>
-            <label for="site">Website <span class="opcional">(opcional)</span></label>
-            <input id="site" name="site" maxlength="160" placeholder="suasorveteria.com.br"
-                   autocomplete="off" autocapitalize="none" spellcheck="false">
-          </div>
-
           <!-- Armadilha anti-bot -->
           <div class="hp" aria-hidden="true">
             <label for="{{ honeypot_field }}">Website</label>
@@ -780,10 +774,8 @@
   }
   function respostas() {
     const ig = igUsuario();
-    const site = document.getElementById('site').value.trim();
     return {
       instagram: ig ? '@' + ig : null,
-      website: site || null,
       tipo_negocio: marcado('tipo_negocio'),
       unidades: marcado('unidades'),
       ja_vende: marcado('ja_vende'),
@@ -844,7 +836,7 @@
   }
 
   telEl.addEventListener('blur', () => salvarParcial('saiu_do_campo'));
-  ['nome', 'email', 'instagram', 'site'].forEach(id =>
+  ['nome', 'email', 'instagram'].forEach(id =>
     document.getElementById(id).addEventListener('blur', () => salvarParcial('atualizou')));
   document.querySelectorAll('.opcao input').forEach(inp =>
     inp.addEventListener('change', () => salvarParcial('atualizou')));
